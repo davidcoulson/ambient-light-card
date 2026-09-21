@@ -21,10 +21,36 @@ Tested on ESP32-C3 PWM RGB+CW/WW bulbs and 48-LED addressable rings, ESPHome 202
 | `accent_fx_controls.yaml` | Imports the room's Speed and Intensity helpers from Home Assistant. |
 | `ntp.yaml` | SNTP setup plus two health sensors: *NTP Sync* and *Last NTP Sync*. |
 
-## Use it
+## Use it as a remote package (recommended)
 
-Copy `common/` into your ESPHome config directory (the files include each other as
-`common/...`). Then in a device config:
+ESPHome can pull the library straight from this repo – no copies to keep in sync. Pin `ref` to a
+release tag so a change here never alters your lights until you bump it:
+
+```yaml
+substitutions:
+  mac: "4e7dac"          # unique per light: names it, seeds its per-light offsets, finds it on the map
+  area: "Basement"       # its room: picks input_number.basement_accent_speed / _intensity
+
+packages:
+  ambient:
+    url: https://github.com/davidcoulson/ambient-light-card
+    ref: v1.0.0
+    files:
+      - esphome/common/accent_fx_controls.yaml
+      - esphome/common/accent_light_nonaddressable_effects.yaml
+      # Room-map effects on your own map, kept in your config directory:
+      - path: esphome/common/accent_light_2d_effects.yaml
+        vars:
+          room_map: common/my_room_map.h
+```
+
+Headers are named without a directory, so ESPHome finds them next to the package's files. A
+header you keep locally (your room map) is found in your config directory first. Keep `ntp.yaml`
+local too, or copy it: it is where your time servers go.
+
+## Or copy it
+
+Copy `common/` into your ESPHome config directory. Then in a device config:
 
 ```yaml
 substitutions:
