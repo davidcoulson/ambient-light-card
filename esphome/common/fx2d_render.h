@@ -293,14 +293,17 @@ inline void weather2d(float px, float py, double T, const Room2D &room, uint32_t
   const float rain = clamp01((w - 0.55f) / 0.25f);       // rain from ~140
   const float storm = clamp01((w - 0.80f) / 0.20f);      // lightning from ~205
 
-  // Cloud field: as clouds2d, with the wind picking up as the storm builds.
-  double u = px * 2.6 + T * (0.040 + 0.050 * storm);
-  double v = py * 2.6 + T * 0.011;
+  // Cloud field: as clouds2d, with the wind rising with the weather - banks
+  // cross the room in ~20 s at normal, gentler when clear, gusting in a storm.
+  const double wind = 0.07 + 0.10 * w + 0.05 * storm;
+  double u = px * 2.6 + T * wind;
+  double v = py * 2.6 + T * 0.018;
   double e = T * 0.023;
   float n = 0.55f * sync_noise2(u, v, 41)
           + 0.30f * sync_noise2(u * 2.1 + e, v * 2.1, 42)
           + 0.15f * sync_noise2(u * 4.3, v * 4.3 + e * 1.7, 43);
-  float cover = 0.53f - 0.47f * w;                        // ~8 % cloud clear .. ~65 % normal .. solid
+  // ~8 % cloud clear, ~40 % at normal with clear gaps between banks, solid in a storm.
+  float cover = 0.53f - 0.28f * w - 0.12f * w * w;
   float cloud = clamp01((n - cover) * 3.0f);
   float core = clamp01((n - cover - 0.08f) * 4.0f);
 

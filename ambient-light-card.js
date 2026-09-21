@@ -73,7 +73,7 @@ function extraField(e, has) {
   if (has("weather"))
     return (u, v, t, I) => {
       const w = cl(I * 0.5), rain = cl((w - 0.55) / 0.25), storm = cl((w - 0.8) / 0.2);
-      const n = drift(u * 1.6 + t * (0.15 + 0.2 * storm), v * 1.4, t * 0.3);
+      const n = drift(u * 1.6 + t * (0.3 + 0.35 * w + 0.2 * storm), v * 1.4, t * 0.3);
       const cloud = cl((n - (0.72 - 0.5 * w)) * 3.5);
       const day = 1 - 0.8 * cl((w - 0.3) / 0.7);
       let c = mix(mix([70, 140, 215], [30, 36, 48], 1 - day), mix([240, 244, 250], [95, 100, 112], w).map((x) => x * (0.35 + 0.65 * day)), cloud);
