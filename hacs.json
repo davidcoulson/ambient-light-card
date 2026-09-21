@@ -1,0 +1,6 @@
+{
+  "name": "Ambient Light Card",
+  "filename": "ambient-light-card.js",
+  "render_readme": true,
+  "homeassistant": "2024.8.0"
+}

@@ -1,0 +1,334 @@
+# ---------------------------------------------------------------------------
+# All 10 white-only (RGB-off) effects for the RGBCW bulb, bundled into a
+# single file nested under the existing accent_light entity via !extend
+# rather than declaring a separate rgbcw_bulb light. Every effect writes
+# directly to red_output/green_output/blue_output/warm_output/
+# cold_output instead of going through LightCall - see the earlier
+# conversion for why (LightCall's turn_on()/perform() publishes a new
+# state to Home Assistant on every call, which was flooding it).
+#
+# Effects included:
+#   1. Sunrise/Sunset (CW/WW)         6. Wake-Up Alarm (White)
+#   2. Candle Flicker (Warm White)    7. Focus Breathing (Cool White)
+#   3. Moonlight Glow (Cool White)    8. Wind-Down Breathing (Warm White)
+#   4. Color Temperature Sweep        9. Heartbeat Pulse (White)
+#   5. Lightning Storm (White)       10. Fog (White)
+#
+# cold_white_color_temperature/warm_white_color_temperature are omitted
+# here since !extend is adding to an ALREADY-DECLARED accent_light entity -
+# those belong in that original declaration, not repeated here. If your
+# accent_light wasn't originally declared as platform: rgbww with those
+# fields set, add them there for Home Assistant's color-temp slider to
+# map correctly (this doesn't affect these effects, which set channel
+# levels directly rather than using set_color_temperature()).
+#
+# Timing comes from the shared wall clock (light_effects_helpers.h), not
+# millis(), so bulbs in one room run these in step - and Heartbeat and
+# Lightning line up with the RGB versions on the other light families.
+# Candle Flicker is deliberately scattered per bulb. Wake-Up Alarm is a ramp
+# from the moment it is selected, so it stays on millis(). All of them write
+# through out_white(), which applies the brightness slider.
+# ---------------------------------------------------------------------------
+
+esphome:
+  includes:
+    - common/light_effects_helpers.h
+
+light:
+  - platform: rgbww
+    id: !extend accent_light
+    effects:
+      # ------------------------------------------------------------------
+      # 1. Sunrise/Sunset (CW/WW)
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Sunrise/Sunset (CW/WW)"
+          update_interval: 5s
+          lambda: |-
+            // TUNE: full loop length in seconds. 86400 = a real 24-hour day.
+            const float TOTAL_CYCLE_SECONDS = 300.0f;
+
+            // Keyframes: {phase 0-1, warm_white 0-1, cold_white 0-1}.
+            // Warm dominates dawn/dusk, cool dominates midday - using the
+            // bulb's actual white channels rather than simulating color
+            // temperature with RGB.
+            static const float kp[11][3] = {
+              {0.00f, 0.00f, 0.00f},   // deep night
+              {0.18f, 0.05f, 0.00f},   // pre-dawn twilight
+              {0.25f, 0.35f, 0.02f},   // first light
+              {0.32f, 0.55f, 0.05f},   // sunrise glow, warm-dominant
+              {0.40f, 0.55f, 0.30f},   // morning
+              {0.50f, 0.35f, 0.75f},   // midday, cool-dominant daylight
+              {0.62f, 0.55f, 0.30f},   // afternoon
+              {0.72f, 0.60f, 0.05f},   // sunset glow, warm-dominant
+              {0.80f, 0.30f, 0.00f},   // dusk
+              {0.88f, 0.05f, 0.00f},   // late twilight
+              {1.00f, 0.00f, 0.00f}    // back to night (wraps to phase 0)
+            };
+            const int NUM_KP = 11;
+
+            // Shared clock, so two bulbs in one room keep the same time of day.
+            float phase = (float) (fmod(fx_seconds(), (double) TOTAL_CYCLE_SECONDS) / TOTAL_CYCLE_SECONDS);
+
+            float ww = kp[0][1], cw = kp[0][2];
+            for (int k = 0; k < NUM_KP - 1; k++) {
+              if (phase >= kp[k][0] && phase <= kp[k+1][0]) {
+                float span = kp[k+1][0] - kp[k][0];
+                float frac = span > 0.0f ? (phase - kp[k][0]) / span : 0.0f;
+                ww = kp[k][1]*(1-frac) + kp[k+1][1]*frac;
+                cw = kp[k][2]*(1-frac) + kp[k+1][2]*frac;
+                break;
+              }
+            }
+
+            out_white(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                      id(warm_output), id(cold_output), ww, cw);
+
+      # ------------------------------------------------------------------
+      # 2. Candle Flicker (Warm White)
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Candle Flicker (Warm White)"
+          update_interval: 50ms
+          lambda: |-
+            static float gust = 0.0f;
+
+            auto noise1d = [](float x) -> float {
+              return sinf(x * 1.0f) * 0.500f
+                   + sinf(x * 2.13f + 1.7f) * 0.250f
+                   + sinf(x * 4.07f + 3.1f) * 0.125f
+                   + sinf(x * 8.53f + 0.6f) * 0.0625f;
+            };
+
+            // A room of candles should NOT flicker as one, so this stays
+            // scattered: shared clock plus a fixed per-bulb offset. The gusts
+            // below keep their own dice for the same reason.
+            float t = fx_t() + sync_offset("${mac}") * 100.0f;
+
+            float base  = noise1d(t * 3.0f) * 0.5f + 0.5f;
+            float micro = noise1d(t * 11.3f + 2.0f) * 0.5f + 0.5f;
+            float v = base * 0.70f + micro * 0.30f;
+
+            gust *= 0.90f;   // TUNE decay rate
+            if ((random_uint32() % 1000) < 5) {   // TUNE gust chance per tick
+              gust += 0.30f + (random_uint32() % 300) / 1000.0f;
+              if (gust > 0.65f) gust = 0.65f;
+            }
+            // Intensity: flicker depth and gust dips.
+            v = 0.62f + (v - 0.62f) * fx_swing();
+            v -= gust * fx_accents();
+            if (v < 0.12f) v = 0.12f;   // candle never fully goes dark
+            if (v > 1.0f) v = 1.0f;
+
+            // no palette needed - it's real warm_white LEDs, not a
+            // simulated color temperature, so the flicker is just brightness
+            out_white(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                      id(warm_output), id(cold_output), v, 0.0f);
+
+      # ------------------------------------------------------------------
+      # 3. Moonlight Glow (Cool White)
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Moonlight Glow (Cool White)"
+          update_interval: 30ms
+          lambda: |-
+            const float BREATHE_PERIOD = 10.0f;   // TUNE seconds per full breathe cycle
+            const float MIN_LEVEL = 0.15f;        // TUNE how deep the glow dims at its lowest point
+            const float MAX_LEVEL = 0.50f;        // TUNE ceiling
+            const float EASE_CURVE = 1.5f;        // TUNE higher = softer, more lingering ease in/out
+
+            float t = fx_t();   // shared clock - see light_effects_helpers.h
+            float breathe = sinf((t / BREATHE_PERIOD) * 6.2831853f) * 0.5f + 0.5f;
+            breathe = powf(breathe, EASE_CURVE);
+            float level = MIN_LEVEL + (MAX_LEVEL - MIN_LEVEL) * breathe;
+
+            out_white(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                      id(warm_output), id(cold_output), 0.0f, level);
+
+      # ------------------------------------------------------------------
+      # 4. Color Temperature Sweep
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Color Temperature Sweep"
+          update_interval: 40ms
+          lambda: |-
+            const float PERIOD = 60.0f;       // TUNE seconds for a full warm<->cool cycle
+            const float BRIGHTNESS = 0.6f;    // TUNE overall level - total output stays roughly constant
+
+            float t = fx_t();   // shared clock - see light_effects_helpers.h
+            float mix = sinf((t / PERIOD) * 6.2831853f) * 0.5f + 0.5f;   // 0 = full warm, 1 = full cool
+
+            float ww = BRIGHTNESS * (1.0f - mix);
+            float cw = BRIGHTNESS * mix;
+
+            out_white(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                      id(warm_output), id(cold_output), ww, cw);
+      - lambda:
+          name: "Lightning Storm (White)"
+          update_interval: 20ms
+          lambda: |-
+            // Stateless, like the RGB Lightning Storm: the whole strike
+            // schedule is a function of the slot number (same slot length and
+            // salts), so every bulb - and every RGB light running Lightning
+            // Storm - flashes on the same stroke of the same strike.
+            auto noise1d = [](float x) -> float {
+              return sinf(x * 1.0f) * 0.500f
+                   + sinf(x * 2.13f + 1.7f) * 0.250f
+                   + sinf(x * 4.07f + 3.1f) * 0.125f
+                   + sinf(x * 8.53f + 0.6f) * 0.0625f;
+            };
+
+            double T = fx_seconds();
+            uint32_t slot; float within;
+            sync_slot(T, 6.0f, slot, within);
+
+            int   flashes = 1 + (int) (sync_random(slot, 1) * 4.0f);   // 1-4
+            float strike_at = 0.3f + sync_random(slot, 2) * 3.5f;
+
+            float flash = 0.0f;
+            float cursor = strike_at;
+            for (int i = 0; i < flashes; i++) {
+              float on_len  = 0.030f + sync_random(slot, 10 + i) * 0.070f;
+              float gap_len = 0.040f + sync_random(slot, 20 + i) * 0.180f;
+              if (within >= cursor && within < cursor + on_len) {
+                flash = 0.45f + sync_random(slot, 30 + i) * 0.55f;
+                break;
+              }
+              // Afterglow: the stroke decays into the gap instead of cutting off.
+              if (within >= cursor + on_len && within < cursor + on_len + gap_len) {
+                float lvl = 0.45f + sync_random(slot, 30 + i) * 0.55f;
+                float g = lvl * expf(-(within - cursor - on_len) * 16.0f);
+                if (g > flash) flash = g;
+              }
+              cursor += on_len + gap_len;
+            }
+
+            // dim warm ambient with a very faint slow shimmer
+            float amb = 0.02f + 0.03f * (noise1d(fx_t() * 0.5f) * 0.5f + 0.5f);   // TUNE ambient range
+
+            out_white(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                      id(warm_output), id(cold_output), amb, flash);
+
+      - lambda:
+          name: "Wake-Up Alarm (White)"
+          update_interval: 2s
+          lambda: |-
+            static uint32_t start_ms = 0;
+            if (initial_run) { start_ms = millis(); }
+
+            const float DURATION_S = 600.0f;   // TUNE total ramp duration in seconds (600 = 10 min)
+
+            uint32_t now_ms = millis();
+            float elapsed = (now_ms - start_ms) / 1000.0f;
+            float t = elapsed / DURATION_S;
+            if (t > 1.0f) t = 1.0f;   // holds at full bright once the ramp completes
+
+            float ww, cw;
+            if (t < 0.5f) {
+              // first half: warm rises from off
+              float local = t / 0.5f;
+              ww = local;
+              cw = 0.0f;
+            } else {
+              // second half: cool rises, warm recedes slightly but stays present
+              float local = (t - 0.5f) / 0.5f;
+              ww = 1.0f - local * 0.4f;
+              cw = local;
+            }
+
+            out_white(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                      id(warm_output), id(cold_output), ww, cw);
+
+      - lambda:
+          name: "Focus Breathing (Cool White)"
+          update_interval: 30ms
+          lambda: |-
+            const float BREATHE_PERIOD = 4.0f;   // TUNE quicker than Moonlight Glow
+            const float MIN_LEVEL = 0.50f;       // TUNE brighter floor - this is for staying alert
+            const float MAX_LEVEL = 0.90f;
+            const float EASE_CURVE = 1.3f;
+
+            float t = fx_t();   // shared clock - see light_effects_helpers.h
+            float breathe = sinf((t / BREATHE_PERIOD) * 6.2831853f) * 0.5f + 0.5f;
+            breathe = powf(breathe, EASE_CURVE);
+            float level = MIN_LEVEL + (MAX_LEVEL - MIN_LEVEL) * breathe;
+
+            out_white(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                      id(warm_output), id(cold_output), 0.0f, level);
+
+      - lambda:
+          name: "Wind-Down Breathing (Warm White)"
+          update_interval: 40ms
+          lambda: |-
+            const float BREATHE_PERIOD = 12.0f;   // TUNE slower than Focus Breathing
+            const float MIN_LEVEL = 0.10f;        // TUNE dim floor - this is for winding down
+            const float MAX_LEVEL = 0.35f;
+            const float EASE_CURVE = 1.8f;        // TUNE softer, more lingering than Focus Breathing
+
+            float t = fx_t();   // shared clock - see light_effects_helpers.h
+            float breathe = sinf((t / BREATHE_PERIOD) * 6.2831853f) * 0.5f + 0.5f;
+            breathe = powf(breathe, EASE_CURVE);
+            float level = MIN_LEVEL + (MAX_LEVEL - MIN_LEVEL) * breathe;
+
+            out_white(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                      id(warm_output), id(cold_output), level, 0.0f);
+
+      - lambda:
+          name: "Heartbeat Pulse (White)"
+          update_interval: 20ms
+          lambda: |-
+            const float BPM = 60.0f;   // TUNE beats per minute
+            const float PERIOD = 60.0f / BPM;
+
+            const float LUB_CENTER = 0.08f, LUB_WIDTH = 0.05f, LUB_STRENGTH = 1.0f;
+            const float DUB_CENTER = 0.22f, DUB_WIDTH = 0.04f, DUB_STRENGTH = 0.6f;
+            const float MIN_LEVEL = 0.03f;
+
+            // Shared clock: every bulb beats together, in step with the RGB
+            // Heartbeat on the other light families.
+            float phase = (float) (fmod(fx_seconds(), (double) PERIOD) / PERIOD);
+
+            float dl = phase - LUB_CENTER;
+            float lub = expf(-(dl * dl) / (2.0f * LUB_WIDTH * LUB_WIDTH)) * LUB_STRENGTH;
+            float dd = phase - DUB_CENTER;
+            float dub = expf(-(dd * dd) / (2.0f * DUB_WIDTH * DUB_WIDTH)) * DUB_STRENGTH;
+
+            float intensity = lub + dub; if (intensity > 1.0f) intensity = 1.0f;
+            float level = MIN_LEVEL + (1.0f - MIN_LEVEL) * intensity;
+
+            out_white(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                      id(warm_output), id(cold_output), level, 0.0f);
+      - lambda:
+          name: "Fog (White)"
+          update_interval: 30ms
+          lambda: |-
+            auto noise1d = [](float x) -> float {
+              return sinf(x * 1.0f) * 0.500f
+                   + sinf(x * 2.13f + 1.7f) * 0.250f
+                   + sinf(x * 4.07f + 3.1f) * 0.125f
+                   + sinf(x * 8.53f + 0.6f) * 0.0625f;
+            };
+
+            float t = fx_t();   // shared clock - see light_effects_helpers.h
+
+            // slow multi-minute thickness breathing, same as Rolling Fog
+            float thickness = 0.5f + 0.5f * (sinf(t * 0.02f) * 0.5f + 0.5f);   // TUNE
+
+            float layer1 = noise1d(t * 0.9f);
+            float layer2 = noise1d(-t * 0.6f + 5.2f);
+            float layer3 = noise1d(t * 1.3f + 2.7f);
+            float combined = layer1 * 0.50f + layer2 * 0.35f + layer3 * 0.15f;   // TUNE layer weights
+
+            float v = combined * 0.5f + 0.5f;
+            v *= thickness;
+            if (v < 0.0f) v = 0.0f;
+            if (v > 1.0f) v = 1.0f;
+
+            const float CW_MAX = 0.60f;        // TUNE overall fog brightness ceiling
+            const float WW_UNDERTONE = 0.08f;  // TUNE how much warmth softens the cold white
+
+            float cw = v * CW_MAX;
+            float ww = v * WW_UNDERTONE;   // scales with density so it never overpowers thin fog
+
+            out_white(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                      id(warm_output), id(cold_output), ww, cw);

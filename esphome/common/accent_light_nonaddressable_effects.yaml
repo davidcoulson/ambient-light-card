@@ -1,0 +1,1568 @@
+# ---------------------------------------------------------------------------
+# UPDATED: all effects now write directly to red_output/green_output/
+# blue_output instead of going through id(accent_light).turn_on()....
+# perform(). The turn_on()/perform() pattern sends a new commanded state
+# to Home Assistant on every call - with these effects updating every
+# 20-100ms, that was generating constant state traffic. Writing straight
+# to the outputs never touches the light's tracked current_values, so HA
+# sees no change at all while an effect is running - same reason
+# addressable ring effects never had this problem in the first place.
+#
+# TRADE-OFFS to know about:
+#   1. `gamma_correct:` on the light: platform (if set) no longer applies
+#      to the effect's own colours, since it's applied inside the LightCall
+#      pipeline. BRIGHTNESS does apply: every effect writes through
+#      out_rgb() (light_effects_helpers.h), which scales the frame by the
+#      slider through the light's gamma curve. At 100 % nothing changes.
+#   2. `set_transition_length()` calls were removed along with turn_on() -
+#      they have no effect once you bypass LightCall. Any smoothing you
+#      see is entirely from each effect's own decay/interpolation math.
+#   3. Home Assistant's light card will keep showing whatever color was
+#      last set via a REAL light call (e.g. right before selecting one of
+#      these effects) for as long as the effect runs - it has no way to
+#      know the color is changing underneath it. This is expected.
+#   4. red_output/green_output/blue_output must be the SAME output: IDs
+#      already bound as this light's red/green/blue channels.
+#
+# Single-pixel (non-addressable RGB light) adaptations of ring effects
+# whose core mechanic survives losing the spatial dimension - using
+# ESPHome's plain `lambda` light effect, writing to outputs directly
+# rather than through LightCall.
+#
+# Shared color math (hsv_to_rgb, lerp_palette16) lives in
+# light_effects_helpers.h, wired in below via esphome.includes, rather
+# than being redefined in every effect that needs it.
+#
+# Uses !extend to merge these effects into your existing accent_light
+# declaration (platform: rgb, per your real config) rather than
+# redeclaring the platform/outputs here - redeclaring would conflict with
+# your actual light block.
+#
+# Effects included, in the order Home Assistant lists them. This matches
+# the set the basement lumary lights shipped with before the effect list
+# was trimmed; the order is reproduced deliberately so the picker looks
+# the same as it did.
+#
+#   Flicker*                 Pacifica              Gentle Tide
+#   Flicker 95*              Rolling Fog           Rainfall Hush
+#   Fairytwinkle             Candle Flicker        Aquarium Glow
+#   Fireworks Burst          Fireplace Embers      Northern Lights Whisper
+#   Beacon Pulse             Lightning Storm       Warm Ember Glow
+#   Heartbeat Pulse          Sunrise/Sunset        Lullaby Stars
+#   Soft Glow                Neon Sign Flicker
+#   Rolling Fog (Pronounced) Plasma
+#   Pacifica (Calm Lagoon)   Moonrise
+#   Pacifica (Storm)         Water Caustics
+#   Aurora (Solar Storm)     Aurora Breathing
+#   Aurora (Pastel Dream)    Disco Strobe
+#   Aurora (Red Sky)
+#   TwinkleUp (Picker)
+#   TwinkleCat (Picker)
+#   Bubbles
+#   Disco Sparkle
+#   Pacifica (Deep Current)
+#
+# * built-in ESPHome effects, which go through LightCall on the picker
+#   color; everything else writes to the outputs directly, as described
+#   above.
+# ---------------------------------------------------------------------------
+
+esphome:
+  includes:
+    - common/light_effects_helpers.h
+
+light:
+  - platform: rgb
+    id: !extend accent_light
+    effects:
+      # ------------------------------------------------------------------
+      # Flicker / Flicker 95 - ESPHome's built-in flicker, which works
+      # through LightCall on whatever color the picker is set to, unlike
+      # the hand-written effects below. Kept first so the effect list
+      # opens with the two cheap generic options.
+      # ------------------------------------------------------------------
+      - flicker:
+      - flicker:
+          name: "Flicker 95"
+          alpha: 95%
+          intensity: 5%
+
+      # ------------------------------------------------------------------
+      # 1. Fairytwinkle
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Fairytwinkle"
+          update_interval: 40ms
+          lambda: |-
+            static const uint8_t pal_fairy[16][3] = {
+              {255,214,140},{255,200,150},{255,190,170},{255,180,195},
+              {250,175,215},{240,175,230},{225,180,240},{205,185,245},
+              {185,195,250},{165,205,250},{150,215,250},{140,225,245},
+              {150,230,235},{170,235,225},{200,240,215},{230,245,210}
+            };
+
+            // Deliberately offset per light: this one wants to look scattered.
+            double T = fx_seconds()
+                       + sync_offset("${mac}") * 6.0f;
+            uint32_t slot; float within;
+            sync_slot(T, 6.0f, slot, within);
+
+            const float FADE_IN = 0.8f, FADE_OUT = 1.2f;
+            float hold = 1.2f + sync_random(slot, 1) * 2.0f;
+            float hue = sync_random(slot, 2);
+
+            float brightness = 0.0f;
+            if (within < FADE_IN)
+              brightness = within / FADE_IN;
+            else if (within < FADE_IN + hold)
+              brightness = 1.0f;
+            else if (within < FADE_IN + hold + FADE_OUT)
+              brightness = 1.0f - (within - FADE_IN - hold) / FADE_OUT;
+
+            float r, g, b;
+            lerp_palette16(pal_fairy, hue * 15.0f, r, g, b);
+            r *= brightness; g *= brightness; b *= brightness;
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    r / 255.0f, g / 255.0f, b / 255.0f);
+
+      # ------------------------------------------------------------------
+      # 2. Fireworks Burst
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Fireworks Burst"
+          update_interval: 20ms
+          lambda: |-
+            double T = fx_seconds();
+            uint32_t slot; float within;
+            sync_slot(T, 5.0f, slot, within);
+
+            const float LAUNCH = 0.60f, DECAY = 0.90f;
+            float start = sync_random(slot, 1) * (5.0f - LAUNCH - DECAY);
+            float hue = sync_random(slot, 2);
+
+            float r = 0, g = 0, b = 0;
+            float rel = within - start;
+            if (rel >= 0.0f && rel < LAUNCH) {
+              float level = (rel / LAUNCH) * 0.4f;      // the climb, still white
+              r = g = b = level;
+            } else if (rel >= LAUNCH && rel < LAUNCH + DECAY) {
+              float f = (rel - LAUNCH) / DECAY;
+              float decay = (1.0f - f) * (1.0f - f);
+              hsv_to_rgb(hue, 0.85f, decay, r, g, b);
+            }
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # 3. Beacon Pulse
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Beacon Pulse"
+          update_interval: 30ms
+          lambda: |-
+            const uint8_t AMB_R = 2, AMB_G = 2, AMB_B = 6;
+            const uint8_t BEAM_R = 255, BEAM_G = 220, BEAM_B = 140;
+
+            const float PERIOD = 3.0f;
+            const float FLASH_WIDTH = 0.15f;
+
+            float t = fx_t();
+            float phase = fmodf(t, PERIOD) / PERIOD;
+            float d = phase; if (d > 0.5f) d = 1.0f - d;
+            float flash = expf(-(d * d) / (2.0f * FLASH_WIDTH * FLASH_WIDTH));
+
+            float r = AMB_R + (BEAM_R - AMB_R) * flash;
+            float g = AMB_G + (BEAM_G - AMB_G) * flash;
+            float b = AMB_B + (BEAM_B - AMB_B) * flash;
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    r / 255.0f, g / 255.0f, b / 255.0f);
+
+      # ------------------------------------------------------------------
+      # 4. Heartbeat Pulse
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Heartbeat Pulse"
+          update_interval: 5ms
+          lambda: |-
+            const float BPM = 60.0f;
+            const float PERIOD = 60.0f / BPM;
+
+            // Intensity: calmer = a shallower beat; beyond normal the beats
+            // get sharper, the "dub" harder, and the gap between them darker.
+            const float X = fx_extra();
+            const float LUB_CENTER = 0.08f, LUB_WIDTH = 0.05f * (1.0f - 0.35f * X), LUB_STRENGTH = 1.0f;
+            const float DUB_CENTER = 0.22f, DUB_WIDTH = 0.04f * (1.0f - 0.35f * X), DUB_STRENGTH = 0.6f + 0.3f * X;
+            const float MIN_LEVEL = 0.03f * (1.0f - X);
+            const float SWING = fx_calm(0.3f);
+
+            const uint8_t HEART_R = 200, HEART_G = 10, HEART_B = 30;
+
+            float t = fx_t();
+            float phase = fmodf(t, PERIOD) / PERIOD;
+            if (phase < 0) phase += 1.0f;
+
+            float dl = phase - LUB_CENTER;
+            float lub = expf(-(dl * dl) / (2.0f * LUB_WIDTH * LUB_WIDTH)) * LUB_STRENGTH;
+            float dd = phase - DUB_CENTER;
+            float dub = expf(-(dd * dd) / (2.0f * DUB_WIDTH * DUB_WIDTH)) * DUB_STRENGTH;
+
+            float intensity = lub + dub; if (intensity > 1.0f) intensity = 1.0f;
+            float level = MIN_LEVEL + (1.0f - MIN_LEVEL) * intensity * SWING;
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    (HEART_R * level) / 255.0f, (HEART_G * level) / 255.0f, (HEART_B * level) / 255.0f);
+
+      # ------------------------------------------------------------------
+      # 5. Soft Glow
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Soft Glow"
+          update_interval: 30ms
+          lambda: |-
+            // Colour only - out_rgb() applies the brightness. as_rgb() folds
+            // brightness in already, which would now dim this one twice.
+            auto cv = id(accent_light).current_values;
+            float ur = cv.get_red(), ug = cv.get_green(), ub = cv.get_blue();
+
+            const float BREATHE_PERIOD = 8.0f;
+            const float MIN_LEVEL = 0.55f;
+            const float EASE_CURVE = 1.5f;
+
+            float t = fx_t();
+            float breathe = sinf((t / BREATHE_PERIOD) * 6.2831853f) * 0.5f + 0.5f;
+            breathe = powf(breathe, EASE_CURVE);
+            float level = MIN_LEVEL + (1.0f - MIN_LEVEL) * breathe;
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    ur * level, ug * level, ub * level);
+
+      # ------------------------------------------------------------------
+      # 6. Rolling Fog (Pronounced)
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Rolling Fog (Pronounced)"
+          update_interval: 30ms
+          lambda: |-
+            static const uint8_t pal_fog[16][3] = {
+              {10,12,14},{20,22,25},{35,37,40},{50,53,58},
+              {65,68,74},{80,84,92},{95,100,108},{110,115,124},
+              {125,130,140},{140,146,156},{158,164,174},{176,182,192},
+              {195,200,208},{212,216,222},{228,231,236},{245,247,250}
+            };
+
+            auto noise1d = [](float x) -> float {
+              return sinf(x * 1.0f) * 0.500f
+                   + sinf(x * 2.13f + 1.7f) * 0.250f
+                   + sinf(x * 4.07f + 3.1f) * 0.125f
+                   + sinf(x * 8.53f + 0.6f) * 0.0625f;
+            };
+
+            float t = fx_t();
+
+            float thickness = 0.35f + 0.65f * (sinf(t * 0.03f) * 0.5f + 0.5f);
+            const float CONTRAST = 1.6f;
+
+            float layer1 = noise1d(t * 1.3f);
+            float layer2 = noise1d(-t * 0.9f + 5.2f);
+            float layer3 = noise1d(t * 1.8f + 2.7f);
+            float combined = layer1 * 0.55f + layer2 * 0.30f + layer3 * 0.15f;
+
+            float v = combined * 0.5f + 0.5f;
+            v *= thickness;
+            v = 0.5f + (v - 0.5f) * CONTRAST;
+            if (v < 0.0f) v = 0.0f;
+            if (v > 1.0f) v = 1.0f;
+
+            float pos = v * 15.0f;
+            float r, g, b;
+            lerp_palette16(pal_fog, pos, r, g, b);
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    r / 255.0f, g / 255.0f, b / 255.0f);
+
+      # ------------------------------------------------------------------
+      # 7. Pacifica (Calm Lagoon)
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Pacifica (Calm Lagoon)"
+          update_interval: 100ms
+          lambda: |-
+
+            // Closed form on the shared clock: each layer's phase is the integral
+            // of its wobbling speed (fx_wobble), so every light computes the same
+            // sea at the same moment. It used to integrate frame by frame from
+            // each light's own boot. Phases stay double until folded by fx_wrap.
+            const double T = fx_seconds();
+            // Intensity: swell height (fx_swing) and foam (fx_accents).
+            const float FX_SWING = fx_swing();
+            const double t1 = fx_wobble(T, 3.5, 2.0, 0.1111111111111111, 0.0);
+            const double t2 = fx_wobble(T, 2.5, 1.5, 0.07692307692307693, 1.0);
+            const double t3 = fx_wobble(T, 2.0, 1.0, 0.058823529411764705, 2.0);
+            const double t4 = fx_wobble(T, 1.2, 0.8, 0.047619047619047616, 3.0);
+
+            static const uint8_t pal_deep[16][3] = {
+              {5,40,42},{6,48,50},{8,58,60},{10,68,70},
+              {12,78,80},{15,90,92},{18,102,104},{22,115,117},
+              {28,128,130},{35,142,144},{45,156,158},{58,170,172},
+              {75,185,187},{95,200,200},{120,215,213},{150,230,225}
+            };
+            static const uint8_t pal_mid[16][3] = {
+              {10,60,62},{14,72,74},{18,85,87},{24,98,100},
+              {30,112,114},{38,126,128},{48,140,142},{60,155,155},
+              {75,170,168},{92,185,180},{112,198,190},{135,210,198},
+              {160,222,205},{188,232,212},{215,242,220},{240,250,232}
+            };
+            static const uint8_t pal_bright[16][3] = {
+              {40,140,140},{60,160,158},{85,180,175},{112,198,190},
+              {140,213,202},{168,225,212},{195,235,222},{215,242,230},
+              {230,247,238},{240,250,244},{247,252,248},{250,253,250},
+              {252,254,252},{253,254,253},{254,255,254},{255,255,255}
+            };
+
+            float wave1 = sinf(fx_wrap(t1 * 0.6, 6.283185307179586)) * 0.5f + 0.5f;
+            float wave2 = sinf(-fx_wrap(t2 * 0.9, 6.283185307179586) + 1.7f) * 0.5f + 0.5f;
+            float wave3 = sinf(fx_wrap(t3 * 0.4, 6.283185307179586) + 3.1f) * 0.5f + 0.5f;
+            float wave4 = sinf(-fx_wrap(t4 * 1.2, 6.283185307179586) + 4.4f) * 0.5f + 0.5f;
+
+            float r = 0, g = 0, b = 0;
+            float lr, lg, lb, pos;
+
+            pos = fmodf(fx_wrap(t1 * 0.8, 16.0), 16.0f); if (pos < 0) pos += 16.0f;
+            lerp_palette16(pal_deep, pos, lr, lg, lb);
+            r += lr; g += lg; b += lb;
+
+            pos = fmodf(wave1*16.0f + fx_wrap(t2 * 0.3, 16.0), 16.0f); if (pos < 0) pos += 16.0f;
+            lerp_palette16(pal_mid, pos, lr, lg, lb);
+            float w1 = (wave1 * 0.55f) * FX_SWING;
+            r += lr * w1; g += lg * w1; b += lb * w1;
+
+            pos = fmodf(wave2*16.0f + fx_wrap(t3 * 0.4, 16.0), 16.0f); if (pos < 0) pos += 16.0f;
+            lerp_palette16(pal_mid, pos, lr, lg, lb);
+            float w2 = (wave2 * 0.45f) * FX_SWING;
+            r += lr * w2; g += lg * w2; b += lb * w2;
+
+            pos = fmodf(wave3*16.0f + fx_wrap(t4 * 0.5, 16.0), 16.0f); if (pos < 0) pos += 16.0f;
+            lerp_palette16(pal_bright, pos, lr, lg, lb);
+            float w3 = (powf(wave3, 3.0f) * 0.5f) * FX_SWING;
+            r += lr * w3; g += lg * w3; b += lb * w3;
+
+            float w4 = (powf(wave4, 4.0f) * 0.35f) * FX_SWING;
+            r += pal_bright[15][0] * w4;
+            g += pal_bright[15][1] * w4;
+            b += pal_bright[15][2] * w4;
+
+            // Foam: the same random swells, drawn from the shared dice.
+            const float foam = fx_gust(T, 0.1, 15, 20.0f, 40.0f, 0.85f, 80.0f, 71) * fx_accents();
+            r += foam; g += foam; b += foam;
+
+            if (r > 255) r = 255; if (g > 255) g = 255; if (b > 255) b = 255;
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    r / 255.0f, g / 255.0f, b / 255.0f);
+
+      # ------------------------------------------------------------------
+      # 8. Pacifica (Storm)
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Pacifica (Storm)"
+          update_interval: 100ms
+          lambda: |-
+
+            // Closed form on the shared clock: each layer's phase is the integral
+            // of its wobbling speed (fx_wobble), so every light computes the same
+            // sea at the same moment. It used to integrate frame by frame from
+            // each light's own boot. Phases stay double until folded by fx_wrap.
+            const double T = fx_seconds();
+            // Intensity: swell height (fx_swing) and foam (fx_accents).
+            const float FX_SWING = fx_swing();
+            const double t1 = fx_wobble(T, 10.0, 6.0, 0.16666666666666666, 0.0);
+            const double t2 = fx_wobble(T, 7.0, 5.0, 0.1111111111111111, 1.0);
+            const double t3 = fx_wobble(T, 5.0, 3.0, 0.08333333333333333, 2.0);
+            const double t4 = fx_wobble(T, 3.5, 2.5, 0.06666666666666667, 3.0);
+
+            static const uint8_t pal_deep[16][3] = {
+              {2,3,6},{3,4,8},{4,6,11},{5,8,14},
+              {6,10,18},{8,13,23},{10,17,29},{13,22,36},
+              {17,28,44},{22,36,54},{28,46,66},{36,58,80},
+              {46,72,95},{58,88,110},{72,104,124},{88,120,138}
+            };
+            static const uint8_t pal_mid[16][3] = {
+              {4,6,10},{6,9,15},{9,13,21},{13,18,28},
+              {18,24,36},{24,32,46},{32,42,58},{42,54,72},
+              {54,68,88},{68,84,104},{85,102,120},{104,120,136},
+              {125,138,150},{148,156,162},{172,174,174},{195,192,186}
+            };
+            static const uint8_t pal_bright[16][3] = {
+              {20,24,30},{35,40,48},{55,62,70},{78,86,94},
+              {104,112,118},{132,138,142},{160,164,166},{186,188,188},
+              {206,208,206},{222,224,220},{234,236,232},{242,244,240},
+              {247,249,246},{250,252,249},{253,254,252},{255,255,255}
+            };
+
+            float wave1 = sinf(fx_wrap(t1 * 0.6, 6.283185307179586)) * 0.5f + 0.5f;
+            float wave2 = sinf(-fx_wrap(t2 * 0.9, 6.283185307179586) + 1.7f) * 0.5f + 0.5f;
+            float wave3 = sinf(fx_wrap(t3 * 0.4, 6.283185307179586) + 3.1f) * 0.5f + 0.5f;
+            float wave4 = sinf(-fx_wrap(t4 * 1.2, 6.283185307179586) + 4.4f) * 0.5f + 0.5f;
+
+            float r = 0, g = 0, b = 0;
+            float lr, lg, lb, pos;
+
+            pos = fmodf(fx_wrap(t1 * 0.8, 16.0), 16.0f); if (pos < 0) pos += 16.0f;
+            lerp_palette16(pal_deep, pos, lr, lg, lb);
+            r += lr; g += lg; b += lb;
+
+            pos = fmodf(wave1*16.0f + fx_wrap(t2 * 0.3, 16.0), 16.0f); if (pos < 0) pos += 16.0f;
+            lerp_palette16(pal_mid, pos, lr, lg, lb);
+            float w1 = (wave1 * 0.65f) * FX_SWING;
+            r += lr * w1; g += lg * w1; b += lb * w1;
+
+            pos = fmodf(wave2*16.0f + fx_wrap(t3 * 0.4, 16.0), 16.0f); if (pos < 0) pos += 16.0f;
+            lerp_palette16(pal_mid, pos, lr, lg, lb);
+            float w2 = (wave2 * 0.55f) * FX_SWING;
+            r += lr * w2; g += lg * w2; b += lb * w2;
+
+            pos = fmodf(wave3*16.0f + fx_wrap(t4 * 0.5, 16.0), 16.0f); if (pos < 0) pos += 16.0f;
+            lerp_palette16(pal_bright, pos, lr, lg, lb);
+            float w3 = (powf(wave3, 2.2f) * 0.85f) * FX_SWING;
+            r += lr * w3; g += lg * w3; b += lb * w3;
+
+            float w4 = (powf(wave4, 3.0f) * 0.65f) * FX_SWING;
+            r += pal_bright[15][0] * w4;
+            g += pal_bright[15][1] * w4;
+            b += pal_bright[15][2] * w4;
+
+            // Foam: the same random swells, drawn from the shared dice.
+            const float foam = fx_gust(T, 0.1, 40, 80.0f, 140.0f, 0.80f, 220.0f, 71) * fx_accents();
+            r += foam; g += foam; b += foam;
+
+            if (r > 255) r = 255; if (g > 255) g = 255; if (b > 255) b = 255;
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    r / 255.0f, g / 255.0f, b / 255.0f);
+
+      # ------------------------------------------------------------------
+      # 9. Aurora (Solar Storm)
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Aurora (Solar Storm)"
+          update_interval: 30ms
+          lambda: |-
+            static const uint8_t pal_aurora[16][3] = {
+              {0,40,10},{0,70,20},{10,100,30},{20,140,40},
+              {40,180,60},{60,210,90},{50,200,130},{40,180,170},
+              {30,150,200},{40,120,210},{70,90,210},{110,70,200},
+              {150,60,190},{190,60,170},{210,70,140},{180,90,120}
+            };
+
+            const float HUE_SPEED = 0.55f;
+            float t = fx_t();
+            float hue_pos = fmodf(t * HUE_SPEED, 16.0f);
+            if (hue_pos < 0) hue_pos += 16.0f;
+
+            float breathing = sinf(t * 0.35f) * 0.5f + 0.5f;
+            breathing = powf(breathing, 1.1f);
+            float scale = 0.35f + 0.65f * breathing;
+            scale = clamp01(0.675f + (scale - 0.675f) * fx_swing());   // intensity: breathing depth
+
+            float r, g, b;
+            lerp_palette16(pal_aurora, hue_pos, r, g, b);
+            r *= scale; g *= scale; b *= scale;
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    r / 255.0f, g / 255.0f, b / 255.0f);
+
+      # ------------------------------------------------------------------
+      # 10. Aurora (Pastel Dream)
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Aurora (Pastel Dream)"
+          update_interval: 40ms
+          lambda: |-
+            static const uint8_t pal_aurora[16][3] = {
+              {140,190,155},{140,205,165},{145,215,170},{150,225,175},
+              {160,235,185},{170,245,200},{165,240,215},{160,230,225},
+              {155,215,235},{160,200,235},{175,190,235},{195,180,230},
+              {210,175,225},{225,175,220},{235,180,210},{220,185,200}
+            };
+
+            const float HUE_SPEED = 0.06f;
+            float t = fx_t();
+            float hue_pos = fmodf(t * HUE_SPEED, 16.0f);
+            if (hue_pos < 0) hue_pos += 16.0f;
+
+            float breathing = sinf(t * 0.06f) * 0.5f + 0.5f;
+            breathing = sq(breathing);
+            float scale = 0.45f + 0.35f * breathing;
+            scale = clamp01(0.625f + (scale - 0.625f) * fx_swing());   // intensity: breathing depth
+
+            float r, g, b;
+            lerp_palette16(pal_aurora, hue_pos, r, g, b);
+            r *= scale; g *= scale; b *= scale;
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    r / 255.0f, g / 255.0f, b / 255.0f);
+
+      # ------------------------------------------------------------------
+      # 11. Aurora (Red Sky)
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Aurora (Red Sky)"
+          update_interval: 40ms
+          lambda: |-
+            static const uint8_t pal_aurora[16][3] = {
+              {20,0,5},{35,0,8},{55,0,12},{80,2,18},
+              {105,5,25},{130,10,35},{150,20,50},{170,35,68},
+              {185,55,90},{195,80,115},{200,105,140},{205,130,160},
+              {210,150,175},{215,170,190},{220,190,205},{225,205,215}
+            };
+
+            const float HUE_SPEED = 0.15f;
+            float t = fx_t();
+            float hue_pos = fmodf(t * HUE_SPEED, 16.0f);
+            if (hue_pos < 0) hue_pos += 16.0f;
+
+            float breathing = sinf(t * 0.12f) * 0.5f + 0.5f;
+            breathing = powf(breathing, 1.3f);
+            float scale = 0.15f + 0.85f * breathing;
+            scale = clamp01(0.575f + (scale - 0.575f) * fx_swing());   // intensity: breathing depth
+
+            float r, g, b;
+            lerp_palette16(pal_aurora, hue_pos, r, g, b);
+            r *= scale; g *= scale; b *= scale;
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    r / 255.0f, g / 255.0f, b / 255.0f);
+
+      # ------------------------------------------------------------------
+      # ------------------------------------------------------------------
+      # TwinkleUp (Picker) - twinkles in the picker's own color. Soft
+      # symmetric fade up and back down, one twinkle at a time since
+      # there is only one pixel to work with.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "TwinkleUp (Picker)"
+          update_interval: 30ms
+          lambda: |-
+            // Deliberately offset per light: this one wants to look scattered.
+            double T = fx_seconds()
+                       + sync_offset("${mac}") * 2.0f;
+            uint32_t slot; float within;
+            sync_slot(T, 2.0f, slot, within);
+
+            float peak  = 0.55f + sync_random(slot, 1) * 0.45f;
+            float floor_level = 0.08f + sync_random(slot, 2) * 0.12f;
+
+            // Triangle envelope across the slot: up for the first half, back
+            // down for the second. sinf() would flatten the peak into a pause.
+            float f = within / 2.0f;
+            float env = f < 0.5f ? (f * 2.0f) : ((1.0f - f) * 2.0f);
+            float level = floor_level + (peak - floor_level) * env;
+
+            auto cv = id(accent_light).current_values;
+            float pr = cv.get_red(), pg = cv.get_green(), pb = cv.get_blue();
+            if (pr + pg + pb < 0.05f) { pr = 1.0f; pg = 0.85f; pb = 0.6f; }
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    pr * level, pg * level, pb * level);
+
+      # ------------------------------------------------------------------
+      # TwinkleCat (Picker) - same picker color, opposite character:
+      # instant attack then exponential decay, and fires more often, so it
+      # reads as sharp sparkles rather than a slow breath.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "TwinkleCat (Picker)"
+          update_interval: 25ms
+          lambda: |-
+            // Deliberately offset per light: this one wants to look scattered.
+            double T = fx_seconds()
+                       + sync_offset("${mac}") * 0.9f;
+            uint32_t slot; float within;
+            sync_slot(T, 0.9f, slot, within);
+
+            float peak = 0.5f + sync_random(slot, 1) * 0.5f;
+            float level = peak * expf(-3.5f * (within / 0.9f)) + 0.06f;
+
+            auto cv = id(accent_light).current_values;
+            float pr = cv.get_red(), pg = cv.get_green(), pb = cv.get_blue();
+            if (pr + pg + pb < 0.05f) { pr = 1.0f; pg = 0.85f; pb = 0.6f; }
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    pr * level, pg * level, pb * level);
+
+      # 12. Bubbles
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Bubbles"
+          update_interval: 40ms
+          lambda: |-
+            // Deliberately offset per light: this one wants to look scattered.
+            double T = fx_seconds()
+                       + sync_offset("${mac}") * 6.0f;
+            uint32_t slot; float within;
+            sync_slot(T, 6.0f, slot, within);
+
+            float life = 2.0f + sync_random(slot, 1) * 3.0f;   // 2-5 s afloat
+            float hue  = 0.5f + sync_random(slot, 2) * 0.25f;
+            const float POP = 0.33f;                            // pop flash decay
+
+            float r = 0, g = 0, b = 0;
+            if (within < life) {
+              hsv_to_rgb(hue, 0.35f, 0.5f, r, g, b);
+            } else if (within < life + POP) {
+              float flash = 1.0f - (within - life) / POP;
+              hsv_to_rgb(hue, 0.15f, flash, r, g, b);
+            }
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # 13. Disco Sparkle
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Disco Sparkle"
+          update_interval: 30ms
+          lambda: |-
+            // Deliberately offset per light: this one wants to look scattered.
+            double T = fx_seconds()
+                       + sync_offset("${mac}") * 1.0f;
+            float t = sync_fold(T);
+            float hue = fmodf(t * 0.05f, 1.0f);
+
+            float br, bg, bb;
+            hsv_to_rgb(hue, 0.8f, 0.25f, br, bg, bb);
+
+            // Sparks fire on a 30 ms grid; look back a few buckets and keep the
+            // brightest still-decaying one instead of remembering the last.
+            const float STEP = 0.03f;
+            uint32_t b_now = sync_bucket(T, STEP);
+            float flash = 0.0f;
+            for (int k = 0; k < 10; k++) {
+              uint32_t b = b_now - k;
+              if (sync_random(b, 7) < 0.008f) {
+                float v = powf(0.75f, (float) k);
+                if (v > flash) flash = v;
+              }
+            }
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    br * (1 - flash) + flash, bg * (1 - flash) + flash, bb * (1 - flash) + flash);
+
+      # ------------------------------------------------------------------
+      # 14. Pacifica (Deep Current)
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Pacifica (Deep Current)"
+          update_interval: 100ms
+          lambda: |-
+
+            // Closed form on the shared clock: each layer's phase is the integral
+            // of its wobbling speed (fx_wobble), so every light computes the same
+            // sea at the same moment. It used to integrate frame by frame from
+            // each light's own boot. Phases stay double until folded by fx_wrap.
+            const double T = fx_seconds();
+            // Intensity: swell height (fx_swing) and foam (fx_accents).
+            const float FX_SWING = fx_swing();
+            const double t1 = fx_wobble(T, 4.0, 2.0, 0.09090909090909091, 0.0);
+            const double t2 = fx_wobble(T, 3.0, 1.5, 0.06666666666666667, 1.0);
+            const double t3 = fx_wobble(T, 2.0, 1.0, 0.05263157894736842, 2.0);
+            const double t4 = fx_wobble(T, 1.2, 0.6, 0.043478260869565216, 3.0);
+
+            static const uint8_t pal_deep[16][3] = {
+              {0,1,4},{0,1,6},{0,2,8},{0,2,10},
+              {0,3,13},{0,4,16},{1,5,20},{1,6,24},
+              {2,8,29},{3,10,34},{4,13,40},{6,17,47},
+              {9,22,54},{13,28,62},{18,36,70},{24,45,78}
+            };
+            static const uint8_t pal_mid[16][3] = {
+              {1,2,8},{2,3,12},{3,5,17},{4,7,23},
+              {6,10,30},{8,14,38},{11,19,47},{15,25,57},
+              {20,32,68},{27,41,80},{35,52,92},{45,65,105},
+              {58,80,118},{73,97,130},{92,116,142},{114,137,154}
+            };
+            static const uint8_t pal_bright[16][3] = {
+              {3,4,15},{5,7,22},{8,11,31},{12,17,42},
+              {18,25,54},{25,35,68},{34,47,83},{45,62,99},
+              {58,79,115},{74,98,131},{92,118,146},{113,138,160},
+              {136,158,172},{160,177,183},{186,196,193},{212,215,206}
+            };
+
+            float wave1 = sinf(fx_wrap(t1 * 0.6, 6.283185307179586)) * 0.5f + 0.5f;
+            float wave2 = sinf(-fx_wrap(t2 * 0.9, 6.283185307179586) + 1.7f) * 0.5f + 0.5f;
+            float wave3 = sinf(fx_wrap(t3 * 0.4, 6.283185307179586) + 3.1f) * 0.5f + 0.5f;
+            float wave4 = sinf(-fx_wrap(t4 * 1.2, 6.283185307179586) + 4.4f) * 0.5f + 0.5f;
+
+            float r = 0, g = 0, b = 0;
+            float lr, lg, lb, pos;
+
+            pos = fmodf(fx_wrap(t1 * 0.8, 16.0), 16.0f); if (pos < 0) pos += 16.0f;
+            lerp_palette16(pal_deep, pos, lr, lg, lb);
+            r += lr; g += lg; b += lb;
+
+            pos = fmodf(wave1*16.0f + fx_wrap(t2 * 0.3, 16.0), 16.0f); if (pos < 0) pos += 16.0f;
+            lerp_palette16(pal_mid, pos, lr, lg, lb);
+            float w1 = (wave1 * 0.45f) * FX_SWING;
+            r += lr * w1; g += lg * w1; b += lb * w1;
+
+            pos = fmodf(wave2*16.0f + fx_wrap(t3 * 0.4, 16.0), 16.0f); if (pos < 0) pos += 16.0f;
+            lerp_palette16(pal_mid, pos, lr, lg, lb);
+            float w2 = (wave2 * 0.35f) * FX_SWING;
+            r += lr * w2; g += lg * w2; b += lb * w2;
+
+            pos = fmodf(wave3*16.0f + fx_wrap(t4 * 0.5, 16.0), 16.0f); if (pos < 0) pos += 16.0f;
+            lerp_palette16(pal_bright, pos, lr, lg, lb);
+            float w3 = (powf(wave3, 4.5f) * 0.40f) * FX_SWING;
+            r += lr * w3; g += lg * w3; b += lb * w3;
+
+            float w4 = (powf(wave4, 5.0f) * 0.25f) * FX_SWING;
+            r += pal_bright[15][0] * w4;
+            g += pal_bright[15][1] * w4;
+            b += pal_bright[15][2] * w4;
+
+            // Foam: the same random swells, drawn from the shared dice.
+            const float foam = fx_gust(T, 0.1, 4, 10.0f, 20.0f, 0.90f, 50.0f, 71) * fx_accents();
+            r += foam; g += foam; b += foam;
+
+            if (r > 255) r = 255; if (g > 255) g = 255; if (b > 255) b = 255;
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    r / 255.0f, g / 255.0f, b / 255.0f);
+
+      # ------------------------------------------------------------------
+      # Pacifica - the plain variant, sitting between Calm Lagoon and
+      # Storm. Three sine layers at unrelated periods beat against each
+      # other so the swell never repeats on a period you can spot.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Pacifica"
+          update_interval: 40ms
+          lambda: |-
+            float t = fx_t();
+            // Intensity: the swell's height.
+            float wave = 0.45f + (0.26f * sinf(t * 0.37f)
+                               + 0.16f * sinf(t * 0.61f)
+                               + 0.08f * sinf(t * 1.13f)) * fx_swing();
+            float hue = 0.505f + 0.055f * sinf(t * 0.23f);
+            float r, g, b;
+            hsv_to_rgb(hue, 0.88f, clamp01(wave), r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Rolling Fog - the subtle sibling of Rolling Fog (Pronounced):
+      # same slow grey-blue drift, shallower brightness swing.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Rolling Fog"
+          update_interval: 60ms
+          lambda: |-
+            float t = fx_t();
+            float density = 0.34f + 0.12f * sinf(t * 0.16f) + 0.05f * sinf(t * 0.41f);
+            float hue = 0.57f + 0.03f * sinf(t * 0.11f);
+            float r, g, b;
+            hsv_to_rgb(hue, 0.20f, clamp01(density), r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Candle Flicker - warm candle flame. Brightness is a random walk
+      # rather than pure noise, so it wanders instead of buzzing, with
+      # occasional deeper guttering dips.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Candle Flicker"
+          update_interval: 50ms
+          lambda: |-
+            // The random walk this used to do cannot be shared between lights,
+            // so the wander now comes from value noise: interpolate the clock's
+            // draws for adjacent 120 ms buckets. Same restless look, and every
+            // light lands on the same value at the same moment.
+            // Deliberately offset per light: this one wants to look scattered.
+            double T = fx_seconds()
+                       + sync_offset("${mac}") * 7.0f;
+            const float STEP = 0.12f;
+
+            uint32_t b0 = sync_bucket(T, STEP);
+            float    f  = (float) (T / STEP - floor(T / STEP));
+            float    n0 = sync_random(b0, 1), n1 = sync_random(b0 + 1, 1);
+            float    smooth = f * f * (3.0f - 2.0f * f);         // ease, no corners
+            float    noise = n0 + (n1 - n0) * smooth;
+
+            // Guttering: a slower slot occasionally knocks the flame down.
+            uint32_t slot; float within;
+            sync_slot(T, 7.0f, slot, within);
+            float gutter_at = sync_random(slot, 2) * 6.0f;
+            // Intensity: calmer = a steadier flame that barely gutters; beyond
+            // normal = deeper flicker and longer, more frequent gutters.
+            const float X = fx_extra();
+            const float CALM = fx_calm(0.0f);
+            float gutter_len = (0.18f + sync_random(slot, 3) * 0.40f) * (1.0f + 1.5f * X);
+            bool guttering = (within >= gutter_at && within < gutter_at + gutter_len);
+
+            float flame = 0.62f + 0.30f * noise * fx_calm(0.25f) * (1.0f + 0.6f * X) - 0.10f * X;
+            float level = guttering ? flame + ((0.18f + 0.10f * noise) - flame) * CALM
+                                    : flame;
+            level = clamp01(level);
+
+            // Colour shifts toward red as it dims, the way a real flame does
+            // when a draught knocks it down.
+            float warmth = 0.55f + 0.45f * level;
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    level, level * 0.42f * warmth, level * 0.07f * warmth);
+
+      # ------------------------------------------------------------------
+      # Fireplace Embers - what is left once the flames are gone. Deep
+      # red base, slow breathing, and occasional flare-ups when a draught
+      # catches a coal.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Fireplace Embers"
+          update_interval: 60ms
+          lambda: |-
+            // Deliberately offset per light: this one wants to look scattered.
+            double T = fx_seconds()
+                       + sync_offset("${mac}") * 6.0f;
+            float t = sync_fold(T);
+
+            uint32_t slot; float within;
+            sync_slot(T, 6.0f, slot, within);
+
+            // A draught catches a coal at a slot-determined moment, then fades.
+            float flare_at = sync_random(slot, 1) * 5.0f;
+            float flare = 0.0f;
+            if (within >= flare_at) {
+              float peak = (0.35f + sync_random(slot, 2) * 0.40f) * fx_accents();   // intensity: flare size
+              flare = peak * expf(-1.6f * (within - flare_at));
+            }
+
+            float breathe = 0.30f + (0.10f * sinf(t * 0.45f) + 0.05f * sinf(t * 0.93f)) * fx_swing();
+            float level = clamp01(breathe + flare);
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    level, level * (0.18f + 0.22f * flare), level * 0.02f);
+
+      # ------------------------------------------------------------------
+      # Lightning Storm - dim storm-blue base, punctuated by strikes.
+      # A strike is a short burst of 1-4 flashes of differing brightness,
+      # which is what makes it read as lightning rather than a strobe.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Lightning Storm"
+          update_interval: 5ms
+          lambda: |-
+            // Stateless: the storm's whole schedule is a function of the slot
+            // number, so every light strikes on the same flash of the same
+            // strike. This is the effect sync changes most - a room of 30
+            // lights flashing as one instead of 30 private storms.
+            double T = fx_seconds();
+            uint32_t slot; float within;
+            sync_slot(T, 6.0f, slot, within);
+
+            int   flashes = 1 + (int) (sync_random(slot, 1) * 4.0f);   // 1-4
+            float strike_at = 0.3f + sync_random(slot, 2) * 3.5f;
+
+            float level = 0.0f;
+            bool  lit = false;
+            float cursor = strike_at;
+            for (int i = 0; i < flashes; i++) {
+              float on_len  = 0.030f + sync_random(slot, 10 + i) * 0.070f;
+              float gap_len = 0.040f + sync_random(slot, 20 + i) * 0.180f;
+              if (within >= cursor && within < cursor + on_len) {
+                lit = true;
+                level = 0.45f + sync_random(slot, 30 + i) * 0.55f;
+                break;
+              }
+              cursor += on_len + gap_len;
+            }
+
+            if (lit) {
+              out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                      level * 0.92f, level * 0.95f, level);
+            } else {
+              float t = sync_fold(T);
+              float base = 0.045f + 0.02f * sinf(t * 0.3f);
+              out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                      base * 0.3f, base * 0.5f, base);
+            }
+
+      # ------------------------------------------------------------------
+      # Sunrise/Sunset - one very slow pass from night through deep
+      # orange and amber to pale daylight, then back down. A full cycle
+      # is about ten minutes, so it is a mood rather than an alarm; for a
+      # timed wake-up use a script driving the light directly instead.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Sunrise/Sunset"
+          update_interval: 100ms
+          lambda: |-
+            static const uint8_t pal_sun[16][3] = {
+              {4,2,16},{14,5,26},{34,9,30},{68,16,28},
+              {112,28,20},{158,46,14},{198,72,10},{226,104,10},
+              {243,140,18},{250,175,42},{253,205,82},{255,226,130},
+              {255,240,180},{255,248,215},{255,252,238},{255,255,250}
+            };
+
+            // 0 -> 1 -> 0 over ~600s. Triangle rather than sine so the
+            // midday hold at full white does not dominate the cycle.
+            float phase = fmodf(fx_t() / 600.0f, 1.0f);
+            float t = phase < 0.5f ? phase * 2.0f : (1.0f - phase) * 2.0f;
+
+            float r, g, b;
+            lerp_palette16(pal_sun, t * 15.0f, r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    r / 255.0f, g / 255.0f, b / 255.0f);
+
+      # ------------------------------------------------------------------
+      # Neon Sign Flicker - a saturated tube that is mostly steady, with
+      # the dropouts and stutter of failing starter gear. The hue drifts
+      # so slowly you only notice it if you look away and back.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Neon Sign Flicker"
+          update_interval: 30ms
+          lambda: |-
+            // Deliberately offset per light: this one wants to look scattered.
+            double T = fx_seconds()
+                       + sync_offset("${mac}") * 4.0f;
+            float t = sync_fold(T);
+
+            uint32_t slot; float within;
+            sync_slot(T, 4.0f, slot, within);
+
+            float ev_at  = sync_random(slot, 1) * 3.0f;
+            bool  dropout = sync_random(slot, 2) < 0.5f;
+            float ev_len = dropout ? (0.04f + sync_random(slot, 3) * 0.12f)
+                                   : (0.20f + sync_random(slot, 3) * 0.35f);
+
+            float level = 0.85f;
+            if (within >= ev_at && within < ev_at + ev_len) {
+              if (dropout) {
+                level = 0.04f;                                   // tube drops out
+              } else {
+                // Starter stutter, driven off the clock so it stutters in step.
+                level = (sync_bucket(T, 0.04) % 2) ? 0.85f : 0.20f;
+              }
+            }
+
+            float hue = fmodf(0.83f + 0.05f * sinf(t * 0.07f), 1.0f);
+            float r, g, b;
+            hsv_to_rgb(hue, 1.0f, level, r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Plasma - hue driven by summed sines at incommensurate rates, full
+      # saturation, near-constant brightness. The single-pixel version of
+      # the classic plasma field.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Plasma"
+          update_interval: 30ms
+          lambda: |-
+            float t = fx_t();
+            float h = 0.5f + 0.5f * (0.55f * sinf(t * 0.31f)
+                                   + 0.30f * sinf(t * 0.73f)
+                                   + 0.15f * sinf(t * 1.27f));
+            float v = 0.72f + 0.14f * sinf(t * 0.52f);
+            float r, g, b;
+            hsv_to_rgb(fmodf(h, 1.0f), 1.0f, clamp01(v), r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Moonrise - a long climb from near-dark to a pale cool white, a
+      # hold at the top, then back down. Roughly an eight minute cycle.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Moonrise"
+          update_interval: 100ms
+          lambda: |-
+            float phase = fmodf(fx_t() / 480.0f, 1.0f);
+            float t;
+            if (phase < 0.40f)        t = phase / 0.40f;              // rising
+            else if (phase < 0.60f)   t = 1.0f;                       // high
+            else                      t = 1.0f - (phase - 0.60f) / 0.40f;
+
+            // Ease so the rise slows as it reaches the top.
+            float eased = t * t * (3.0f - 2.0f * t);
+            float level = 0.03f + 0.62f * eased;
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    level * 0.62f, level * 0.74f, level);
+
+      # ------------------------------------------------------------------
+      # Water Caustics - the bright rippling net of light on the bottom
+      # of a pool. Fast interference between two sines, sharpened with a
+      # power curve so the peaks read as distinct flashes.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Water Caustics"
+          update_interval: 25ms
+          lambda: |-
+            float t = fx_t();
+            float a = sinf(t * 2.7f);
+            float b_ = sinf(t * 3.9f + 1.3f);
+            float interference = 0.5f + 0.5f * (a * b_);
+            float sharp = powf(interference, 3.0f);   // peaks, not a hum
+            float level = 0.16f + 0.74f * sharp;
+            float hue = 0.49f + 0.03f * sinf(t * 0.6f);
+
+            float r, g, b;
+            hsv_to_rgb(hue, 0.62f, clamp01(level), r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Aurora Breathing - aurora greens and violets on a slow breath.
+      # Hue and brightness run at different rates, so the color at the
+      # top of each breath is never quite the same twice.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Aurora Breathing"
+          update_interval: 50ms
+          lambda: |-
+            float t = fx_t();
+            float breath = 0.34f + 0.30f * fx_swing() * (0.5f + 0.5f * sinf(t * 0.21f));   // intensity: breath depth
+            float hue = 0.36f + 0.22f * (0.5f + 0.5f * sinf(t * 0.083f));
+            float sat = 0.72f + 0.18f * sinf(t * 0.13f);
+            float r, g, b;
+            hsv_to_rgb(fmodf(hue, 1.0f), clamp01(sat), clamp01(breath), r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Disco Strobe - hard strobe on a random saturated hue, with the
+      # hue changing every few flashes rather than every flash.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Disco Strobe"
+          update_interval: 5ms
+          lambda: |-
+            // Pure function of the clock: 45 ms on, 95 ms off, hue advancing
+            // every four flashes. Note this is the one effect sync cannot make
+            // look perfect - at a 25 ms update interval the lights sample the
+            // edge at slightly different moments no matter how good the clock.
+            double T = fx_seconds();
+            const float CYCLE = 0.140f;
+
+            float within = (float) fmod(T, (double) CYCLE);
+            bool on = within < 0.045f;
+
+            if (!on) {
+              out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), 0.0f, 0.0f, 0.0f);
+            } else {
+              uint32_t hue_slot = sync_bucket(T, (CYCLE * 4.0));
+              float hue = sync_random(hue_slot, 1);
+              float r, g, b;
+              hsv_to_rgb(hue, 1.0f, 1.0f, r, g, b);
+              out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+            }
+
+      # ------------------------------------------------------------------
+      # Gentle Tide - a long swell between deep blue and teal. The
+      # slowest of the water effects; nothing here happens quickly.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Gentle Tide"
+          update_interval: 60ms
+          lambda: |-
+            float t = fx_t();
+            float swell = 0.5f + 0.5f * sinf(t * 0.085f);
+            float hue = 0.60f - 0.10f * swell;          // blue at low tide, teal at high
+            float level = 0.22f + 0.40f * swell;
+            float r, g, b;
+            hsv_to_rgb(hue, 0.80f, clamp01(level), r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Rainfall Hush - a dim blue-grey base with individual droplets
+      # landing at random. Each droplet is a fast rise and a slower fall.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Rainfall Hush"
+          update_interval: 30ms
+          lambda: |-
+            // Droplets land on a 0.25 s grid. Walking back over the last few
+            // buckets and keeping the loudest decayed one is what makes this
+            // stateless - no memory of which drops have already fallen.
+            // Deliberately offset per light: this one wants to look scattered.
+            double T = fx_seconds()
+                       + sync_offset("${mac}") * 2.0f;
+            float t = sync_fold(T);
+            const float STEP = 0.25f;
+
+            uint32_t b_now = sync_bucket(T, STEP);
+            float drop = 0.0f;
+            for (int k = 0; k < 8; k++) {
+              uint32_t b = b_now - k;
+              if (sync_random(b, 1) < 0.45f) {                  // did one land?
+                float age = (float) (T - floor(T / STEP) * STEP) + k * STEP;   // b itself wraps, so age comes from k
+                float amp = 0.20f + sync_random(b, 2) * 0.30f;
+                float v = amp * expf(-3.2f * age);
+                if (v > drop) drop = v;
+              }
+            }
+
+            float base = 0.10f + 0.03f * sinf(t * 0.27f);
+            float level = clamp01(base + drop);
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    level * 0.42f, level * 0.58f, level);
+
+      # ------------------------------------------------------------------
+      # Aquarium Glow - steady green-teal tank light with a slow drift
+      # and a faint ripple, as if something just moved past the glass.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Aquarium Glow"
+          update_interval: 50ms
+          lambda: |-
+            float t = fx_t();
+            float ripple = 0.05f * sinf(t * 1.7f) + 0.03f * sinf(t * 2.9f);
+            float level = 0.42f + 0.08f * sinf(t * 0.19f) + ripple;
+            float hue = 0.44f + 0.04f * sinf(t * 0.12f);
+            float r, g, b;
+            hsv_to_rgb(hue, 0.78f, clamp01(level), r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Northern Lights Whisper - the quiet one. Same palette family as
+      # the Aurora effects but dim and slow enough to leave running in a
+      # bedroom overnight.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Northern Lights Whisper"
+          update_interval: 80ms
+          lambda: |-
+            float t = fx_t();
+            float level = 0.11f + 0.07f * fx_swing() * (0.5f + 0.5f * sinf(t * 0.062f));   // intensity: swell depth
+            float hue = 0.38f + 0.16f * (0.5f + 0.5f * sinf(t * 0.041f));
+            float r, g, b;
+            hsv_to_rgb(fmodf(hue, 1.0f), 0.68f, clamp01(level), r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Warm Ember Glow - a steady warm amber that only breathes. Unlike
+      # Fireplace Embers there are no flares; this is the one to leave on
+      # as background light.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Warm Ember Glow"
+          update_interval: 80ms
+          lambda: |-
+            float t = fx_t();
+            float level = 0.38f + (0.09f * sinf(t * 0.14f) + 0.03f * sinf(t * 0.37f)) * fx_swing();   // intensity: breathing depth
+            level = clamp01(level);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    level, level * 0.34f, level * 0.06f);
+
+      # ------------------------------------------------------------------
+      # Lullaby Stars - very soft pastel twinkles with long dark gaps.
+      # Deliberately dim: this is meant for a child's room at bedtime.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Lullaby Stars"
+          update_interval: 60ms
+          lambda: |-
+            // Deliberately offset per light: this one wants to look scattered.
+            double T = fx_seconds()
+                       + sync_offset("${mac}") * 6.0f;
+            uint32_t slot; float within;
+            sync_slot(T, 6.0f, slot, within);
+
+            const float FADE_IN = 1.4f, FADE_OUT = 2.2f;
+            float hue  = sync_random(slot, 1);
+            float peak = 0.14f + sync_random(slot, 2) * 0.10f;   // deliberately dim
+            float start = sync_random(slot, 3) * (6.0f - FADE_IN - FADE_OUT);
+
+            float level = 0.0f;
+            float rel = within - start;
+            if (rel >= 0.0f && rel < FADE_IN)
+              level = peak * (rel / FADE_IN);
+            else if (rel >= FADE_IN && rel < FADE_IN + FADE_OUT)
+              level = peak * (1.0f - (rel - FADE_IN) / FADE_OUT);
+
+            float r, g, b;
+            hsv_to_rgb(hue, 0.35f, clamp01(level), r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ==================================================================
+      # Added 2026-09-18. These were written after the shared phase clock
+      # existed, so each one states up front whether it runs in unison or
+      # is deliberately spread per light with sync_offset().
+      # ==================================================================
+
+      # ------------------------------------------------------------------
+      # Color Loop - UNISON. The whole hue wheel in a minute. A room of
+      # lights holding the same colour and moving through it together is
+      # the point; offsetting them would just make a muddy rainbow.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Color Loop"
+          update_interval: 50ms
+          lambda: |-
+            double T = fx_seconds();
+            float hue = (float) (fmod(T, 60.0) / 60.0);
+            float r, g, b;
+            hsv_to_rgb(hue, 1.0f, 0.75f, r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Lava Lamp - UNISON. Two slow sines at unrelated rates walk a warm
+      # palette back and forth, so the colour turns over without ever
+      # settling into an obvious loop.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Lava Lamp"
+          update_interval: 80ms
+          lambda: |-
+            static const uint8_t pal_lava[16][3] = {
+              {40,0,10},{70,0,14},{104,2,18},{136,6,20},
+              {168,12,20},{196,22,18},{218,36,16},{234,54,14},
+              {244,76,14},{250,100,16},{252,124,22},{250,146,34},
+              {242,120,60},{224,80,70},{190,44,64},{120,12,40}
+            };
+            double T = fx_seconds();
+            float t = sync_fold(T);
+
+            float wander = 0.6f * sinf(t * 0.035f) + 0.4f * sinf(t * 0.021f + 1.3f);
+            float pos = 7.5f + 7.4f * wander;        // stay inside the palette
+            if (pos < 0.0f) pos = 0.0f;
+            if (pos > 15.99f) pos = 15.99f;
+
+            float r, g, b;
+            lerp_palette16(pal_lava, pos, r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    r / 255.0f, g / 255.0f, b / 255.0f);
+
+      # ------------------------------------------------------------------
+      # Color Drift - UNISON. A random walk through hue that never
+      # repeats, built from value noise on an 8 s grid so every light
+      # wanders to the same colour rather than each going its own way.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Color Drift"
+          update_interval: 60ms
+          lambda: |-
+            double T = fx_seconds();
+            const float STEP = 8.0f;
+
+            uint32_t b0 = sync_bucket(T, STEP);
+            float f = (float) (T / STEP - floor(T / STEP));
+            float smooth = f * f * (3.0f - 2.0f * f);
+
+            float h0 = sync_random(b0, 1), h1 = sync_random(b0 + 1, 1);
+            float hue = h0 + (h1 - h0) * smooth;
+            float sat = 0.70f + 0.25f * sync_random(b0, 2);
+
+            float r, g, b;
+            hsv_to_rgb(fmodf(hue, 1.0f), sat, 0.65f, r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Breathing (Picker) - UNISON, on whatever colour the picker holds.
+      # Breathing together is the whole effect; scattered it is just 30
+      # lights fading at random.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Breathing (Picker)"
+          update_interval: 50ms
+          lambda: |-
+            double T = fx_seconds();
+            float phase = (float) (fmod(T, 6.0) / 6.0);
+            // Sine gives the pause at the top that makes it read as a breath.
+            float level = 0.12f + 0.78f * (0.5f - 0.5f * cosf(phase * 6.2831853f));
+
+            auto cv = id(accent_light).current_values;
+            float pr = cv.get_red(), pg = cv.get_green(), pb = cv.get_blue();
+            if (pr + pg + pb < 0.05f) { pr = 1.0f; pg = 0.85f; pb = 0.6f; }
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    pr * level, pg * level, pb * level);
+
+      # ------------------------------------------------------------------
+      # Sparkle (Picker) - SCATTERED. Picker colour held low with sparks
+      # cutting to white over it. Sparks want to be spread across the room.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Sparkle (Picker)"
+          update_interval: 30ms
+          lambda: |-
+            double T = fx_seconds()
+                       + sync_offset("${mac}") * 1.0f;
+            const float STEP = 0.03f;
+
+            uint32_t b_now = sync_bucket(T, STEP);
+            float flash = 0.0f;
+            for (int k = 0; k < 10; k++) {
+              if (sync_random(b_now - k, 5) < 0.010f) {
+                float v = powf(0.72f, (float) k);
+                if (v > flash) flash = v;
+              }
+            }
+
+            auto cv = id(accent_light).current_values;
+            float pr = cv.get_red(), pg = cv.get_green(), pb = cv.get_blue();
+            if (pr + pg + pb < 0.05f) { pr = 1.0f; pg = 0.85f; pb = 0.6f; }
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    pr * 0.30f * (1 - flash) + flash, pg * 0.30f * (1 - flash) + flash, pb * 0.30f * (1 - flash) + flash);
+
+      # ------------------------------------------------------------------
+      # Fireflies - SCATTERED. Sparse warm-yellow blips with long dark
+      # gaps. Thirty lights blinking at once would be a strobe, not a
+      # summer field, so the per-light offset matters more here than
+      # anywhere else.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Fireflies"
+          update_interval: 40ms
+          lambda: |-
+            double T = fx_seconds()
+                       + sync_offset("${mac}") * 4.0f;
+            uint32_t slot; float within;
+            sync_slot(T, 4.0f, slot, within);
+
+            float start = sync_random(slot, 1) * 3.2f;
+            float peak  = 0.25f + sync_random(slot, 2) * 0.35f;
+            const float RISE = 0.12f, FALL = 0.55f;
+
+            float level = 0.0f;
+            float rel = within - start;
+            if (rel >= 0.0f && rel < RISE)
+              level = peak * (rel / RISE);
+            else if (rel >= RISE && rel < RISE + FALL)
+              level = peak * expf(-3.0f * (rel - RISE) / FALL);
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    level * 0.85f, level, level * 0.10f);
+
+      # ------------------------------------------------------------------
+      # Bioluminescence - SCATTERED. Dim cyan that surges when something
+      # disturbs it. Slow, low, and never fully dark.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Bioluminescence"
+          update_interval: 60ms
+          lambda: |-
+            double T = fx_seconds()
+                       + sync_offset("${mac}") * 9.0f;
+            uint32_t slot; float within;
+            sync_slot(T, 9.0f, slot, within);
+
+            float surge_at = sync_random(slot, 1) * 7.0f;
+            float surge = 0.0f;
+            if (within >= surge_at) {
+              float peak = 0.25f + sync_random(slot, 2) * 0.35f;
+              float rel = within - surge_at;
+              surge = peak * expf(-1.1f * rel) * (1.0f - expf(-6.0f * rel));
+            }
+
+            float level = clamp01(0.07f + surge);
+            float r, g, b;
+            hsv_to_rgb(0.47f, 0.85f, level, r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # TV Simulator - UNISON, and unison is the point: every light in the
+      # room reacting to the same cut is what sells "someone is watching
+      # television down there" from outside. Scene cuts on a slot, small
+      # flicker inside each scene.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "TV Simulator"
+          update_interval: 60ms
+          lambda: |-
+            double T = fx_seconds();
+            uint32_t scene; float within;
+            sync_slot(T, 6.0f, scene, within);
+
+            // Each scene has its own brightness and colour cast; darker
+            // scenes flicker harder, the way a real cut does.
+            float base = 0.20f + sync_random(scene, 1) * 0.55f;
+            float cast = sync_random(scene, 2);
+
+            uint32_t fb = sync_bucket(T, 0.12);
+            float flick = (sync_random(fb, 3) - 0.5f) * (0.35f - 0.25f * base);
+            float level = clamp01(base + flick);
+
+            // Cool blue-white, drifting slightly warm on brighter scenes.
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    level * (0.62f + 0.28f * cast), level * (0.72f + 0.18f * cast), level);
+
+      # ------------------------------------------------------------------
+      # Police - UNISON, necessarily. Two-flash bursts alternating red and
+      # blue. Loud and deliberately unsubtle; useful as an alert.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Police"
+          update_interval: 5ms
+          lambda: |-
+            double T = fx_seconds();
+            const float CYCLE = 1.0f;
+            float w = (float) fmod(T, (double) CYCLE);
+
+            bool red_side = w < 0.5f;
+            float local = red_side ? w : (w - 0.5f);
+            // Two quick flashes per side, then dark for the rest of it.
+            bool on = (local < 0.07f) || (local >= 0.14f && local < 0.21f);
+
+            float r = 0, g = 0, b = 0;
+            if (on) {
+              if (red_side) r = 1.0f;
+              else          b = 1.0f;
+            }
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Metronome - UNISON, and the effect that most depends on the shared
+      # clock: a sharp pulse every second, on the second. If the lights
+      # were not phase-locked this would just look broken.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Metronome"
+          update_interval: 5ms
+          lambda: |-
+            double T = fx_seconds();
+            float w = (float) fmod(T, 1.0);
+
+            // Instant attack, fast decay - a tick, not a throb. Intensity:
+            // calmer = a softer tick; beyond normal = a snappier tick from black.
+            const float X = fx_extra();
+            const float FLOOR = 0.04f * (1.0f - X);
+            float level = FLOOR;
+            if (w < 0.25f)
+              level = FLOOR + (1.0f - FLOOR) * fx_calm(0.3f) * expf(-14.0f * (1.0f + X) * w);
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    level, level * 0.92f, level * 0.78f);
+
+      # ==================================================================
+      # Ensemble effects. These exist only because the lights share a
+      # clock: each one depends on 28 devices agreeing, with no controller
+      # and no messages between them. Every one is UNISON or a fixed
+      # deterministic offset - none of them tolerate drift.
+      # ==================================================================
+
+      # ------------------------------------------------------------------
+      # Unison Random - the whole room picks the SAME random colour on the
+      # same beat. Nothing is broadcast; every light hashes the beat number
+      # and independently arrives at the same answer.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Unison Random"
+          update_interval: 50ms
+          lambda: |-
+            double T = fx_seconds();
+            const float BEAT = 2.0f;
+            uint32_t slot; float within;
+            sync_slot(T, BEAT, slot, within);
+
+            float hue = sync_random(slot, 1);
+            float sat = 0.75f + 0.25f * sync_random(slot, 2);
+            // Dip at the changeover so the switch reads as a beat, not a cut.
+            float v = within < 0.08f ? (0.35f + 0.55f * (within / 0.08f)) : 0.90f;
+
+            float r, g, b;
+            hsv_to_rgb(hue, sat, v, r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Polyrhythm - half the room pulses in threes, half in fours, over a
+      # 2.4 s bar that divides evenly by both. They drift apart through the
+      # bar and land together on the downbeat. Only legible with sync.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Polyrhythm"
+          update_interval: 5ms
+          lambda: |-
+            double T = fx_seconds();
+            const float BAR = 2.4f;
+
+            bool threes = sync_offset("${mac}") < 0.5f;
+            float div = threes ? 3.0f : 4.0f;
+            float beat = BAR / div;                 // 0.8 s or 0.6 s
+
+            float w = (float) fmod(T, (double) beat);
+            float level = 0.04f + 0.96f * expf(-11.0f * w);
+
+            // The two voices get their own colour so the pattern is readable.
+            if (threes) {
+              out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                      level, level * 0.30f, level * 0.10f);
+            } else {
+              out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                      level * 0.10f, level * 0.45f, level);
+            }
+
+      # ------------------------------------------------------------------
+      # Downbeat - Metronome with a bar. 120 BPM, every fourth beat
+      # accented, so the room has a pulse you can count rather than a tick.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Downbeat"
+          update_interval: 5ms
+          lambda: |-
+            double T = fx_seconds();
+            const float BEAT = 0.5f;               // 120 BPM
+
+            uint32_t n = sync_bucket(T, BEAT);
+            float w = (float) fmod(T, (double) BEAT);
+            bool down = (n % 4) == 0;
+
+            float peak = down ? 1.00f : 0.40f;
+            float level = 0.03f + peak * expf(-13.0f * w);
+
+            // Downbeats ring white, the rest stay amber.
+            float g = down ? 0.95f : 0.42f;
+            float b = down ? 0.85f : 0.10f;
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    level, level * g, level * b);
+      # ------------------------------------------------------------------
+      # Clock - the room tells the time. Hue encodes the hour on a 12 h
+      # wheel, and every light pulses together on the minute. Needs real
+      # wall time, which is exactly what the shared clock provides.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Clock"
+          update_interval: 100ms
+          lambda: |-
+            double T = sync_seconds();
+            struct tm lt;
+            sync_localtime(T, lt);
+
+            float hour12 = (lt.tm_hour % 12) + lt.tm_min / 60.0f;
+            float hue = hour12 / 12.0f;
+
+            // Sharp pulse as the minute turns, then a steady hold.
+            float into_min = (float) fmod(T, 60.0);
+            float pulse = into_min < 0.30f ? (1.0f - into_min / 0.30f) : 0.0f;
+            float v = 0.30f + 0.65f * pulse;
+
+            float r, g, b;
+            hsv_to_rgb(hue, 0.85f, clamp01(v), r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Hourly Chime - dim amber the rest of the time, then the whole room
+      # strikes the hour: one pulse per hour on a 12 h clock, in step.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Hourly Chime"
+          update_interval: 40ms
+          lambda: |-
+            double T = sync_seconds();
+            struct tm lt;
+            sync_localtime(T, lt);
+
+            int strikes = lt.tm_hour % 12;
+            if (strikes == 0) strikes = 12;
+
+            float into_hour = lt.tm_min * 60.0f + lt.tm_sec + (float) fmod(T, 1.0);
+            const float GAP = 0.8f;                // one strike per 0.8 s
+
+            float level = 0.05f;                   // idle ember
+            if (into_hour < strikes * GAP) {
+              float w = fmodf(into_hour, GAP);
+              level = 0.05f + 0.95f * expf(-7.0f * w);
+            }
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    level, level * 0.55f, level * 0.18f);
+

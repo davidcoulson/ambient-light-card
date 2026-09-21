@@ -1,0 +1,32 @@
+# ---------------------------------------------------------------------------
+# Room Speed and Intensity for the accent-light effects.
+#
+# Imports two Home Assistant helpers for this light's room, named from the
+# device's `area` substitution ("Home Theater" -> home_theater):
+#
+#   input_number.<area>_accent_speed       0-255, 128 = normal
+#   input_number.<area>_accent_intensity   0-255, 128 = normal
+#
+# The values feed fx_set_speed() / fx_set_intensity() in
+# light_effects_helpers.h; see there for what they do. The effect itself stays
+# on the room's light group, so the helpers are the only per-room state.
+#
+# A room with no helpers simply never sends a value, and its lights stay at
+# 128 - the look every effect had before these controls. So does a light that
+# has not heard from HA yet after a reboot, until the API connects.
+# ---------------------------------------------------------------------------
+sensor:
+  - platform: homeassistant
+    id: fx_room_speed
+    entity_id: input_number.${ area | lower | replace(' ', '_') }_accent_speed
+    internal: true
+    on_value:
+      then:
+        - lambda: fx_set_speed(x);
+  - platform: homeassistant
+    id: fx_room_intensity
+    entity_id: input_number.${ area | lower | replace(' ', '_') }_accent_intensity
+    internal: true
+    on_value:
+      then:
+        - lambda: fx_set_intensity(x);

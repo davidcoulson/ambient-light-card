@@ -1,0 +1,280 @@
+# ---------------------------------------------------------------------------
+# Media-room 2D effects for the four Govee rings - the ring counterpart of
+# accent_light_2d_effects.yaml in the basement.
+#
+# Each ring is placed from common/home_theater_map.h by MAC, and each of its 13
+# LEDs samples its own point in one room-wide field, so a wave crosses the room
+# AND sweeps around each ring as it passes. The field and the palettes are the
+# same as the basement 2D Pacifica / Aurora (common/fx2d_render.h).
+#
+# Brightness is ESPHome's: it dims every addressable write through the light's
+# colour correction (an effect cannot bypass it), so these pass apply_level =
+# false. Intensity is pinned at normal until the room's intensity control
+# exists. Output is pre-compensated for the ring's gamma so it matches the
+# basement at 100 %.
+# ---------------------------------------------------------------------------
+esphome:
+  includes:
+    - common/fx2d_render.h
+    - common/home_theater_map.h
+
+light:
+  - platform: esp32_rmt_led_strip
+    id: !extend accent_light
+    effects:
+      # ------------------------------------------------------------------
+      # Calibrate: LED 0 1 2 - LED 0 red, LED 1 green, LED 2 blue, rest off.
+      # Red shows which way the ring is rotated, red -> green -> blue which
+      # way its numbering runs. Fill clock0 / dir in home_theater_map.h from
+      # it. Raw LED indices; independent of the map.
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Calibrate: LED 0 1 2"
+          update_interval: 250ms
+          lambda: |-
+            for (int i = 0; i < it.size(); i++)
+              it[i] = Color(0, 0, 0);
+            if (it.size() > 0) it[0] = Color(255, 0, 0);
+            if (it.size() > 1) it[1] = Color(0, 255, 0);
+            if (it.size() > 2) it[2] = Color(0, 0, 255);
+
+      # ------------------------------------------------------------------
+      # Calibrate: north + east - validates the map. Red goes on this ring's
+      # LED nearest NORTH, green on its LED nearest EAST, worked out through
+      # ht_led_xy() exactly as the 2D effects place their LEDs. With a correct
+      # clock0 / dir, every ring's red points at the north wall and every
+      # green at the east wall. A wrong red means a wrong clock0; a wrong
+      # green with the right red means a wrong dir.
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Calibrate: north + east"
+          update_interval: 250ms
+          lambda: |-
+            const int n = it.size() < 64 ? it.size() : 64;
+            float xs[64], ys[64], cx = 0.0f, cy = 0.0f;
+            for (int i = 0; i < n; i++) {
+              ht_led_xy("${mac}", i, n, xs[i], ys[i]);
+              cx += xs[i];
+              cy += ys[i];
+            }
+            if (n > 0) { cx /= n; cy /= n; }
+            int north = 0, east = 0;
+            for (int i = 0; i < n; i++) {
+              if (ys[i] - cy < ys[north] - cy) north = i;   // plan y grows southward
+              if (xs[i] - cx > xs[east] - cx) east = i;
+            }
+            for (int i = 0; i < it.size(); i++)
+              it[i] = Color(0, 0, 0);
+            if (n > 0) {
+              it[north] = Color(255, 0, 0);
+              it[east] = Color(0, 255, 0);
+            }
+
+      - addressable_lambda:
+          name: "2D Pacifica"
+          update_interval: 50ms
+          lambda: |-
+            static const uint8_t PD[16][3] = {
+              {0,2,8},{0,3,12},{0,4,16},{0,6,21},
+              {0,8,27},{0,10,33},{0,13,40},{0,16,48},
+              {0,20,57},{0,24,66},{0,29,76},{0,34,86},
+              {0,40,97},{2,47,108},{6,55,120},{12,64,132}
+            };
+            static const uint8_t PM[16][3] = {
+              {0,6,8},{0,10,13},{0,15,19},{0,21,26},
+              {0,28,34},{0,36,43},{2,45,53},{4,55,63},
+              {8,66,74},{14,78,86},{22,91,98},{32,105,111},
+              {44,120,124},{58,135,138},{74,150,152},{92,166,166}
+            };
+            static const uint8_t PB[16][3] = {
+              {10,40,50},{20,70,82},{34,100,112},{50,128,140},
+              {70,154,164},{94,176,184},{118,194,200},{142,208,212},
+              {164,220,222},{184,230,231},{200,237,238},{214,242,243},
+              {226,246,247},{236,250,250},{246,253,253},{255,255,255}
+            };
+            // One room-wide field; each of this ring's LEDs samples its own point.
+            const double T = fx_seconds();
+            const float I = fx_intensity();
+            const int n = it.size();
+            for (int i = 0; i < n; i++) {
+              float px, py, r, g, b;
+              ht_led_xy("${mac}", i, n, px, py);
+              pacifica2d(px, py, T, I, 0.70f, 1.0f, PD, PM, PB, r, g, b, false);
+              uint8_t R, G, B;
+              ht_ring_rgb8(id(accent_light), r, g, b, R, G, B);
+              it[i] = Color(R, G, B);
+            }
+
+      - addressable_lambda:
+          name: "2D Pacifica (Calm Lagoon)"
+          update_interval: 50ms
+          lambda: |-
+            static const uint8_t PD[16][3] = {
+              {5,40,42},{6,48,50},{8,58,60},{10,68,70},
+              {12,78,80},{15,90,92},{18,102,104},{22,115,117},
+              {28,128,130},{35,142,144},{45,156,158},{58,170,172},
+              {75,185,187},{95,200,200},{120,215,213},{150,230,225}
+            };
+            static const uint8_t PM[16][3] = {
+              {10,60,62},{14,72,74},{18,85,87},{24,98,100},
+              {30,112,114},{38,126,128},{48,140,142},{60,155,155},
+              {75,170,168},{92,185,180},{112,198,190},{135,210,198},
+              {160,222,205},{188,232,212},{215,242,220},{240,250,232}
+            };
+            static const uint8_t PB[16][3] = {
+              {40,140,140},{60,160,158},{85,180,175},{112,198,190},
+              {140,213,202},{168,225,212},{195,235,222},{215,242,230},
+              {230,247,238},{240,250,244},{247,252,248},{250,253,250},
+              {252,254,252},{253,254,253},{254,255,254},{255,255,255}
+            };
+            // One room-wide field; each of this ring's LEDs samples its own point.
+            const double T = fx_seconds();
+            const float I = fx_intensity();
+            const int n = it.size();
+            for (int i = 0; i < n; i++) {
+              float px, py, r, g, b;
+              ht_led_xy("${mac}", i, n, px, py);
+              pacifica2d(px, py, T, I, 0.45f, 0.7f, PD, PM, PB, r, g, b, false);
+              uint8_t R, G, B;
+              ht_ring_rgb8(id(accent_light), r, g, b, R, G, B);
+              it[i] = Color(R, G, B);
+            }
+
+      - addressable_lambda:
+          name: "2D Pacifica (Storm)"
+          update_interval: 50ms
+          lambda: |-
+            static const uint8_t PD[16][3] = {
+              {2,3,6},{3,4,8},{4,6,11},{5,8,14},
+              {6,10,18},{8,13,23},{10,17,29},{13,22,36},
+              {17,28,44},{22,36,54},{28,46,66},{36,58,80},
+              {46,72,95},{58,88,110},{72,104,124},{88,120,138}
+            };
+            static const uint8_t PM[16][3] = {
+              {4,6,10},{6,9,15},{9,13,21},{13,18,28},
+              {18,24,36},{24,32,46},{32,42,58},{42,54,72},
+              {54,68,88},{68,84,104},{85,102,120},{104,120,136},
+              {125,138,150},{148,156,162},{172,174,174},{195,192,186}
+            };
+            static const uint8_t PB[16][3] = {
+              {20,24,30},{35,40,48},{55,62,70},{78,86,94},
+              {104,112,118},{132,138,142},{160,164,166},{186,188,188},
+              {206,208,206},{222,224,220},{234,236,232},{242,244,240},
+              {247,249,246},{250,252,249},{253,254,252},{255,255,255}
+            };
+            // One room-wide field; each of this ring's LEDs samples its own point.
+            const double T = fx_seconds();
+            const float I = fx_intensity();
+            const int n = it.size();
+            for (int i = 0; i < n; i++) {
+              float px, py, r, g, b;
+              ht_led_xy("${mac}", i, n, px, py);
+              pacifica2d(px, py, T, I, 1.00f, 1.4f, PD, PM, PB, r, g, b, false);
+              uint8_t R, G, B;
+              ht_ring_rgb8(id(accent_light), r, g, b, R, G, B);
+              it[i] = Color(R, G, B);
+            }
+
+      - addressable_lambda:
+          name: "2D Pacifica (Deep Current)"
+          update_interval: 50ms
+          lambda: |-
+            static const uint8_t PD[16][3] = {
+              {0,1,4},{0,1,6},{0,2,8},{0,2,10},
+              {0,3,13},{0,4,16},{1,5,20},{1,6,24},
+              {2,8,29},{3,10,34},{4,13,40},{6,17,47},
+              {9,22,54},{13,28,62},{18,36,70},{24,45,78}
+            };
+            static const uint8_t PM[16][3] = {
+              {1,2,8},{2,3,12},{3,5,17},{4,7,23},
+              {6,10,30},{8,14,38},{11,19,47},{15,25,57},
+              {20,32,68},{27,41,80},{35,52,92},{45,65,105},
+              {58,80,118},{73,97,130},{92,116,142},{114,137,154}
+            };
+            static const uint8_t PB[16][3] = {
+              {3,4,15},{5,7,22},{8,11,31},{12,17,42},
+              {18,25,54},{25,35,68},{34,47,83},{45,62,99},
+              {58,79,115},{74,98,131},{92,118,146},{113,138,160},
+              {136,158,172},{160,177,183},{186,196,193},{212,215,206}
+            };
+            // One room-wide field; each of this ring's LEDs samples its own point.
+            const double T = fx_seconds();
+            const float I = fx_intensity();
+            const int n = it.size();
+            for (int i = 0; i < n; i++) {
+              float px, py, r, g, b;
+              ht_led_xy("${mac}", i, n, px, py);
+              pacifica2d(px, py, T, I, 0.55f, 0.8f, PD, PM, PB, r, g, b, false);
+              uint8_t R, G, B;
+              ht_ring_rgb8(id(accent_light), r, g, b, R, G, B);
+              it[i] = Color(R, G, B);
+            }
+
+      - addressable_lambda:
+          name: "2D Aurora (Solar Storm)"
+          update_interval: 60ms
+          lambda: |-
+            static const uint8_t P[16][3] = {
+              {0,40,10},{0,70,20},{10,100,30},{20,140,40},
+              {40,180,60},{60,210,90},{50,200,130},{40,180,170},
+              {30,150,200},{40,120,210},{70,90,210},{110,70,200},
+              {150,60,190},{190,60,170},{210,70,140},{180,90,120}
+            };
+            // One room-wide field; each of this ring's LEDs samples its own point.
+            const double T = fx_seconds();
+            const float I = fx_intensity();
+            const int n = it.size();
+            for (int i = 0; i < n; i++) {
+              float px, py, r, g, b;
+              ht_led_xy("${mac}", i, n, px, py);
+              aurora2d(px, py, T, I, 0.55 / 60.0, P, r, g, b, false);
+              uint8_t R, G, B;
+              ht_ring_rgb8(id(accent_light), r, g, b, R, G, B);
+              it[i] = Color(R, G, B);
+            }
+
+      - addressable_lambda:
+          name: "2D Aurora (Pastel Dream)"
+          update_interval: 60ms
+          lambda: |-
+            static const uint8_t P[16][3] = {
+              {140,190,155},{140,205,165},{145,215,170},{150,225,175},
+              {160,235,185},{170,245,200},{165,240,215},{160,230,225},
+              {155,215,235},{160,200,235},{175,190,235},{195,180,230},
+              {210,175,225},{225,175,220},{235,180,210},{220,185,200}
+            };
+            // One room-wide field; each of this ring's LEDs samples its own point.
+            const double T = fx_seconds();
+            const float I = fx_intensity();
+            const int n = it.size();
+            for (int i = 0; i < n; i++) {
+              float px, py, r, g, b;
+              ht_led_xy("${mac}", i, n, px, py);
+              aurora2d(px, py, T, I, 0.06 / 60.0, P, r, g, b, false);
+              uint8_t R, G, B;
+              ht_ring_rgb8(id(accent_light), r, g, b, R, G, B);
+              it[i] = Color(R, G, B);
+            }
+
+      - addressable_lambda:
+          name: "2D Aurora (Red Sky)"
+          update_interval: 60ms
+          lambda: |-
+            static const uint8_t P[16][3] = {
+              {20,0,5},{35,0,8},{55,0,12},{80,2,18},
+              {105,5,25},{130,10,35},{150,20,50},{170,35,68},
+              {185,55,90},{195,80,115},{200,105,140},{205,130,160},
+              {210,150,175},{215,170,190},{220,190,205},{225,205,215}
+            };
+            // One room-wide field; each of this ring's LEDs samples its own point.
+            const double T = fx_seconds();
+            const float I = fx_intensity();
+            const int n = it.size();
+            for (int i = 0; i < n; i++) {
+              float px, py, r, g, b;
+              ht_led_xy("${mac}", i, n, px, py);
+              aurora2d(px, py, T, I, 0.15 / 60.0, P, r, g, b, false);
+              uint8_t R, G, B;
+              ht_ring_rgb8(id(accent_light), r, g, b, R, G, B);
+              it[i] = Color(R, G, B);
+            }

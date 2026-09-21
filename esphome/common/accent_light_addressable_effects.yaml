@@ -1,0 +1,2788 @@
+# ---------------------------------------------------------------------------
+# All 37 addressable-LED effects for the 48-LED circular ring, as a
+# complete light: block (platform + id + full effects list) rather than a
+# bare effects-only file - for use with ESPHome's !extend, or just as a
+# standalone full config to copy from directly.
+#
+# ---------------------------------------------------------------------------
+
+# The shared phase clock. Without this these effects run off millis(),
+# which counts from each light's own boot, so six addressable lights
+# would beat at the same rate but at six unrelated phases. See
+# light_effects_helpers.h for why gettimeofday() rather than a stamp.
+esphome:
+  includes:
+    - common/light_effects_helpers.h
+
+light:
+  - platform: esp32_rmt_led_strip   # swap for your actual platform (neopixelbus, etc.)
+    id: accent_light
+    name: "Accent Light"
+    effects:
+      - addressable_lambda:
+          name: "Pacifica"
+          update_interval: 20ms
+          lambda: |-
+
+            // Closed form on the shared clock: each layer's phase is the integral
+            // of its wobbling speed (fx_wobble), so every light computes the same
+            // sea at the same moment. It used to integrate frame by frame from
+            // each light's own boot. Phases stay double until folded by fx_wrap.
+            const double T = fx_seconds();
+            // Intensity: swell height (fx_swing) and whitecaps (fx_accents).
+            const float FX_SWING = fx_swing();
+            const double t1 = fx_wobble(T, 6.0, 4.0, 0.1111111111111111, 0.0);
+            const double t2 = fx_wobble(T, 4.0, 3.0, 0.07692307692307693, 1.0);
+            const double t3 = fx_wobble(T, 3.0, 2.0, 0.058823529411764705, 2.0);
+            const double t4 = fx_wobble(T, 2.0, 1.5, 0.047619047619047616, 3.0);
+
+            static const uint8_t pal_deep[16][3] = {
+              {0,2,3},{0,2,4},{0,2,5},{0,3,7},
+              {0,3,9},{0,4,11},{0,5,14},{0,6,17},
+              {0,7,21},{0,9,26},{0,12,32},{0,16,40},
+              {2,24,48},{5,40,58},{10,64,70},{18,96,88}
+            };
+            static const uint8_t pal_mid[16][3] = {
+              {0,3,5},{0,5,9},{0,8,14},{0,12,20},
+              {0,17,27},{0,23,35},{0,30,44},{0,38,54},
+              {0,48,64},{2,60,74},{6,74,84},{12,90,94},
+              {22,108,104},{38,128,116},{60,150,130},{90,175,148}
+            };
+            static const uint8_t pal_bright[16][3] = {
+              {0,5,10},{0,10,18},{0,18,28},{0,28,40},
+              {0,40,54},{4,54,70},{10,70,88},{20,88,106},
+              {34,106,124},{52,126,142},{74,146,160},{100,166,178},
+              {130,188,196},{160,210,212},{195,232,228},{225,250,244}
+            };
+
+            int n = it.size();
+
+            for (int i = 0; i < n; i++) {
+              float theta = (i / (float) n) * 6.2831853f;
+
+              float wave1 = sinf(3.0f * theta + fx_wrap(t1 * 0.6, 6.283185307179586)) * 0.5f + 0.5f;
+              float wave2 = sinf(5.0f * theta - fx_wrap(t2 * 0.9, 6.283185307179586) + 1.7f) * 0.5f + 0.5f;
+              float wave3 = sinf(2.0f * theta + fx_wrap(t3 * 0.4, 6.283185307179586) + 3.1f) * 0.5f + 0.5f;
+              float wave4 = sinf(7.0f * theta - fx_wrap(t4 * 1.2, 6.283185307179586) + 4.4f) * 0.5f + 0.5f;
+
+              float r = 0, g = 0, b = 0;
+              int idx0, idx1; float frac, pos;
+
+              const float REPEATS = 3.0f;
+              pos = fmodf((i / (float) n) * REPEATS * 16.0f + fx_wrap(t1 * 0.8, 16.0), 16.0f);
+              if (pos < 0) pos += 16.0f;
+              idx0 = (int) pos; idx1 = (idx0 + 1) % 16; frac = pos - idx0;
+              r += pal_deep[idx0][0]*(1-frac) + pal_deep[idx1][0]*frac;
+              g += pal_deep[idx0][1]*(1-frac) + pal_deep[idx1][1]*frac;
+              b += pal_deep[idx0][2]*(1-frac) + pal_deep[idx1][2]*frac;
+
+              pos = fmodf(wave1*16.0f + fx_wrap(t2 * 0.3, 16.0), 16.0f); if (pos < 0) pos += 16.0f;
+              idx0 = (int) pos; idx1 = (idx0 + 1) % 16; frac = pos - idx0;
+              float w1 = (wave1 * 0.55f) * FX_SWING;
+              r += (pal_mid[idx0][0]*(1-frac) + pal_mid[idx1][0]*frac) * w1;
+              g += (pal_mid[idx0][1]*(1-frac) + pal_mid[idx1][1]*frac) * w1;
+              b += (pal_mid[idx0][2]*(1-frac) + pal_mid[idx1][2]*frac) * w1;
+
+              pos = fmodf(wave2*16.0f + fx_wrap(t3 * 0.4, 16.0), 16.0f); if (pos < 0) pos += 16.0f;
+              idx0 = (int) pos; idx1 = (idx0 + 1) % 16; frac = pos - idx0;
+              float w2 = (wave2 * 0.45f) * FX_SWING;
+              r += (pal_mid[idx0][0]*(1-frac) + pal_mid[idx1][0]*frac) * w2;
+              g += (pal_mid[idx0][1]*(1-frac) + pal_mid[idx1][1]*frac) * w2;
+              b += (pal_mid[idx0][2]*(1-frac) + pal_mid[idx1][2]*frac) * w2;
+
+              pos = fmodf(wave3*16.0f + fx_wrap(t4 * 0.5, 16.0), 16.0f); if (pos < 0) pos += 16.0f;
+              idx0 = (int) pos; idx1 = (idx0 + 1) % 16; frac = pos - idx0;
+              float w3 = (powf(wave3, 3.0f) * 0.7f) * FX_SWING;
+              r += (pal_bright[idx0][0]*(1-frac) + pal_bright[idx1][0]*frac) * w3;
+              g += (pal_bright[idx0][1]*(1-frac) + pal_bright[idx1][1]*frac) * w3;
+              b += (pal_bright[idx0][2]*(1-frac) + pal_bright[idx1][2]*frac) * w3;
+
+              float w4 = (powf(wave4, 4.0f) * 0.5f) * FX_SWING;
+              r += pal_bright[15][0] * w4;
+              g += pal_bright[15][1] * w4;
+              b += pal_bright[15][2] * w4;
+
+              if (r > 255) r = 255;
+              if (g > 255) g = 255;
+              if (b > 255) b = 255;
+              it[i] = Color((uint8_t) r, (uint8_t) g, (uint8_t) b);
+            }
+
+            // Whitecaps: drawn from the shared dice for this 60 ms window, so
+            // every ring of the same size foams on the same LEDs.
+            static uint32_t last_whitecap = 0xFFFFFFFFu;
+            const uint32_t wc_b = sync_bucket(T, 0.06);
+            if (wc_b != last_whitecap) {
+              last_whitecap = wc_b;
+              uint32_t wc_k = 0;
+              int num_caps = n / 40 + 1;
+              for (int c = 0; c < num_caps; c++) {
+                int idx = sync_hash(wc_b, wc_k++) % n;
+                Color existing = it[idx].get();
+                uint16_t brightness = existing.r + existing.g + existing.b;
+                if (brightness > 90) {
+                  uint8_t foam = (uint8_t) fminf(255.0f, (40 + (sync_hash(wc_b, wc_k++) % 80)) * fx_accents());
+                  uint16_t nr = existing.r + foam; if (nr > 255) nr = 255;
+                  uint16_t ng = existing.g + foam; if (ng > 255) ng = 255;
+                  uint16_t nb = existing.b + foam; if (nb > 255) nb = 255;
+                  it[idx] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
+                }
+              }
+            }
+
+      # ------------------------------------------------------------------
+      # 2. TwinkleFox
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "TwinkleFox"
+          update_interval: 20ms
+          lambda: |-
+            static const uint8_t pal[16][3] = {
+              {0,0,20},{0,4,40},{0,10,60},{0,20,90},
+              {10,40,120},{20,60,150},{40,90,180},{70,120,200},
+              {100,150,220},{140,180,235},{180,205,245},{210,225,250},
+              {230,240,255},{245,250,255},{255,255,255},{255,255,255}
+            };
+
+            const uint8_t TWINKLE_SPEED = 4;
+            const uint8_t TWINKLE_DENSITY = 5;
+            const uint8_t BACKGROUND_LEVEL = 2;
+            const float INCANDESCENT_WARMTH = 0.25f;
+
+            uint32_t ms = fx_ms();   // shared clock, so every ring twinkles alike
+            uint16_t ticks = (uint16_t)(ms >> (8 - TWINKLE_SPEED));
+            uint8_t fastcycle8 = (uint8_t)(ticks & 0xFF);
+
+            int n = it.size();
+            for (int i = 0; i < n; i++) {
+              uint32_t h = (uint32_t) i * 2654435761u;
+              uint8_t salt = (uint8_t)(h >> 24);
+
+              uint16_t slowcycle16 = (uint16_t)((ticks >> 8) + salt);
+              float sin_rad = (slowcycle16 & 0xFF) / 255.0f * 2.0f * 3.14159265f;
+              uint8_t sin8_val = (uint8_t)(128.0f + 127.0f * sinf(sin_rad));
+              slowcycle16 = (uint16_t)(slowcycle16 + sin8_val);
+              slowcycle16 = (uint16_t)((slowcycle16 * 2053) + 1384);
+              uint8_t slowcycle8 = (uint8_t)((slowcycle16 & 0xFF) + (slowcycle16 >> 8));
+
+              uint8_t bright = 0;
+              if (((slowcycle8 & 0x0E) / 2) < TWINKLE_DENSITY) {
+                if (fastcycle8 < 86) {
+                  bright = (uint8_t)(fastcycle8 * 3);
+                } else {
+                  uint8_t j = fastcycle8 - 86;
+                  bright = (uint8_t)(255 - (j + (j / 2)));
+                }
+              }
+
+              if (bright == 0) {
+                uint8_t bg = BACKGROUND_LEVEL;
+                it[i] = Color((uint8_t)(pal[0][0]*bg/255), (uint8_t)(pal[0][1]*bg/255), (uint8_t)(pal[0][2]*bg/255));
+                continue;
+              }
+
+              uint8_t hue = (uint8_t)(slowcycle8 - salt);
+              float pos = (hue / 255.0f) * 15.0f;
+              int idx0 = (int) pos; int idx1 = (idx0 + 1) % 16; float frac = pos - idx0;
+
+              float r = pal[idx0][0]*(1-frac) + pal[idx1][0]*frac;
+              float g = pal[idx0][1]*(1-frac) + pal[idx1][1]*frac;
+              float b = pal[idx0][2]*(1-frac) + pal[idx1][2]*frac;
+
+              float scale = bright / 255.0f;
+              r *= scale; g *= scale; b *= scale;
+
+              if (INCANDESCENT_WARMTH > 0.0f && fastcycle8 < 86) {
+                float cooling = ((86 - fastcycle8) / 86.0f) * INCANDESCENT_WARMTH;
+                b *= (1.0f - cooling);
+              }
+
+              if (r > 255) r = 255; if (g > 255) g = 255; if (b > 255) b = 255;
+              it[i] = Color((uint8_t) r, (uint8_t) g, (uint8_t) b);
+            }
+
+      # ------------------------------------------------------------------
+      # 3. Fairytwinkle
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Fairytwinkle"
+          update_interval: 20ms
+          lambda: |-
+            // Lockstep: see light_effects_helpers.h. The simulation below is the
+            // original, run in fixed 20 ms ticks counted from the shared clock with
+            // hashed draws, so every ring of the same size plays the identical show.
+            static Lockstep ls;
+            const uint32_t LS_TICK_MS = 20;
+            const uint32_t ls_target = ls_begin(ls, initial_run, LS_TICK_MS, 60000 / LS_TICK_MS);
+            for (uint32_t ls_t0 = micros(); ls.tick <= ls_target && ls_in_budget(ls_t0); ls.tick++) {
+              const bool ls_reset = (ls.tick == 0);
+              const uint32_t ls_now = ls.tick * LS_TICK_MS;
+              ls.calls = 0;
+              const int MAX_STARS = 24;
+              static int      star_pos[MAX_STARS];
+              static uint32_t star_start[MAX_STARS];
+              static uint16_t star_duration[MAX_STARS];
+              static uint8_t  star_hue[MAX_STARS];
+              static bool     star_active[MAX_STARS];
+
+              if (ls_reset) {
+                for (int s = 0; s < MAX_STARS; s++) star_active[s] = false;
+              }
+
+              static const uint8_t pal_fairy[16][3] = {
+                {255,214,140},{255,200,150},{255,190,170},{255,180,195},
+                {250,175,215},{240,175,230},{225,180,240},{205,185,245},
+                {185,195,250},{165,205,250},{150,215,250},{140,225,245},
+                {150,230,235},{170,235,225},{200,240,215},{230,245,210}
+              };
+
+              const int DENSITY_DIVISOR = 10;
+              const uint16_t MIN_DURATION_MS = 2500;
+              const uint16_t MAX_DURATION_MS = 6000;
+              const int SPAWN_CHANCE_PERCENT = 6;
+              const uint8_t BACKGROUND_LEVEL = 1;
+
+              uint32_t now_ms = ls_now;
+              int n = it.size();
+
+              for (int i = 0; i < n; i++) {
+                it[i] = Color((uint8_t)(pal_fairy[0][0]*BACKGROUND_LEVEL/255),
+                               (uint8_t)(pal_fairy[0][1]*BACKGROUND_LEVEL/255),
+                               (uint8_t)(pal_fairy[0][2]*BACKGROUND_LEVEL/255));
+              }
+
+              int active_count = 0;
+              for (int s = 0; s < MAX_STARS; s++) if (star_active[s]) active_count++;
+
+              int target = n / DENSITY_DIVISOR; if (target > MAX_STARS) target = MAX_STARS; if (target < 1) target = 1;
+
+              if (active_count < target && ((int)(ls_rand(ls) % 100) < SPAWN_CHANCE_PERCENT)) {
+                for (int s = 0; s < MAX_STARS; s++) {
+                  if (!star_active[s]) {
+                    star_active[s] = true;
+                    star_pos[s] = (int)(ls_rand(ls) % n);
+                    star_start[s] = now_ms;
+                    star_duration[s] = (uint16_t)(MIN_DURATION_MS + (ls_rand(ls) % (MAX_DURATION_MS - MIN_DURATION_MS)));
+                    star_hue[s] = (uint8_t)(ls_rand(ls) & 0xFF);
+                    break;
+                  }
+                }
+              }
+
+              for (int s = 0; s < MAX_STARS; s++) {
+                if (!star_active[s]) continue;
+                uint32_t elapsed = now_ms - star_start[s];
+                if (elapsed >= star_duration[s]) { star_active[s] = false; continue; }
+
+                float phase = elapsed / (float) star_duration[s];
+                float bright = sinf(phase * 3.14159265f);
+                bright = powf(bright, 1.3f);
+
+                float pos = (star_hue[s] / 255.0f) * 15.0f;
+                int idx0 = (int) pos; int idx1 = (idx0 + 1) % 16; float frac = pos - idx0;
+
+                float r = pal_fairy[idx0][0]*(1-frac) + pal_fairy[idx1][0]*frac;
+                float g = pal_fairy[idx0][1]*(1-frac) + pal_fairy[idx1][1]*frac;
+                float b = pal_fairy[idx0][2]*(1-frac) + pal_fairy[idx1][2]*frac;
+                r *= bright; g *= bright; b *= bright;
+
+                Color existing = it[star_pos[s]].get();
+                float nr = existing.r + r; if (nr > 255) nr = 255;
+                float ng = existing.g + g; if (ng > 255) ng = 255;
+                float nb = existing.b + b; if (nb > 255) nb = 255;
+                it[star_pos[s]] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
+              }
+            }
+
+      # ------------------------------------------------------------------
+      # 4. Aurora (continuous drift + torus distance)
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Aurora"
+          update_interval: 20ms
+          lambda: |-
+            static const uint8_t pal_aurora[16][3] = {
+              {0,40,10},{0,70,20},{10,100,30},{20,140,40},
+              {40,180,60},{60,210,90},{50,200,130},{40,180,170},
+              {30,150,200},{40,120,210},{70,90,210},{110,70,200},
+              {150,60,190},{190,60,170},{210,70,140},{180,90,120}
+            };
+
+            const int NUM_BANDS = 4;
+            const bool SPARKLE_ENABLE = true;
+            const int SPARKLE_CHANCE_PER_1000 = 4;
+
+            float t = fx_t();   // shared clock (was this light's own uptime)
+            int n = it.size();
+            float nf = (float) n;
+
+            for (int i = 0; i < n; i++) {
+              it[i] = Color((uint8_t)(pal_aurora[0][0]/20), (uint8_t)(pal_aurora[0][1]/20), (uint8_t)(pal_aurora[0][2]/20));
+            }
+
+            for (int b = 0; b < NUM_BANDS; b++) {
+              float drift_speed = (2.0f + b) * (b % 2 == 0 ? 1.0f : -1.0f);
+              float band_pos = fmodf(t * drift_speed + b * (nf / NUM_BANDS), nf);
+              if (band_pos < 0) band_pos += nf;
+
+              float width = nf * (0.14f + 0.03f * (b % 3));
+              float breathe_speed = 0.15f + 0.05f * b;
+              float breathe_phase = b * 1.7f;
+              float breathing = sinf(t * breathe_speed + breathe_phase) * 0.5f + 0.5f;
+              breathing = powf(breathing, 1.5f);
+              breathing = clamp01(0.5f + (breathing - 0.5f) * fx_swing());   // intensity: band contrast
+              float hue_speed = 0.25f + 0.08f * b;
+              float hue_phase = b * 3.3f;
+              float hue_pos = fmodf(t * hue_speed + hue_phase, 16.0f);
+              if (hue_pos < 0) hue_pos += 16.0f;
+
+              int idx0 = (int) hue_pos; int idx1 = (idx0 + 1) % 16; float frac = hue_pos - idx0;
+              float br = pal_aurora[idx0][0]*(1-frac) + pal_aurora[idx1][0]*frac;
+              float bg = pal_aurora[idx0][1]*(1-frac) + pal_aurora[idx1][1]*frac;
+              float bb = pal_aurora[idx0][2]*(1-frac) + pal_aurora[idx1][2]*frac;
+
+              for (int i = 0; i < n; i++) {
+                float dist = fabsf((float) i - band_pos);
+                if (dist > nf / 2.0f) dist = nf - dist;
+                float falloff = expf(-(dist * dist) / (2.0f * width * width));
+                float intensity = falloff * breathing;
+                if (intensity < 0.003f) continue;
+
+                Color existing = it[i].get();
+                float r = existing.r + br * intensity; if (r > 255) r = 255;
+                float g = existing.g + bg * intensity; if (g > 255) g = 255;
+                float bl = existing.b + bb * intensity; if (bl > 255) bl = 255;
+                it[i] = Color((uint8_t) r, (uint8_t) g, (uint8_t) bl);
+              }
+            }
+
+            if (SPARKLE_ENABLE) {
+
+              // Sparkles from the shared dice for this frame window, so every
+
+              // ring of the same size sparkles on the same LEDs.
+
+              const uint32_t sp_b = sync_bucket(fx_seconds(), 0.02);
+
+              uint32_t sp_k = 0;
+              int num_checks = n / 20 + 1;
+              for (int c = 0; c < num_checks; c++) {
+                if ((int)(sync_hash(sp_b, sp_k++) % 1000) < SPARKLE_CHANCE_PER_1000 * fx_accents()) {
+                  int idx = (int)(sync_hash(sp_b, sp_k++) % n);
+                  Color existing = it[idx].get();
+                  uint8_t add = 40 + (uint8_t)(sync_hash(sp_b, sp_k++) % 60);
+                  uint16_t nr = existing.r + add; if (nr > 255) nr = 255;
+                  uint16_t ng = existing.g + add; if (ng > 255) ng = 255;
+                  uint16_t nb = existing.b + add; if (nb > 255) nb = 255;
+                  it[idx] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
+                }
+              }
+            }
+
+      # ------------------------------------------------------------------
+      # 5. Rolling Fog (integer-harmonic angle noise)
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Rolling Fog"
+          update_interval: 30ms
+          lambda: |-
+            static const uint8_t pal_fog[16][3] = {
+              {10,12,14},{20,22,25},{35,37,40},{50,53,58},
+              {65,68,74},{80,84,92},{95,100,108},{110,115,124},
+              {125,130,140},{140,146,156},{158,164,174},{176,182,192},
+              {195,200,208},{212,216,222},{228,231,236},{245,247,250}
+            };
+
+            auto ring_noise = [](float theta_mult, float t_offset) -> float {
+              return sinf(3.0f  * theta_mult + t_offset * 1.00f) * 0.500f
+                   + sinf(7.0f  * theta_mult + t_offset * 1.31f + 1.7f) * 0.250f
+                   + sinf(13.0f * theta_mult + t_offset * 1.77f + 3.1f) * 0.125f
+                   + sinf(23.0f * theta_mult + t_offset * 2.35f + 0.6f) * 0.0625f;
+            };
+
+            float t = fx_t();
+            int n = it.size();
+
+            float thickness = 0.65f + 0.35f * (sinf(t * 0.02f) * 0.5f + 0.5f);
+
+            for (int i = 0; i < n; i++) {
+              float theta = (i / (float) n) * 6.2831853f;
+
+              float layer1 = ring_noise(theta * 2.0f, t * 0.9f);
+              float layer2 = ring_noise(theta * 3.0f, -t * 0.6f + 5.2f);
+              float layer3 = ring_noise(theta * 5.0f, t * 1.3f + 2.7f);
+              float combined = layer1 * 0.50f + layer2 * 0.35f + layer3 * 0.15f;
+
+              float v = combined * 0.5f + 0.5f;
+              v *= thickness;
+              if (v < 0.0f) v = 0.0f;
+              if (v > 1.0f) v = 1.0f;
+
+              float pos = v * 15.0f;
+              int idx0 = (int) pos; int idx1 = (idx0 + 1) % 16; float frac = pos - idx0;
+
+              float r = pal_fog[idx0][0]*(1-frac) + pal_fog[idx1][0]*frac;
+              float g = pal_fog[idx0][1]*(1-frac) + pal_fog[idx1][1]*frac;
+              float b = pal_fog[idx0][2]*(1-frac) + pal_fog[idx1][2]*frac;
+              it[i] = Color((uint8_t) r, (uint8_t) g, (uint8_t) b);
+            }
+
+      # ==================================================================
+      # MOTION-BASED
+      # ==================================================================
+
+      # ------------------------------------------------------------------
+      # 6. Meteor (continuous wraparound rotation)
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Meteor"
+          update_interval: 20ms
+          lambda: |-
+            static float pos = 0.0f;
+            static uint32_t last_ms = 0;
+
+            if (initial_run) {
+              pos = 0.0f;
+              last_ms = 0;
+              for (int i = 0; i < it.size(); i++) it[i] = Color(0, 0, 0);
+            }
+
+            // Position comes straight from the shared clock rather than being
+            // integrated frame by frame, so it no longer depends on when the
+            // effect started and every ring shows the head at the same angle.
+            // Speed is expressed per REVOLUTION (SPEED was tuned as LEDs/s on a
+            // 48-LED ring), so a 13-LED and a 48-LED ring stay in step too.
+
+            const float SPEED = 30.0f;
+            const float DECAY = 0.75f;
+            const int HEAD_WIDTH = 2;
+            const uint8_t METEOR_R = 255, METEOR_G = 255, METEOR_B = 255;
+
+            int n = it.size();
+
+            pos = (float) fmod(fx_seconds() * (SPEED / 48.0), 1.0) * n;
+            pos = fmodf(pos, (float) n);
+            if (pos < 0) pos += n;
+
+            for (int i = 0; i < n; i++) {
+              Color c = it[i].get();
+              it[i] = Color((uint8_t)(c.r * DECAY), (uint8_t)(c.g * DECAY), (uint8_t)(c.b * DECAY));
+            }
+
+            int head = (int) pos;
+            for (int w = -HEAD_WIDTH / 2; w <= HEAD_WIDTH / 2; w++) {
+              int idx = ((head + w) % n + n) % n;
+              it[idx] = Color(METEOR_R, METEOR_G, METEOR_B);
+            }
+
+      # ------------------------------------------------------------------
+      # 7. Scanner (rotating eye + torus distance falloff)
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Scanner"
+          update_interval: 20ms
+          lambda: |-
+            static float pos = 0.0f;
+            static uint32_t last_ms = 0;
+
+            if (initial_run) { pos = 0.0f; last_ms = 0; }
+
+            // Position comes straight from the shared clock rather than being
+            // integrated frame by frame, so it no longer depends on when the
+            // effect started and every ring shows the head at the same angle.
+            // Speed is expressed per REVOLUTION (SPEED was tuned as LEDs/s on a
+            // 48-LED ring), so a 13-LED and a 48-LED ring stay in step too.
+
+            const float SPEED = 40.0f;
+            const float EYE_WIDTH = 4.0f;
+            const uint8_t EYE_R = 255, EYE_G = 0, EYE_B = 0;
+
+            int n = it.size();
+            float nf = (float) n;
+
+            pos = (float) fmod(fx_seconds() * (SPEED / 48.0), 1.0) * n;
+            pos = fmodf(pos, nf);
+            if (pos < 0) pos += nf;
+
+            for (int i = 0; i < n; i++) {
+              float dist = fabsf((float) i - pos);
+              if (dist > nf / 2.0f) dist = nf - dist;
+              float b = 1.0f - dist / EYE_WIDTH;
+              if (b < 0.0f) b = 0.0f;
+              b = b * b;
+              it[i] = Color((uint8_t)(EYE_R * b), (uint8_t)(EYE_G * b), (uint8_t)(EYE_B * b));
+            }
+
+      # ------------------------------------------------------------------
+      # 8. Ripple (torus distance, rings meet on the far side)
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Ripple"
+          update_interval: 30ms
+          lambda: |-
+            // Lockstep: see light_effects_helpers.h. The simulation below is the
+            // original, run in fixed 30 ms ticks counted from the shared clock with
+            // hashed draws, so every ring of the same size plays the identical show.
+            static Lockstep ls;
+            const uint32_t LS_TICK_MS = 30;
+            const uint32_t ls_target = ls_begin(ls, initial_run, LS_TICK_MS, 60000 / LS_TICK_MS);
+            for (uint32_t ls_t0 = micros(); ls.tick <= ls_target && ls_in_budget(ls_t0); ls.tick++) {
+              const bool ls_reset = (ls.tick == 0);
+              const uint32_t ls_now = ls.tick * LS_TICK_MS;
+              ls.calls = 0;
+              const int MAX_RIPPLES = 6;
+              static int      ripple_pos[MAX_RIPPLES];
+              static uint32_t ripple_start[MAX_RIPPLES];
+              static uint16_t ripple_duration[MAX_RIPPLES];
+              static float    ripple_hue[MAX_RIPPLES];
+              static bool     ripple_active[MAX_RIPPLES];
+
+              if (ls_reset) { for (int s = 0; s < MAX_RIPPLES; s++) ripple_active[s] = false; }
+
+              auto hsv_to_rgb = [](float h, float s, float v, float &r, float &g, float &b) {
+                h = fmodf(h, 1.0f); if (h < 0) h += 1.0f;
+                float i = floorf(h * 6.0f);
+                float f = h * 6.0f - i;
+                float p = v * (1.0f - s);
+                float q = v * (1.0f - f * s);
+                float w = v * (1.0f - (1.0f - f) * s);
+                switch (((int) i) % 6) {
+                  case 0: r = v; g = w; b = p; break;
+                  case 1: r = q; g = v; b = p; break;
+                  case 2: r = p; g = v; b = w; break;
+                  case 3: r = p; g = q; b = v; break;
+                  case 4: r = w; g = p; b = v; break;
+                  default: r = v; g = p; b = q; break;
+                }
+              };
+
+              uint32_t now_ms = ls_now;
+              int n = it.size();
+              float nf = (float) n;
+
+              for (int i = 0; i < n; i++) {
+                Color c = it[i].get();
+                it[i] = Color((uint8_t)(c.r * 0.92f), (uint8_t)(c.g * 0.92f), (uint8_t)(c.b * 0.92f));
+              }
+
+              int active_count = 0;
+              for (int s = 0; s < MAX_RIPPLES; s++) if (ripple_active[s]) active_count++;
+              if (active_count < MAX_RIPPLES && ((ls_rand(ls) % 1000) < 8)) {
+                for (int s = 0; s < MAX_RIPPLES; s++) {
+                  if (!ripple_active[s]) {
+                    ripple_active[s] = true;
+                    ripple_pos[s] = (int)(ls_rand(ls) % n);
+                    ripple_start[s] = now_ms;
+                    ripple_duration[s] = (uint16_t)(1200 + (ls_rand(ls) % 1200));
+                    ripple_hue[s] = (ls_rand(ls) % 1000) / 1000.0f;
+                    break;
+                  }
+                }
+              }
+
+              for (int s = 0; s < MAX_RIPPLES; s++) {
+                if (!ripple_active[s]) continue;
+                uint32_t elapsed = now_ms - ripple_start[s];
+                if (elapsed >= ripple_duration[s]) { ripple_active[s] = false; continue; }
+
+                float phase = elapsed / (float) ripple_duration[s];
+                float radius = phase * (nf * 0.5f);
+                float fade = 1.0f - phase;
+                const float RING_WIDTH = 2.0f;
+
+                float cr, cg, cb;
+                hsv_to_rgb(ripple_hue[s], 0.7f, 1.0f, cr, cg, cb);
+
+                for (int side = -1; side <= 1; side += 2) {
+                  int center = ((ripple_pos[s] + (int)(side * radius)) % n + n) % n;
+                  for (int w = -3; w <= 3; w++) {
+                    int idx = ((center + w) % n + n) % n;
+                    float dist = fabsf((float) w);
+                    float intensity = 1.0f - dist / RING_WIDTH;
+                    if (intensity < 0.0f) continue;
+                    intensity *= fade;
+
+                    Color existing = it[idx].get();
+                    float nr = existing.r + cr * 255.0f * intensity; if (nr > 255) nr = 255;
+                    float ng = existing.g + cg * 255.0f * intensity; if (ng > 255) ng = 255;
+                    float nb = existing.b + cb * 255.0f * intensity; if (nb > 255) nb = 255;
+                    it[idx] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
+                  }
+                }
+              }
+            }
+
+      # ------------------------------------------------------------------
+      # 9. Sinelon (continuous rotation)
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Sinelon"
+          update_interval: 20ms
+          lambda: |-
+            auto hsv_to_rgb = [](float h, float s, float v, float &r, float &g, float &b) {
+              h = fmodf(h, 1.0f); if (h < 0) h += 1.0f;
+              float i = floorf(h * 6.0f);
+              float f = h * 6.0f - i;
+              float p = v * (1.0f - s);
+              float q = v * (1.0f - f * s);
+              float w = v * (1.0f - (1.0f - f) * s);
+              switch (((int) i) % 6) {
+                case 0: r = v; g = w; b = p; break;
+                case 1: r = q; g = v; b = p; break;
+                case 2: r = p; g = v; b = w; break;
+                case 3: r = p; g = q; b = v; break;
+                case 4: r = w; g = p; b = v; break;
+                default: r = v; g = p; b = q; break;
+              }
+            };
+
+            const float DECAY = 0.80f;
+            const float SPEED = 14.0f;
+            const float HUE_SPEED = 0.05f;
+
+            float t = fx_t();
+            int n = it.size();
+
+            float pos = fmodf(t * SPEED, (float) n);
+            if (pos < 0) pos += n;
+            float hue = fmodf(t * HUE_SPEED, 1.0f);
+
+            for (int i = 0; i < n; i++) {
+              Color c = it[i].get();
+              it[i] = Color((uint8_t)(c.r * DECAY), (uint8_t)(c.g * DECAY), (uint8_t)(c.b * DECAY));
+            }
+
+            float r, g, b;
+            hsv_to_rgb(hue, 1.0f, 1.0f, r, g, b);
+            int idx = ((int)(pos + 0.5f)) % n;
+            it[idx] = Color((uint8_t)(r * 255), (uint8_t)(g * 255), (uint8_t)(b * 255));
+
+      # ------------------------------------------------------------------
+      # 10. Confetti
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Confetti"
+          update_interval: 20ms
+          lambda: |-
+            // Lockstep: see light_effects_helpers.h. The simulation below is the
+            // original, run in fixed 20 ms ticks counted from the shared clock with
+            // hashed draws, so every ring of the same size plays the identical show.
+            static Lockstep ls;
+            const uint32_t LS_TICK_MS = 20;
+            const uint32_t ls_target = ls_begin(ls, initial_run, LS_TICK_MS, 60000 / LS_TICK_MS);
+            for (uint32_t ls_t0 = micros(); ls.tick <= ls_target && ls_in_budget(ls_t0); ls.tick++) {
+              const bool ls_reset = (ls.tick == 0);
+              const uint32_t ls_now = ls.tick * LS_TICK_MS;
+              ls.calls = 0;
+              auto hsv_to_rgb = [](float h, float s, float v, float &r, float &g, float &b) {
+                h = fmodf(h, 1.0f); if (h < 0) h += 1.0f;
+                float i = floorf(h * 6.0f);
+                float f = h * 6.0f - i;
+                float p = v * (1.0f - s);
+                float q = v * (1.0f - f * s);
+                float w = v * (1.0f - (1.0f - f) * s);
+                switch (((int) i) % 6) {
+                  case 0: r = v; g = w; b = p; break;
+                  case 1: r = q; g = v; b = p; break;
+                  case 2: r = p; g = v; b = w; break;
+                  case 3: r = p; g = q; b = v; break;
+                  case 4: r = w; g = p; b = v; break;
+                  default: r = v; g = p; b = q; break;
+                }
+              };
+
+              const float DECAY = 0.94f;
+              const int SPARKS_PER_FRAME = 2;
+
+              float t = sync_fold(ls_seconds(ls, LS_TICK_MS, 60000 / LS_TICK_MS));
+              int n = it.size();
+
+              for (int i = 0; i < n; i++) {
+                Color c = it[i].get();
+                it[i] = Color((uint8_t)(c.r * DECAY), (uint8_t)(c.g * DECAY), (uint8_t)(c.b * DECAY));
+              }
+
+              for (int s = 0; s < SPARKS_PER_FRAME; s++) {
+                int idx = (int)(ls_rand(ls) % n);
+                float hue = fmodf(t * 0.05f + (ls_rand(ls) % 1000) / 3000.0f, 1.0f);
+                float r, g, b;
+                hsv_to_rgb(hue, 0.85f, 1.0f, r, g, b);
+                it[idx] = Color((uint8_t)(r * 255), (uint8_t)(g * 255), (uint8_t)(b * 255));
+              }
+            }
+
+      # ------------------------------------------------------------------
+      # 11. Rainbow Chase
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Rainbow Chase"
+          update_interval: 20ms
+          lambda: |-
+            auto hsv_to_rgb = [](float h, float s, float v, float &r, float &g, float &b) {
+              h = fmodf(h, 1.0f); if (h < 0) h += 1.0f;
+              float i = floorf(h * 6.0f);
+              float f = h * 6.0f - i;
+              float p = v * (1.0f - s);
+              float q = v * (1.0f - f * s);
+              float w = v * (1.0f - (1.0f - f) * s);
+              switch (((int) i) % 6) {
+                case 0: r = v; g = w; b = p; break;
+                case 1: r = q; g = v; b = p; break;
+                case 2: r = p; g = v; b = w; break;
+                case 3: r = p; g = q; b = v; break;
+                case 4: r = w; g = p; b = v; break;
+                default: r = v; g = p; b = q; break;
+              }
+            };
+
+            const float REPEATS = 2.0f;   // must stay a whole number for a seamless wrap
+            const float SPEED = 0.15f;
+
+            float t = fx_t();
+            int n = it.size();
+
+            for (int i = 0; i < n; i++) {
+              float hue = fmodf((i / (float) n) * REPEATS + t * SPEED, 1.0f);
+              float r, g, b;
+              hsv_to_rgb(hue, 1.0f, 1.0f, r, g, b);
+              it[i] = Color((uint8_t)(r * 255), (uint8_t)(g * 255), (uint8_t)(b * 255));
+            }
+
+      # ------------------------------------------------------------------
+      # 12. Halloween Eyes (eye gap wraps with modulo)
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Halloween Eyes"
+          update_interval: 30ms
+          lambda: |-
+            // Lockstep: see light_effects_helpers.h. The simulation below is the
+            // original, run in fixed 30 ms ticks counted from the shared clock with
+            // hashed draws, so every ring of the same size plays the identical show.
+            static Lockstep ls;
+            const uint32_t LS_TICK_MS = 30;
+            const uint32_t ls_target = ls_begin(ls, initial_run, LS_TICK_MS, 60000 / LS_TICK_MS);
+            for (uint32_t ls_t0 = micros(); ls.tick <= ls_target && ls_in_budget(ls_t0); ls.tick++) {
+              const bool ls_reset = (ls.tick == 0);
+              const uint32_t ls_now = ls.tick * LS_TICK_MS;
+              ls.calls = 0;
+              const int MAX_EYES = 2;
+              const int EYE_GAP = 3;
+
+              static int      eye_pos[MAX_EYES];
+              static int      eye_state[MAX_EYES];
+              static uint32_t eye_state_start[MAX_EYES];
+              static uint32_t eye_next_ms[MAX_EYES];
+              static uint16_t eye_hold_ms[MAX_EYES];
+
+              if (ls_reset) {
+                for (int e = 0; e < MAX_EYES; e++) {
+                  eye_state[e] = 0;
+                  eye_next_ms[e] = ls_now + (ls_rand(ls) % 4000);
+                }
+                for (int i = 0; i < it.size(); i++) it[i] = Color(0, 0, 0);
+              }
+
+              const uint8_t EYE_R = 255, EYE_G = 130, EYE_B = 0;
+              const uint16_t FADE_IN_MS = 400;
+              const uint16_t FADE_OUT_MS = 600;
+
+              uint32_t now_ms = ls_now;
+              int n = it.size();
+
+              for (int i = 0; i < n; i++) it[i] = Color(0, 0, 0);
+
+              for (int e = 0; e < MAX_EYES; e++) {
+                float brightness = 0.0f;
+
+                if (eye_state[e] == 0) {
+                  if (now_ms >= eye_next_ms[e]) {
+                    eye_pos[e] = (int)(ls_rand(ls) % n);
+                    eye_state[e] = 1;
+                    eye_state_start[e] = now_ms;
+                    eye_hold_ms[e] = (uint16_t)(1500 + (ls_rand(ls) % 2500));
+                  }
+                } else if (eye_state[e] == 1) {
+                  uint32_t elapsed = now_ms - eye_state_start[e];
+                  brightness = elapsed / (float) FADE_IN_MS;
+                  if (brightness >= 1.0f) { brightness = 1.0f; eye_state[e] = 2; eye_state_start[e] = now_ms; }
+                } else if (eye_state[e] == 2) {
+                  brightness = 1.0f;
+                  if (now_ms - eye_state_start[e] >= eye_hold_ms[e]) { eye_state[e] = 3; eye_state_start[e] = now_ms; }
+                } else if (eye_state[e] == 3) {
+                  uint32_t elapsed = now_ms - eye_state_start[e];
+                  brightness = 1.0f - elapsed / (float) FADE_OUT_MS;
+                  if (brightness <= 0.0f) {
+                    brightness = 0.0f;
+                    eye_state[e] = 0;
+                    eye_next_ms[e] = now_ms + 2000 + (ls_rand(ls) % 6000);
+                  }
+                }
+
+                if (brightness > 0.0f) {
+                  int p1 = eye_pos[e];
+                  int p2 = (eye_pos[e] + EYE_GAP) % n;
+                  it[p1] = Color((uint8_t)(EYE_R*brightness), (uint8_t)(EYE_G*brightness), (uint8_t)(EYE_B*brightness));
+                  it[p2] = Color((uint8_t)(EYE_R*brightness), (uint8_t)(EYE_G*brightness), (uint8_t)(EYE_B*brightness));
+                }
+              }
+            }
+
+      # ------------------------------------------------------------------
+      # 13. Chunchun (continuous wraparound flight)
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Chunchun"
+          update_interval: 20ms
+          lambda: |-
+            // Lockstep: see light_effects_helpers.h. The simulation below is the
+            // original, run in fixed 20 ms ticks counted from the shared clock with
+            // hashed draws, so every ring of the same size plays the identical show.
+            static Lockstep ls;
+            const uint32_t LS_TICK_MS = 20;
+            const uint32_t ls_target = ls_begin(ls, initial_run, LS_TICK_MS, 60000 / LS_TICK_MS);
+            for (uint32_t ls_t0 = micros(); ls.tick <= ls_target && ls_in_budget(ls_t0); ls.tick++) {
+              const bool ls_reset = (ls.tick == 0);
+              const uint32_t ls_now = ls.tick * LS_TICK_MS;
+              ls.calls = 0;
+              const float dt = LS_TICK_MS / 1000.0f;
+              static bool     flying = false;
+              static float    pos = 0.0f;
+              static float    vel = 0.0f;
+              static float    hue = 0.0f;
+              static float    flight_elapsed = 0.0f;
+              static float    flight_duration = 0.0f;
+              static uint32_t next_ms = 0;
+              static uint32_t last_ms = 0;
+
+              if (ls_reset) {
+                flying = false;
+                next_ms = ls_now + (ls_rand(ls) % 3000);
+                last_ms = 0;
+                for (int i = 0; i < it.size(); i++) it[i] = Color(0, 0, 0);
+              }
+
+              auto hsv_to_rgb = [](float h, float s, float v, float &r, float &g, float &b) {
+                h = fmodf(h, 1.0f); if (h < 0) h += 1.0f;
+                float i = floorf(h * 6.0f);
+                float f = h * 6.0f - i;
+                float p = v * (1.0f - s);
+                float q = v * (1.0f - f * s);
+                float w = v * (1.0f - (1.0f - f) * s);
+                switch (((int) i) % 6) {
+                  case 0: r = v; g = w; b = p; break;
+                  case 1: r = q; g = v; b = p; break;
+                  case 2: r = p; g = v; b = w; break;
+                  case 3: r = p; g = q; b = v; break;
+                  case 4: r = w; g = p; b = v; break;
+                  default: r = v; g = p; b = q; break;
+                }
+              };
+
+              uint32_t now_ms = ls_now;
+
+              int n = it.size();
+
+              for (int i = 0; i < n; i++) {
+                Color c = it[i].get();
+                it[i] = Color((uint8_t)(c.r * 0.7f), (uint8_t)(c.g * 0.7f), (uint8_t)(c.b * 0.7f));
+              }
+
+              if (!flying && now_ms >= next_ms) {
+                flying = true;
+                pos = (float)(ls_rand(ls) % n);
+                bool cw = (ls_rand(ls) % 2) == 0;
+                vel = (cw ? 1.0f : -1.0f) * (50.0f + (ls_rand(ls) % 60));
+                hue = (ls_rand(ls) % 1000) / 1000.0f;
+                flight_elapsed = 0.0f;
+                flight_duration = 0.5f + (ls_rand(ls) % 1500) / 1000.0f;
+              }
+
+              if (flying) {
+                pos += vel * dt;
+                pos = fmodf(pos, (float) n);
+                if (pos < 0) pos += n;
+
+                flight_elapsed += dt;
+                if (flight_elapsed >= flight_duration) {
+                  flying = false;
+                  next_ms = now_ms + 3000 + (ls_rand(ls) % 8000);
+                } else {
+                  int idx = (int) pos;
+                  float r, g, b;
+                  hsv_to_rgb(hue, 0.9f, 1.0f, r, g, b);
+                  it[idx] = Color((uint8_t)(r * 255), (uint8_t)(g * 255), (uint8_t)(b * 255));
+                }
+              }
+            }
+
+      # ------------------------------------------------------------------
+      # 14. Fireworks Burst (wraparound, no gravity fall-back)
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Fireworks Burst"
+          update_interval: 20ms
+          lambda: |-
+            // Lockstep: see light_effects_helpers.h. The simulation below is the
+            // original, run in fixed 20 ms ticks counted from the shared clock with
+            // hashed draws, so every ring of the same size plays the identical show.
+            static Lockstep ls;
+            const uint32_t LS_TICK_MS = 20;
+            const uint32_t ls_target = ls_begin(ls, initial_run, LS_TICK_MS, 60000 / LS_TICK_MS);
+            for (uint32_t ls_t0 = micros(); ls.tick <= ls_target && ls_in_budget(ls_t0); ls.tick++) {
+              const bool ls_reset = (ls.tick == 0);
+              const uint32_t ls_now = ls.tick * LS_TICK_MS;
+              ls.calls = 0;
+              const float dt = LS_TICK_MS / 1000.0f;
+              const int MAX_PARTICLES = 24;
+              static float p_pos[MAX_PARTICLES];
+              static float p_vel[MAX_PARTICLES];
+              static float p_life[MAX_PARTICLES];
+              static float p_hue[MAX_PARTICLES];
+              static bool  p_active[MAX_PARTICLES];
+
+              static bool     rocket_active = false;
+              static float    rocket_pos = 0.0f;
+              static float    rocket_vel = 0.0f;
+              static float    rocket_hue = 0.0f;
+              static uint32_t last_ms = 0;
+
+              if (ls_reset) {
+                rocket_active = false;
+                last_ms = 0;
+                for (int i = 0; i < MAX_PARTICLES; i++) p_active[i] = false;
+                for (int i = 0; i < it.size(); i++) it[i] = Color(0, 0, 0);
+              }
+
+              auto hsv_to_rgb = [](float h, float s, float v, float &r, float &g, float &b) {
+                h = fmodf(h, 1.0f); if (h < 0) h += 1.0f;
+                float i = floorf(h * 6.0f);
+                float f = h * 6.0f - i;
+                float p = v * (1.0f - s);
+                float q = v * (1.0f - f * s);
+                float w = v * (1.0f - (1.0f - f) * s);
+                switch (((int) i) % 6) {
+                  case 0: r = v; g = w; b = p; break;
+                  case 1: r = q; g = v; b = p; break;
+                  case 2: r = p; g = v; b = w; break;
+                  case 3: r = p; g = q; b = v; break;
+                  case 4: r = w; g = p; b = v; break;
+                  default: r = v; g = p; b = q; break;
+                }
+              };
+
+              uint32_t now_ms = ls_now;
+
+              const float DECEL = 90.0f;
+              const int NUM_BURST = 14;
+              const float PARTICLE_LIFE = 1.0f;
+
+              int n = it.size();
+              float nf = (float) n;
+
+              for (int i = 0; i < n; i++) {
+                Color c = it[i].get();
+                it[i] = Color((uint8_t)(c.r * 0.85f), (uint8_t)(c.g * 0.85f), (uint8_t)(c.b * 0.85f));
+              }
+
+              if (!rocket_active && ((ls_rand(ls) % 1000) < 6)) {
+                rocket_active = true;
+                rocket_pos = (float)(ls_rand(ls) % n);
+                rocket_vel = 55.0f + (ls_rand(ls) % 40);
+                rocket_hue = (ls_rand(ls) % 1000) / 1000.0f;
+              }
+
+              if (rocket_active) {
+                rocket_vel -= DECEL * dt;
+                rocket_pos += rocket_vel * dt;
+                rocket_pos = fmodf(rocket_pos, nf); if (rocket_pos < 0) rocket_pos += nf;
+
+                int idx = (int) rocket_pos;
+                it[idx] = Color(255, 255, 255);
+
+                if (rocket_vel <= 0.0f) {
+                  rocket_active = false;
+                  int spawned = 0;
+                  for (int i = 0; i < MAX_PARTICLES && spawned < NUM_BURST; i++) {
+                    if (!p_active[i]) {
+                      p_active[i] = true;
+                      p_pos[i] = rocket_pos;
+                      p_vel[i] = ((ls_rand(ls) % 200) - 100) * 0.6f;
+                      p_life[i] = PARTICLE_LIFE;
+                      p_hue[i] = rocket_hue + ((ls_rand(ls) % 200) - 100) / 1000.0f;
+                      spawned++;
+                    }
+                  }
+                }
+              }
+
+              for (int i = 0; i < MAX_PARTICLES; i++) {
+                if (!p_active[i]) continue;
+                p_vel[i] -= DECEL * 0.5f * dt;
+                p_pos[i] += p_vel[i] * dt;
+                p_pos[i] = fmodf(p_pos[i], nf); if (p_pos[i] < 0) p_pos[i] += nf;
+                p_life[i] -= dt / PARTICLE_LIFE;
+
+                if (p_life[i] <= 0.0f) { p_active[i] = false; continue; }
+
+                float r, g, b;
+                hsv_to_rgb(p_hue[i], 1.0f, p_life[i], r, g, b);
+                int idx = (int) p_pos[i];
+                Color existing = it[idx].get();
+                float nr = existing.r + r * 255.0f; if (nr > 255) nr = 255;
+                float ng = existing.g + g * 255.0f; if (ng > 255) ng = 255;
+                float nb = existing.b + b * 255.0f; if (nb > 255) nb = 255;
+                it[idx] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
+              }
+            }
+
+      # ==================================================================
+      # ROTATION-NATIVE (built for a ring, not adapted from a strip)
+      # ==================================================================
+
+      # ------------------------------------------------------------------
+      # 15. Plasma
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Plasma"
+          update_interval: 20ms
+          lambda: |-
+            auto hsv_to_rgb = [](float h, float s, float v, float &r, float &g, float &b) {
+              h = fmodf(h, 1.0f); if (h < 0) h += 1.0f;
+              float i = floorf(h * 6.0f);
+              float f = h * 6.0f - i;
+              float p = v * (1.0f - s);
+              float q = v * (1.0f - f * s);
+              float w = v * (1.0f - (1.0f - f) * s);
+              switch (((int) i) % 6) {
+                case 0: r = v; g = w; b = p; break;
+                case 1: r = q; g = v; b = p; break;
+                case 2: r = p; g = v; b = w; break;
+                case 3: r = p; g = q; b = v; break;
+                case 4: r = w; g = p; b = v; break;
+                default: r = v; g = p; b = q; break;
+              }
+            };
+
+            float t = fx_t();
+            int n = it.size();
+
+            for (int i = 0; i < n; i++) {
+              float theta = (i / (float) n) * 6.2831853f;
+
+              float hue_noise = sinf(3.0f * theta + t * 0.5f) * 0.5f
+                              + sinf(5.0f * theta - t * 0.35f + 1.3f) * 0.3f
+                              + sinf(8.0f * theta + t * 0.8f + 2.7f) * 0.2f;
+              float hue = fmodf(hue_noise * 0.5f + 0.5f + t * 0.05f, 1.0f);
+              if (hue < 0) hue += 1.0f;
+
+              float bright_noise = sinf(4.0f * theta - t * 0.6f + 0.9f) * 0.5f + 0.5f;
+              float breathe = powf(bright_noise, 1.3f);
+
+              const float SAT = 0.85f;
+              const float MIN_VALUE = 0.4f;
+
+              float r, g, b;
+              hsv_to_rgb(hue, SAT, MIN_VALUE + (1.0f - MIN_VALUE) * breathe, r, g, b);
+              it[i] = Color((uint8_t)(r * 255), (uint8_t)(g * 255), (uint8_t)(b * 255));
+            }
+
+      # ------------------------------------------------------------------
+      # 16. Comet Swarm
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Comet Swarm"
+          update_interval: 20ms
+          lambda: |-
+            // Lockstep: see light_effects_helpers.h. The simulation below is the
+            // original, run in fixed 20 ms ticks counted from the shared clock with
+            // hashed draws, so every ring of the same size plays the identical show.
+            static Lockstep ls;
+            const uint32_t LS_TICK_MS = 20;
+            const uint32_t ls_target = ls_begin(ls, initial_run, LS_TICK_MS, 60000 / LS_TICK_MS);
+            for (uint32_t ls_t0 = micros(); ls.tick <= ls_target && ls_in_budget(ls_t0); ls.tick++) {
+              const bool ls_reset = (ls.tick == 0);
+              const uint32_t ls_now = ls.tick * LS_TICK_MS;
+              ls.calls = 0;
+              const float dt = LS_TICK_MS / 1000.0f;
+              const int NUM_COMETS = 4;
+
+              static float    pos[NUM_COMETS];
+              static float    speed[NUM_COMETS];
+              static float    hue[NUM_COMETS];
+              static uint32_t last_ms = 0;
+
+              if (ls_reset) {
+                last_ms = 0;
+                for (int c = 0; c < NUM_COMETS; c++) {
+                  pos[c] = (float)(ls_rand(ls) % it.size());
+                  bool cw = (ls_rand(ls) % 2) == 0;
+                  speed[c] = (cw ? 1.0f : -1.0f) * (15.0f + (ls_rand(ls) % 40));
+                  hue[c] = (float) c / NUM_COMETS;
+                }
+                for (int i = 0; i < it.size(); i++) it[i] = Color(0, 0, 0);
+              }
+
+              auto hsv_to_rgb = [](float h, float s, float v, float &r, float &g, float &b) {
+                h = fmodf(h, 1.0f); if (h < 0) h += 1.0f;
+                float i = floorf(h * 6.0f);
+                float f = h * 6.0f - i;
+                float p = v * (1.0f - s);
+                float q = v * (1.0f - f * s);
+                float w = v * (1.0f - (1.0f - f) * s);
+                switch (((int) i) % 6) {
+                  case 0: r = v; g = w; b = p; break;
+                  case 1: r = q; g = v; b = p; break;
+                  case 2: r = p; g = v; b = w; break;
+                  case 3: r = p; g = q; b = v; break;
+                  case 4: r = w; g = p; b = v; break;
+                  default: r = v; g = p; b = q; break;
+                }
+              };
+
+              uint32_t now_ms = ls_now;
+
+              const float DECAY = 0.80f;
+              int n = it.size();
+              float nf = (float) n;
+
+              for (int i = 0; i < n; i++) {
+                Color c = it[i].get();
+                it[i] = Color((uint8_t)(c.r * DECAY), (uint8_t)(c.g * DECAY), (uint8_t)(c.b * DECAY));
+              }
+
+              for (int c = 0; c < NUM_COMETS; c++) {
+                pos[c] += speed[c] * dt;
+                pos[c] = fmodf(pos[c], nf); if (pos[c] < 0) pos[c] += nf;
+
+                int idx = (int) pos[c];
+                float r, g, b;
+                hsv_to_rgb(hue[c], 1.0f, 1.0f, r, g, b);
+
+                Color existing = it[idx].get();
+                float nr = existing.r + r * 255.0f; if (nr > 255) nr = 255;
+                float ng = existing.g + g * 255.0f; if (ng > 255) ng = 255;
+                float nb = existing.b + b * 255.0f; if (nb > 255) nb = 255;
+                it[idx] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
+              }
+            }
+
+      # ------------------------------------------------------------------
+      # 17. Theater Chase
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Theater Chase"
+          update_interval: 20ms
+          lambda: |-
+            const int GROUP_SIZE = 3;   // divides evenly into 48 - keep it that way if you resize
+            const uint32_t STEP_MS = 100;
+
+            static int      offset = 0;
+            static uint32_t last_step_ms = 0;
+
+            if (initial_run) { offset = 0; last_step_ms = 0; }
+
+            auto hsv_to_rgb = [](float h, float s, float v, float &r, float &g, float &b) {
+              h = fmodf(h, 1.0f); if (h < 0) h += 1.0f;
+              float i = floorf(h * 6.0f);
+              float f = h * 6.0f - i;
+              float p = v * (1.0f - s);
+              float q = v * (1.0f - f * s);
+              float w = v * (1.0f - (1.0f - f) * s);
+              switch (((int) i) % 6) {
+                case 0: r = v; g = w; b = p; break;
+                case 1: r = q; g = v; b = p; break;
+                case 2: r = p; g = v; b = w; break;
+                case 3: r = p; g = q; b = v; break;
+                case 4: r = w; g = p; b = v; break;
+                default: r = v; g = p; b = q; break;
+              }
+            };
+
+            // Step index from the shared clock: every ring is on the same step.
+            offset = (int) ((fx_ms() / STEP_MS) % GROUP_SIZE);
+
+            float t = fx_t();
+            float hue = fmodf(t * 0.10f, 1.0f);
+
+            float r, g, b;
+            hsv_to_rgb(hue, 1.0f, 1.0f, r, g, b);
+            uint8_t lit_r = (uint8_t)(r * 255), lit_g = (uint8_t)(g * 255), lit_b = (uint8_t)(b * 255);
+
+            int n = it.size();
+            for (int i = 0; i < n; i++) {
+              bool lit = ((i + offset) % GROUP_SIZE) == 0;
+              it[i] = lit ? Color(lit_r, lit_g, lit_b) : Color(0, 0, 0);
+            }
+
+      # ------------------------------------------------------------------
+      # 18. Pinwheel
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Pinwheel"
+          update_interval: 20ms
+          lambda: |-
+            const int NUM_SPOKES = 6;
+            const float ROT_SPEED = 0.15f;
+
+            auto hsv_to_rgb = [](float h, float s, float v, float &r, float &g, float &b) {
+              h = fmodf(h, 1.0f); if (h < 0) h += 1.0f;
+              float i = floorf(h * 6.0f);
+              float f = h * 6.0f - i;
+              float p = v * (1.0f - s);
+              float q = v * (1.0f - f * s);
+              float w = v * (1.0f - (1.0f - f) * s);
+              switch (((int) i) % 6) {
+                case 0: r = v; g = w; b = p; break;
+                case 1: r = q; g = v; b = p; break;
+                case 2: r = p; g = v; b = w; break;
+                case 3: r = p; g = q; b = v; break;
+                case 4: r = w; g = p; b = v; break;
+                default: r = v; g = p; b = q; break;
+              }
+            };
+
+            float t = fx_t();
+            int n = it.size();
+
+            for (int i = 0; i < n; i++) {
+              float theta = (i / (float) n) + t * ROT_SPEED;
+              theta = fmodf(theta, 1.0f); if (theta < 0) theta += 1.0f;
+
+              int spoke = ((int)(theta * NUM_SPOKES)) % NUM_SPOKES;
+              float hue = (float) spoke / NUM_SPOKES;
+
+              float r, g, b;
+              hsv_to_rgb(hue, 1.0f, 1.0f, r, g, b);
+              it[i] = Color((uint8_t)(r * 255), (uint8_t)(g * 255), (uint8_t)(b * 255));
+            }
+
+      # ------------------------------------------------------------------
+      # 19. Lighthouse
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Lighthouse"
+          update_interval: 20ms
+          lambda: |-
+            static float    pos = 0.0f;
+            static uint32_t last_ms = 0;
+
+            const uint8_t AMB_R = 2, AMB_G = 2, AMB_B = 6;
+
+            if (initial_run) {
+              pos = 0.0f;
+              last_ms = 0;
+              for (int i = 0; i < it.size(); i++) it[i] = Color(AMB_R, AMB_G, AMB_B);
+            }
+
+            // Position comes straight from the shared clock rather than being
+            // integrated frame by frame, so it no longer depends on when the
+            // effect started and every ring shows the head at the same angle.
+            // Speed is expressed per REVOLUTION (SPEED was tuned as LEDs/s on a
+            // 48-LED ring), so a 13-LED and a 48-LED ring stay in step too.
+
+            const float SPEED = 25.0f;
+            const float DECAY = 0.85f;
+            const uint8_t BEAM_R = 255, BEAM_G = 220, BEAM_B = 140;
+
+            int n = it.size();
+            float nf = (float) n;
+
+            pos = (float) fmod(fx_seconds() * (SPEED / 48.0), 1.0) * n;
+            pos = fmodf(pos, nf); if (pos < 0) pos += nf;
+
+            for (int i = 0; i < n; i++) {
+              Color c = it[i].get();
+              float nr = AMB_R + (c.r - AMB_R) * DECAY; if (nr < 0) nr = 0;
+              float ng = AMB_G + (c.g - AMB_G) * DECAY; if (ng < 0) ng = 0;
+              float nb = AMB_B + (c.b - AMB_B) * DECAY; if (nb < 0) nb = 0;
+              it[i] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
+            }
+
+            int head = (int) pos;
+            it[head] = Color(BEAM_R, BEAM_G, BEAM_B);
+
+      # ==================================================================
+      # NIGHTLIGHT (dim, gentle movement)
+      # ==================================================================
+
+      # ------------------------------------------------------------------
+      # 20. Firefly Jar
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Firefly Jar"
+          update_interval: 30ms
+          lambda: |-
+            // Lockstep: see light_effects_helpers.h. The simulation below is the
+            // original, run in fixed 30 ms ticks counted from the shared clock with
+            // hashed draws, so every ring of the same size plays the identical show.
+            static Lockstep ls;
+            const uint32_t LS_TICK_MS = 30;
+            const uint32_t ls_target = ls_begin(ls, initial_run, LS_TICK_MS, 60000 / LS_TICK_MS);
+            for (uint32_t ls_t0 = micros(); ls.tick <= ls_target && ls_in_budget(ls_t0); ls.tick++) {
+              const bool ls_reset = (ls.tick == 0);
+              const uint32_t ls_now = ls.tick * LS_TICK_MS;
+              ls.calls = 0;
+              const float dt = LS_TICK_MS / 1000.0f;
+              const int NUM_FIREFLIES = 6;
+
+              static float    pos[NUM_FIREFLIES];
+              static float    vel[NUM_FIREFLIES];
+              static float    hue[NUM_FIREFLIES];
+              static float    glow_phase[NUM_FIREFLIES];
+              static float    glow_speed[NUM_FIREFLIES];
+              static uint32_t last_ms = 0;
+
+              if (ls_reset) {
+                last_ms = 0;
+                for (int f = 0; f < NUM_FIREFLIES; f++) {
+                  pos[f] = (float)(ls_rand(ls) % it.size());
+                  vel[f] = 0.0f;
+                  hue[f] = 0.12f + (ls_rand(ls) % 100) / 1000.0f;
+                  glow_phase[f] = (ls_rand(ls) % 1000) / 1000.0f * 6.2831853f;
+                  glow_speed[f] = 0.3f + (ls_rand(ls) % 400) / 1000.0f;
+                }
+                for (int i = 0; i < it.size(); i++) it[i] = Color(0, 0, 0);
+              }
+
+              auto hsv_to_rgb = [](float h, float s, float v, float &r, float &g, float &b) {
+                h = fmodf(h, 1.0f); if (h < 0) h += 1.0f;
+                float i = floorf(h * 6.0f);
+                float f = h * 6.0f - i;
+                float p = v * (1.0f - s);
+                float q = v * (1.0f - f * s);
+                float w = v * (1.0f - (1.0f - f) * s);
+                switch (((int) i) % 6) {
+                  case 0: r = v; g = w; b = p; break;
+                  case 1: r = q; g = v; b = p; break;
+                  case 2: r = p; g = v; b = w; break;
+                  case 3: r = p; g = q; b = v; break;
+                  case 4: r = w; g = p; b = v; break;
+                  default: r = v; g = p; b = q; break;
+                }
+              };
+
+              uint32_t now_ms = ls_now;
+
+              const float DECAY = 0.90f;
+              const float ACCEL_STRENGTH = 8.0f;
+              const float FRICTION = 1.2f;
+              const float MAX_SPEED = 3.0f;
+              const float MAX_BRIGHTNESS = 0.22f;
+              const float MIN_GLOW = 0.15f;
+
+              int n = it.size();
+
+              for (int i = 0; i < n; i++) {
+                Color c = it[i].get();
+                it[i] = Color((uint8_t)(c.r * DECAY), (uint8_t)(c.g * DECAY), (uint8_t)(c.b * DECAY));
+              }
+
+              for (int f = 0; f < NUM_FIREFLIES; f++) {
+                float accel = ((int) (ls_rand(ls) % 200) - 100) / 100.0f * ACCEL_STRENGTH;
+                vel[f] += accel * dt;
+                vel[f] *= (1.0f - FRICTION * dt);
+                if (vel[f] > MAX_SPEED) vel[f] = MAX_SPEED;
+                if (vel[f] < -MAX_SPEED) vel[f] = -MAX_SPEED;
+
+                pos[f] += vel[f] * dt;
+                pos[f] = fmodf(pos[f], (float) n); if (pos[f] < 0) pos[f] += n;
+
+                glow_phase[f] += glow_speed[f] * dt;
+                float glow = sinf(glow_phase[f]) * 0.5f + 0.5f;
+                glow = powf(glow, 1.5f);
+                float brightness = (MIN_GLOW + (1.0f - MIN_GLOW) * glow) * MAX_BRIGHTNESS;
+
+                float r, g, b;
+                hsv_to_rgb(hue[f], 0.9f, brightness, r, g, b);
+                int idx = (int) pos[f];
+                Color existing = it[idx].get();
+                float nr = existing.r + r * 255.0f; if (nr > 255) nr = 255;
+                float ng = existing.g + g * 255.0f; if (ng > 255) ng = 255;
+                float nb = existing.b + b * 255.0f; if (nb > 255) nb = 255;
+                it[idx] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
+              }
+            }
+
+      # ------------------------------------------------------------------
+      # 21. Slow Star Orbit
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Slow Star Orbit"
+          update_interval: 40ms
+          lambda: |-
+            // Lockstep: see light_effects_helpers.h. The simulation below is the
+            // original, run in fixed 40 ms ticks counted from the shared clock with
+            // hashed draws, so every ring of the same size plays the identical show.
+            static Lockstep ls;
+            const uint32_t LS_TICK_MS = 40;
+            const uint32_t ls_target = ls_begin(ls, initial_run, LS_TICK_MS, 60000 / LS_TICK_MS);
+            for (uint32_t ls_t0 = micros(); ls.tick <= ls_target && ls_in_budget(ls_t0); ls.tick++) {
+              const bool ls_reset = (ls.tick == 0);
+              const uint32_t ls_now = ls.tick * LS_TICK_MS;
+              ls.calls = 0;
+              const float dt = LS_TICK_MS / 1000.0f;
+              const int NUM_STARS = 5;
+
+              static float    pos[NUM_STARS];
+              static float    speed[NUM_STARS];
+              static float    twinkle_phase[NUM_STARS];
+              static float    twinkle_speed[NUM_STARS];
+              static float    hue[NUM_STARS];
+              static uint32_t last_ms = 0;
+
+              if (ls_reset) {
+                last_ms = 0;
+                for (int s = 0; s < NUM_STARS; s++) {
+                  pos[s] = (float)(ls_rand(ls) % it.size());
+                  bool cw = (ls_rand(ls) % 2) == 0;
+                  speed[s] = (cw ? 1.0f : -1.0f) * (0.5f + (ls_rand(ls) % 1000) / 1000.0f);
+                  twinkle_phase[s] = (ls_rand(ls) % 1000) / 1000.0f * 6.2831853f;
+                  twinkle_speed[s] = 0.2f + (ls_rand(ls) % 300) / 1000.0f;
+                  hue[s] = 0.55f + (ls_rand(ls) % 100) / 2000.0f;
+                }
+                for (int i = 0; i < it.size(); i++) it[i] = Color(0, 0, 0);
+              }
+
+              auto hsv_to_rgb = [](float h, float s, float v, float &r, float &g, float &b) {
+                h = fmodf(h, 1.0f); if (h < 0) h += 1.0f;
+                float i = floorf(h * 6.0f);
+                float f = h * 6.0f - i;
+                float p = v * (1.0f - s);
+                float q = v * (1.0f - f * s);
+                float w = v * (1.0f - (1.0f - f) * s);
+                switch (((int) i) % 6) {
+                  case 0: r = v; g = w; b = p; break;
+                  case 1: r = q; g = v; b = p; break;
+                  case 2: r = p; g = v; b = w; break;
+                  case 3: r = p; g = q; b = v; break;
+                  case 4: r = w; g = p; b = v; break;
+                  default: r = v; g = p; b = q; break;
+                }
+              };
+
+              uint32_t now_ms = ls_now;
+
+              const float DECAY = 0.95f;
+              const float MAX_BRIGHTNESS = 0.18f;
+
+              int n = it.size();
+
+              for (int i = 0; i < n; i++) {
+                Color c = it[i].get();
+                it[i] = Color((uint8_t)(c.r * DECAY), (uint8_t)(c.g * DECAY), (uint8_t)(c.b * DECAY));
+              }
+
+              for (int s = 0; s < NUM_STARS; s++) {
+                pos[s] += speed[s] * dt;
+                pos[s] = fmodf(pos[s], (float) n); if (pos[s] < 0) pos[s] += n;
+
+                twinkle_phase[s] += twinkle_speed[s] * dt;
+                float twinkle = sinf(twinkle_phase[s]) * 0.5f + 0.5f;
+                float brightness = (0.3f + 0.7f * twinkle) * MAX_BRIGHTNESS;
+
+                float r, g, b;
+                hsv_to_rgb(hue[s], 0.25f, brightness, r, g, b);
+                int idx = (int) pos[s];
+                Color existing = it[idx].get();
+                float nr = existing.r + r * 255.0f; if (nr > 255) nr = 255;
+                float ng = existing.g + g * 255.0f; if (ng > 255) ng = 255;
+                float nb = existing.b + b * 255.0f; if (nb > 255) nb = 255;
+                it[idx] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
+              }
+            }
+
+      # ------------------------------------------------------------------
+      # 22. Candlelit Companion
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Candlelit Companion"
+          update_interval: 40ms
+          lambda: |-
+            // Lockstep: see light_effects_helpers.h. The simulation below is the
+            // original, run in fixed 40 ms ticks counted from the shared clock with
+            // hashed draws, so every ring of the same size plays the identical show.
+            static Lockstep ls;
+            const uint32_t LS_TICK_MS = 40;
+            const uint32_t ls_target = ls_begin(ls, initial_run, LS_TICK_MS, 60000 / LS_TICK_MS);
+            for (uint32_t ls_t0 = micros(); ls.tick <= ls_target && ls_in_budget(ls_t0); ls.tick++) {
+              const bool ls_reset = (ls.tick == 0);
+              const uint32_t ls_now = ls.tick * LS_TICK_MS;
+              ls.calls = 0;
+              const float dt = LS_TICK_MS / 1000.0f;
+              static float    pos = 0.0f;
+              static float    gust = 0.0f;
+              static uint32_t last_ms = 0;
+
+              if (ls_reset) {
+                pos = 0.0f;
+                gust = 0.0f;
+                last_ms = 0;
+                for (int i = 0; i < it.size(); i++) it[i] = Color(0, 0, 0);
+              }
+
+              static const uint8_t pal_candle[16][3] = {
+                {60,18,2},{80,26,3},{100,34,4},{125,44,5},
+                {150,55,6},{175,66,8},{195,78,12},{212,90,18},
+                {228,104,26},{240,118,36},{248,132,48},{255,146,62},
+                {255,160,78},{255,174,96},{255,186,116},{255,196,138}
+              };
+
+              auto noise1d = [](float x) -> float {
+                return sinf(x * 1.0f) * 0.500f
+                     + sinf(x * 2.13f + 1.7f) * 0.250f
+                     + sinf(x * 4.07f + 3.1f) * 0.125f
+                     + sinf(x * 8.53f + 0.6f) * 0.0625f;
+              };
+
+              uint32_t now_ms = ls_now;
+
+              const float ROT_SPEED = 1.2f;
+              const float DECAY = 0.88f;
+              const float MAX_BRIGHTNESS = 0.20f;
+
+              int n = it.size();
+              float t = sync_fold(ls_seconds(ls, LS_TICK_MS, 60000 / LS_TICK_MS));
+
+              pos += ROT_SPEED * dt;
+              pos = fmodf(pos, (float) n); if (pos < 0) pos += n;
+
+              float base  = noise1d(t * 3.0f) * 0.5f + 0.5f;
+              float micro = noise1d(t * 11.3f + 2.0f) * 0.5f + 0.5f;
+              float v_raw = base * 0.70f + micro * 0.30f;
+
+              gust *= 0.90f;
+              if ((ls_rand(ls) % 1000) < 5) {
+                gust += 0.30f + (ls_rand(ls) % 300) / 1000.0f;
+                if (gust > 0.65f) gust = 0.65f;
+              }
+              v_raw = 0.62f + (v_raw - 0.62f) * fx_swing();   // intensity: flicker depth
+              v_raw -= gust * fx_accents();
+              if (v_raw < 0.12f) v_raw = 0.12f;
+              if (v_raw > 1.0f) v_raw = 1.0f;
+
+              float ppos = v_raw * 15.0f;
+              int idx0 = (int) ppos; int idx1 = (idx0 + 1) % 16; float frac = ppos - idx0;
+              float cr = pal_candle[idx0][0]*(1-frac) + pal_candle[idx1][0]*frac;
+              float cg = pal_candle[idx0][1]*(1-frac) + pal_candle[idx1][1]*frac;
+              float cb = pal_candle[idx0][2]*(1-frac) + pal_candle[idx1][2]*frac;
+
+              cr *= MAX_BRIGHTNESS; cg *= MAX_BRIGHTNESS; cb *= MAX_BRIGHTNESS;
+
+              for (int i = 0; i < n; i++) {
+                Color c = it[i].get();
+                it[i] = Color((uint8_t)(c.r * DECAY), (uint8_t)(c.g * DECAY), (uint8_t)(c.b * DECAY));
+              }
+
+              int idx = (int) pos;
+              it[idx] = Color((uint8_t) cr, (uint8_t) cg, (uint8_t) cb);
+            }
+
+      - addressable_lambda:
+          name: "Ember Ring"
+          update_interval: 40ms
+          lambda: |-
+            static const uint8_t pal_embers[16][3] = {
+              {30,4,0},{45,7,0},{60,10,0},{80,14,0},
+              {100,20,0},{120,28,0},{145,38,0},{170,50,0},
+              {195,64,2},{215,80,6},{230,95,12},{242,110,20},
+              {250,125,30},{255,142,45},{255,160,65},{255,180,90}
+            };
+
+            auto noise1d = [](float x) -> float {
+              return sinf(x * 1.0f) * 0.500f
+                   + sinf(x * 2.13f + 1.7f) * 0.250f
+                   + sinf(x * 4.07f + 3.1f) * 0.125f
+                   + sinf(x * 8.53f + 0.6f) * 0.0625f;
+            };
+
+            const float BASE_SPEED = 0.4f;    // TUNE base glow drift speed
+            const float FLARE_SPEED = 0.9f;   // TUNE flare-up frequency
+            const float FLARE_STRENGTH = 0.4f;// TUNE how bright flares get
+
+            float t = fx_t();
+            int n = it.size();
+
+            for (int i = 0; i < n; i++) {
+              // per-pixel independent phase offset via hash - no spatial
+              // continuity needed between neighbors, embers don't need to blend
+              uint32_t h = (uint32_t) i * 2654435761u;
+              float salt = ((h >> 16) & 0xFFFF) / 65535.0f * 100.0f;
+
+              float base = noise1d(t * BASE_SPEED + salt) * 0.5f + 0.5f;
+              float v = 0.30f + (0.5f + (base - 0.5f) * fx_swing()) * 0.35f;   // intensity: glow movement
+
+              float flare_noise = noise1d(t * FLARE_SPEED + salt * 1.7f + 50.0f) * 0.5f + 0.5f;
+              float flare = powf(flare_noise, 4.0f) * FLARE_STRENGTH * fx_accents();   // occasional brighter spikes
+              v += flare;
+
+              if (v > 1.0f) v = 1.0f;
+              if (v < 0.0f) v = 0.0f;
+
+              float pos = v * 15.0f;
+              int idx0 = (int) pos; int idx1 = (idx0 + 1) % 16; float frac = pos - idx0;
+
+              float r = pal_embers[idx0][0]*(1-frac) + pal_embers[idx1][0]*frac;
+              float g = pal_embers[idx0][1]*(1-frac) + pal_embers[idx1][1]*frac;
+              float b = pal_embers[idx0][2]*(1-frac) + pal_embers[idx1][2]*frac;
+              it[i] = Color((uint8_t) r, (uint8_t) g, (uint8_t) b);
+            }
+
+      # ------------------------------------------------------------------
+      # 2. Radial Flicker
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Radial Flicker"
+          update_interval: 30ms
+          lambda: |-
+            // Lockstep: see light_effects_helpers.h. The simulation below is the
+            // original, run in fixed 30 ms ticks counted from the shared clock with
+            // hashed draws, so every ring of the same size plays the identical show.
+            static Lockstep ls;
+            const uint32_t LS_TICK_MS = 30;
+            const uint32_t ls_target = ls_begin(ls, initial_run, LS_TICK_MS, 60000 / LS_TICK_MS);
+            for (uint32_t ls_t0 = micros(); ls.tick <= ls_target && ls_in_budget(ls_t0); ls.tick++) {
+              const bool ls_reset = (ls.tick == 0);
+              const uint32_t ls_now = ls.tick * LS_TICK_MS;
+              ls.calls = 0;
+              const float dt = LS_TICK_MS / 1000.0f;
+              const int NUM_HOTSPOTS = 2;   // TUNE number of glowing hot spots
+
+              static float    hotspot_pos[NUM_HOTSPOTS];
+              static float    hotspot_drift[NUM_HOTSPOTS];
+              static float    hotspot_phase[NUM_HOTSPOTS];
+              static uint32_t last_ms = 0;
+
+              if (ls_reset) {
+                last_ms = 0;
+                for (int s = 0; s < NUM_HOTSPOTS; s++) {
+                  hotspot_pos[s] = (float)(ls_rand(ls) % it.size());
+                  bool cw = (ls_rand(ls) % 2) == 0;
+                  hotspot_drift[s] = (cw ? 1.0f : -1.0f) * (1.0f + (ls_rand(ls) % 1000) / 1000.0f);   // TUNE slow drift
+                  hotspot_phase[s] = (ls_rand(ls) % 1000) / 1000.0f * 100.0f;
+                }
+                for (int i = 0; i < it.size(); i++) it[i] = Color(0, 0, 0);
+              }
+
+              static const uint8_t pal_embers[16][3] = {
+                {30,4,0},{45,7,0},{60,10,0},{80,14,0},
+                {100,20,0},{120,28,0},{145,38,0},{170,50,0},
+                {195,64,2},{215,80,6},{230,95,12},{242,110,20},
+                {250,125,30},{255,142,45},{255,160,65},{255,180,90}
+              };
+
+              auto noise1d = [](float x) -> float {
+                return sinf(x * 1.0f) * 0.500f
+                     + sinf(x * 2.13f + 1.7f) * 0.250f
+                     + sinf(x * 4.07f + 3.1f) * 0.125f
+                     + sinf(x * 8.53f + 0.6f) * 0.0625f;
+              };
+
+              uint32_t now_ms = ls_now;
+
+              float t = sync_fold(ls_seconds(ls, LS_TICK_MS, 60000 / LS_TICK_MS));
+              int n = it.size();
+              float nf = (float) n;
+              float width = nf * 0.18f;   // TUNE spread of heat around each hot spot
+
+              const uint8_t BG_R = 8, BG_G = 1, BG_B = 0;   // TUNE dim ember-glow background
+              for (int i = 0; i < n; i++) it[i] = Color(BG_R, BG_G, BG_B);
+
+              for (int s = 0; s < NUM_HOTSPOTS; s++) {
+                hotspot_pos[s] += hotspot_drift[s] * dt;
+                hotspot_pos[s] = fmodf(hotspot_pos[s], nf); if (hotspot_pos[s] < 0) hotspot_pos[s] += nf;
+
+                float flicker = noise1d(t * 1.5f + hotspot_phase[s]) * 0.5f + 0.5f;
+                flicker = 1.0f - 0.5f * fx_swing() + 0.5f * fx_swing() * flicker;   // intensity: flicker depth   // TUNE flicker floor - keeps a baseline glow
+
+                float pos = 9.0f + flicker * 6.0f;   // TUNE palette range this hot spot cycles through
+                int idx0 = (int) pos; int idx1 = (idx0 + 1) % 16; float frac = pos - idx0;
+                float pr = pal_embers[idx0][0]*(1-frac) + pal_embers[idx1][0]*frac;
+                float pg = pal_embers[idx0][1]*(1-frac) + pal_embers[idx1][1]*frac;
+                float pb = pal_embers[idx0][2]*(1-frac) + pal_embers[idx1][2]*frac;
+
+                for (int i = 0; i < n; i++) {
+                  float dist = fabsf((float) i - hotspot_pos[s]);
+                  if (dist > nf / 2.0f) dist = nf - dist;   // torus distance - heat spreads both ways
+                  float falloff = expf(-(dist * dist) / (2.0f * width * width));
+                  float intensity = falloff * flicker;
+                  if (intensity < 0.01f) continue;
+
+                  Color existing = it[i].get();
+                  float r = existing.r + pr * intensity; if (r > 255) r = 255;
+                  float g = existing.g + pg * intensity; if (g > 255) g = 255;
+                  float b = existing.b + pb * intensity; if (b > 255) b = 255;
+                  it[i] = Color((uint8_t) r, (uint8_t) g, (uint8_t) b);
+                }
+              }
+            }
+
+      # ------------------------------------------------------------------
+      # 3. Candle Flicker (Ring)
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Candle Flicker"
+          update_interval: 40ms
+          lambda: |-
+            static const uint8_t pal_candle[16][3] = {
+              {60,18,2},{80,26,3},{100,34,4},{125,44,5},
+              {150,55,6},{175,66,8},{195,78,12},{212,90,18},
+              {228,104,26},{240,118,36},{248,132,48},{255,146,62},
+              {255,160,78},{255,174,96},{255,186,116},{255,196,138}
+            };
+
+            auto noise1d = [](float x) -> float {
+              return sinf(x * 1.0f) * 0.500f
+                   + sinf(x * 2.13f + 1.7f) * 0.250f
+                   + sinf(x * 4.07f + 3.1f) * 0.125f
+                   + sinf(x * 8.53f + 0.6f) * 0.0625f;
+            };
+
+            float t = fx_t();
+            int n = it.size();
+
+            // shared flicker driving the whole ring, same math as the standalone
+            // single-pixel Candle Flicker effect - slow base breathing + fast
+            // micro-jitter + occasional gust dip
+            float base  = noise1d(t * 3.0f) * 0.5f + 0.5f;
+            float micro = noise1d(t * 11.3f + 2.0f) * 0.5f + 0.5f;
+            float v = base * 0.70f + micro * 0.30f;
+
+            // Gust dips from the shared dice, so all four rings gutter together.
+            const float gust = fx_gust(fx_seconds(), 0.04, 5, 0.30f, 0.30f, 0.90f, 0.65f, 81);
+            // Intensity: flicker depth and gust dips.
+            v = 0.62f + (v - 0.62f) * fx_swing();
+            v -= gust * fx_accents();
+            if (v < 0.12f) v = 0.12f;
+            if (v > 1.0f) v = 1.0f;
+
+            const float PIXEL_JITTER = 0.06f;   // TUNE per-pixel texture variation, 0 for a perfectly flat ring
+
+            for (int i = 0; i < n; i++) {
+              // small static-ish per-pixel offset so the ring isn't perfectly
+              // uniform, like light catching an unevenly-shaped candle
+              uint32_t h = (uint32_t) i * 2654435761u;
+              float salt = ((h >> 20) & 0xFFF) / 4095.0f;
+              float v_pixel = v + (salt - 0.5f) * PIXEL_JITTER;
+              if (v_pixel < 0.12f) v_pixel = 0.12f;
+              if (v_pixel > 1.0f) v_pixel = 1.0f;
+
+              float pos = v_pixel * 15.0f;
+              int idx0 = (int) pos; int idx1 = (idx0 + 1) % 16; float frac = pos - idx0;
+              float r = pal_candle[idx0][0]*(1-frac) + pal_candle[idx1][0]*frac;
+              float g = pal_candle[idx0][1]*(1-frac) + pal_candle[idx1][1]*frac;
+              float b = pal_candle[idx0][2]*(1-frac) + pal_candle[idx1][2]*frac;
+              it[i] = Color((uint8_t) r, (uint8_t) g, (uint8_t) b);
+            }
+
+      - addressable_lambda:
+          name: "Pac-Man Muncher"
+          update_interval: 20ms
+          lambda: |-
+            // Lockstep: see light_effects_helpers.h. The simulation below is the
+            // original, run in fixed 20 ms ticks counted from the shared clock with
+            // hashed draws, so every ring of the same size plays the identical show.
+            static Lockstep ls;
+            const uint32_t LS_TICK_MS = 20;
+            const uint32_t ls_target = ls_begin(ls, initial_run, LS_TICK_MS, 60000 / LS_TICK_MS);
+            for (uint32_t ls_t0 = micros(); ls.tick <= ls_target && ls_in_budget(ls_t0); ls.tick++) {
+              const bool ls_reset = (ls.tick == 0);
+              const uint32_t ls_now = ls.tick * LS_TICK_MS;
+              ls.calls = 0;
+              const float dt = LS_TICK_MS / 1000.0f;
+              const int MAX_LEDS = 128;   // TUNE: raise if your ring is longer
+
+              static bool     pellet[MAX_LEDS];
+              static float    pacman_pos;
+              static float    ghost_pos;
+              static bool     celebrating;
+              static uint32_t celebrate_start;
+              static uint32_t last_ms;
+
+              if (ls_reset) {
+                last_ms = 0;
+                pacman_pos = 0.0f;
+                celebrating = false;
+                int n0 = it.size(); if (n0 > MAX_LEDS) n0 = MAX_LEDS;
+                for (int i = 0; i < n0; i++) pellet[i] = true;
+                ghost_pos = (float)(n0 - 6);   // starts a few pixels behind
+                for (int i = 0; i < it.size(); i++) it[i] = Color(0, 0, 0);
+              }
+
+              const float PACMAN_SPEED = 8.0f;          // TUNE pixels/sec
+              const float GHOST_SPEED = PACMAN_SPEED * 0.85f;   // TUNE - slower so the ghost never quite catches up
+              const uint32_t CELEBRATE_MS = 1500;       // TUNE celebration flash duration
+              const uint32_t FLASH_PERIOD_MS = 150;     // TUNE celebration flash rate
+
+              uint32_t now_ms = ls_now;
+
+              int n = it.size(); if (n > MAX_LEDS) n = MAX_LEDS;
+              float nf = (float) n;
+
+              if (!celebrating) {
+                pacman_pos += PACMAN_SPEED * dt;
+                pacman_pos = fmodf(pacman_pos, nf); if (pacman_pos < 0) pacman_pos += nf;
+                int p_idx = (int) pacman_pos;
+                if (pellet[p_idx]) pellet[p_idx] = false;
+
+                ghost_pos += GHOST_SPEED * dt;
+                ghost_pos = fmodf(ghost_pos, nf); if (ghost_pos < 0) ghost_pos += nf;
+
+                bool any_left = false;
+                for (int i = 0; i < n; i++) if (pellet[i]) { any_left = true; break; }
+                if (!any_left) { celebrating = true; celebrate_start = now_ms; }
+              }
+
+              if (celebrating) {
+                uint32_t elapsed = now_ms - celebrate_start;
+                if (elapsed < CELEBRATE_MS) {
+                  bool on = ((elapsed / FLASH_PERIOD_MS) % 2) == 0;
+                  uint8_t v = on ? 255 : 0;
+                  for (int i = 0; i < n; i++) it[i] = Color(v, v, 0);
+                } else {
+                  celebrating = false;
+                  for (int i = 0; i < n; i++) pellet[i] = true;
+                  pacman_pos = 0.0f;
+                  ghost_pos = nf - 6.0f;
+                }
+              } else {
+                for (int i = 0; i < n; i++) {
+                  it[i] = pellet[i] ? Color(45, 45, 45) : Color(0, 0, 0);   // TUNE pellet dot brightness
+                }
+                it[(int) pacman_pos] = Color(255, 255, 0);    // TUNE Pac-Man color
+                it[(int) ghost_pos]  = Color(0, 200, 255);     // TUNE ghost color
+              }
+            }
+
+      # ------------------------------------------------------------------
+      # 2. Disco Mirror Ball
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Disco Mirror Ball"
+          update_interval: 20ms
+          lambda: |-
+            // Lockstep: see light_effects_helpers.h. The simulation below is the
+            // original, run in fixed 20 ms ticks counted from the shared clock with
+            // hashed draws, so every ring of the same size plays the identical show.
+            static Lockstep ls;
+            const uint32_t LS_TICK_MS = 20;
+            const uint32_t ls_target = ls_begin(ls, initial_run, LS_TICK_MS, 60000 / LS_TICK_MS);
+            // Finite memory: every pixel decays to zero within 18 ticks (x0.75 per
+            // tick in uint8), the sweep is a function of the tick's own time, and the
+            // sparks are hashed from the tick number. Nothing older than ~32 ticks
+            // can show in the picture, so joining late skips straight to there
+            // instead of replaying up to a minute - measured at 2.3 ms a tick on the
+            // 48-LED ring, which was ~7 s of 280 ms main-loop stalls.
+            const uint32_t LS_HORIZON = 32;
+            if (ls_target > ls.tick + LS_HORIZON) {
+              ls.tick = ls_target - LS_HORIZON;
+              for (int i = 0; i < it.size(); i++) it[i] = Color(0, 0, 0);
+            }
+            for (uint32_t ls_t0 = micros(); ls.tick <= ls_target && ls_in_budget(ls_t0); ls.tick++) {
+              const bool ls_reset = (ls.tick == 0);
+              const uint32_t ls_now = ls.tick * LS_TICK_MS;
+              ls.calls = 0;
+              auto hsv_to_rgb = [](float h, float s, float v, float &r, float &g, float &b) {
+                h = fmodf(h, 1.0f); if (h < 0) h += 1.0f;
+                float i = floorf(h * 6.0f);
+                float f = h * 6.0f - i;
+                float p = v * (1.0f - s);
+                float q = v * (1.0f - f * s);
+                float w = v * (1.0f - (1.0f - f) * s);
+                switch (((int) i) % 6) {
+                  case 0: r = v; g = w; b = p; break;
+                  case 1: r = q; g = v; b = p; break;
+                  case 2: r = p; g = v; b = w; break;
+                  case 3: r = p; g = q; b = v; break;
+                  case 4: r = w; g = p; b = v; break;
+                  default: r = v; g = p; b = q; break;
+                }
+              };
+
+              const float DECAY = 0.75f;          // TUNE fast decay - keeps sparkles crisp, not smeared
+              const int SPARKS_PER_FRAME = 3;     // TUNE sparkle density
+              const float ROT_SPEED = 0.08f;      // TUNE slow rotation speed of the colored sweep
+              const float SWEEP_INTENSITY = 0.25f;// TUNE how strong the dim colored underlay is
+
+              // The time OF THIS TICK, not the live clock: a replayed tick has to
+              // compute what it would have computed when it was current.
+              float t = sync_fold(ls_seconds(ls, LS_TICK_MS, 60000 / LS_TICK_MS));
+              int n = it.size();
+              float nf = (float) n;
+
+              for (int i = 0; i < n; i++) {
+                Color c = it[i].get();
+                it[i] = Color((uint8_t)(c.r * DECAY), (uint8_t)(c.g * DECAY), (uint8_t)(c.b * DECAY));
+              }
+
+              float sweep_width = nf * 0.25f;     // TUNE sweep band width
+              float sweep_pos = fmodf(t * ROT_SPEED, 1.0f) * nf;
+              float sweep_hue = fmodf(t * 0.05f, 1.0f);
+              float sr, sg, sb;
+              hsv_to_rgb(sweep_hue, 0.8f, 1.0f, sr, sg, sb);
+
+              for (int i = 0; i < n; i++) {
+                float dist = fabsf((float) i - sweep_pos);
+                if (dist > nf / 2.0f) dist = nf - dist;
+                float falloff = expf(-(dist * dist) / (2.0f * sweep_width * sweep_width));
+                float intensity = falloff * SWEEP_INTENSITY;
+                if (intensity < 0.003f) continue;
+
+                Color existing = it[i].get();
+                float nr = existing.r + sr * 255.0f * intensity; if (nr > 255) nr = 255;
+                float ng = existing.g + sg * 255.0f * intensity; if (ng > 255) ng = 255;
+                float nb = existing.b + sb * 255.0f * intensity; if (nb > 255) nb = 255;
+                it[i] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
+              }
+
+              for (int s = 0; s < SPARKS_PER_FRAME; s++) {
+                int idx = (int)(ls_rand(ls) % n);
+                it[idx] = Color(255, 255, 255);   // crisp white facet-glint flash
+              }
+            }
+
+      # ------------------------------------------------------------------
+      # 3. Bubbles
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Bubbles"
+          update_interval: 30ms
+          lambda: |-
+            // Lockstep: see light_effects_helpers.h. The simulation below is the
+            // original, run in fixed 30 ms ticks counted from the shared clock with
+            // hashed draws, so every ring of the same size plays the identical show.
+            static Lockstep ls;
+            const uint32_t LS_TICK_MS = 30;
+            const uint32_t ls_target = ls_begin(ls, initial_run, LS_TICK_MS, 60000 / LS_TICK_MS);
+            for (uint32_t ls_t0 = micros(); ls.tick <= ls_target && ls_in_budget(ls_t0); ls.tick++) {
+              const bool ls_reset = (ls.tick == 0);
+              const uint32_t ls_now = ls.tick * LS_TICK_MS;
+              ls.calls = 0;
+              const float dt = LS_TICK_MS / 1000.0f;
+              const int NUM_BUBBLES = 5;   // TUNE bubble count
+
+              static float    pos[NUM_BUBBLES];
+              static float    vel[NUM_BUBBLES];
+              static float    hue[NUM_BUBBLES];
+              static float    hue_speed[NUM_BUBBLES];
+              static float    life[NUM_BUBBLES];         // seconds until this bubble pops
+              static float    pop_flash[NUM_BUBBLES];    // 0 normally, 1.0 right after popping, decays
+              static uint32_t last_ms = 0;
+
+              if (ls_reset) {
+                last_ms = 0;
+                for (int b = 0; b < NUM_BUBBLES; b++) {
+                  pos[b] = (float)(ls_rand(ls) % it.size());
+                  vel[b] = 0.0f;
+                  hue[b] = 0.5f + (ls_rand(ls) % 250) / 1000.0f;   // TUNE pastel blue-violet range
+                  hue_speed[b] = 0.02f + (ls_rand(ls) % 30) / 1000.0f;   // slow iridescent hue drift
+                  life[b] = 3.0f + (ls_rand(ls) % 5000) / 1000.0f;   // TUNE 3-8s before popping
+                  pop_flash[b] = 0.0f;
+                }
+                for (int i = 0; i < it.size(); i++) it[i] = Color(0, 0, 0);
+              }
+
+              auto hsv_to_rgb = [](float h, float s, float v, float &r, float &g, float &b) {
+                h = fmodf(h, 1.0f); if (h < 0) h += 1.0f;
+                float i = floorf(h * 6.0f);
+                float f = h * 6.0f - i;
+                float p = v * (1.0f - s);
+                float q = v * (1.0f - f * s);
+                float w = v * (1.0f - (1.0f - f) * s);
+                switch (((int) i) % 6) {
+                  case 0: r = v; g = w; b = p; break;
+                  case 1: r = q; g = v; b = p; break;
+                  case 2: r = p; g = v; b = w; break;
+                  case 3: r = p; g = q; b = v; break;
+                  case 4: r = w; g = p; b = v; break;
+                  default: r = v; g = p; b = q; break;
+                }
+              };
+
+              uint32_t now_ms = ls_now;
+
+              const float DECAY = 0.90f;           // TUNE trail/pop-flash fade
+              const float ACCEL_STRENGTH = 3.0f;   // TUNE gentle wander jitter - lower than Firefly Jar, bubbles float
+              const float FRICTION = 0.8f;
+              const float MAX_SPEED = 1.5f;        // TUNE slow float speed
+              const float MAX_BRIGHTNESS = 0.5f;   // TUNE overall bubble brightness (not nightlight-dim by default)
+              const float POP_DECAY_RATE = 3.0f;   // TUNE how fast the pop flash fades
+
+              int n = it.size();
+
+              for (int i = 0; i < n; i++) {
+                Color c = it[i].get();
+                it[i] = Color((uint8_t)(c.r * DECAY), (uint8_t)(c.g * DECAY), (uint8_t)(c.b * DECAY));
+              }
+
+              for (int b = 0; b < NUM_BUBBLES; b++) {
+                if (pop_flash[b] > 0.0f) {
+                  pop_flash[b] -= dt * POP_DECAY_RATE;
+                  if (pop_flash[b] < 0.0f) pop_flash[b] = 0.0f;
+                } else {
+                  float accel = ((int) (ls_rand(ls) % 200) - 100) / 100.0f * ACCEL_STRENGTH;
+                  vel[b] += accel * dt;
+                  vel[b] *= (1.0f - FRICTION * dt);
+                  if (vel[b] > MAX_SPEED) vel[b] = MAX_SPEED;
+                  if (vel[b] < -MAX_SPEED) vel[b] = -MAX_SPEED;
+
+                  pos[b] += vel[b] * dt;
+                  pos[b] = fmodf(pos[b], (float) n); if (pos[b] < 0) pos[b] += n;
+
+                  hue[b] = fmodf(hue[b] + hue_speed[b] * dt, 1.0f);
+
+                  life[b] -= dt;
+                  if (life[b] <= 0.0f) {
+                    // pop! flash, then reappear elsewhere as a fresh bubble
+                    pop_flash[b] = 1.0f;
+                    pos[b] = (float)(ls_rand(ls) % n);
+                    vel[b] = 0.0f;
+                    hue[b] = 0.5f + (ls_rand(ls) % 250) / 1000.0f;
+                    life[b] = 3.0f + (ls_rand(ls) % 5000) / 1000.0f;
+                  }
+                }
+
+                float r, g, bcol;
+                if (pop_flash[b] > 0.0f) {
+                  hsv_to_rgb(hue[b], 0.15f, pop_flash[b], r, g, bcol);   // low saturation - flash reads near-white
+                } else {
+                  hsv_to_rgb(hue[b], 0.35f, MAX_BRIGHTNESS, r, g, bcol);
+                }
+
+                int idx = (int) pos[b];
+                Color existing = it[idx].get();
+                float nr = existing.r + r * 255.0f; if (nr > 255) nr = 255;
+                float ng = existing.g + g * 255.0f; if (ng > 255) ng = 255;
+                float nb = existing.b + bcol * 255.0f; if (nb > 255) nb = 255;
+                it[idx] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
+              }
+            }
+
+      # ------------------------------------------------------------------
+      # 4. Heartbeat Pulse
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Heartbeat Pulse"
+          update_interval: 20ms
+          lambda: |-
+            const float BPM = 60.0f;   // TUNE beats per minute
+            const float PERIOD = 60.0f / BPM;
+
+            const float LUB_CENTER = 0.08f, LUB_WIDTH = 0.05f, LUB_STRENGTH = 1.0f;   // TUNE first beat
+            const float DUB_CENTER = 0.22f, DUB_WIDTH = 0.04f, DUB_STRENGTH = 0.6f;   // TUNE second, softer beat
+            const float MIN_LEVEL = 0.03f;   // TUNE faint resting glow between beats
+
+            const uint8_t HEART_R = 200, HEART_G = 10, HEART_B = 30;   // TUNE pulse color
+
+            float t = fx_t();
+            float phase = fmodf(t, PERIOD) / PERIOD;   // 0..1 within one heartbeat cycle
+            if (phase < 0) phase += 1.0f;
+
+            float dl = phase - LUB_CENTER;
+            float lub = expf(-(dl * dl) / (2.0f * LUB_WIDTH * LUB_WIDTH)) * LUB_STRENGTH;
+            float dd = phase - DUB_CENTER;
+            float dub = expf(-(dd * dd) / (2.0f * DUB_WIDTH * DUB_WIDTH)) * DUB_STRENGTH;
+
+            float intensity = lub + dub;
+            if (intensity > 1.0f) intensity = 1.0f;
+
+            float level = MIN_LEVEL + (1.0f - MIN_LEVEL) * intensity;
+
+            int n = it.size();
+            Color c = Color((uint8_t)(HEART_R * level), (uint8_t)(HEART_G * level), (uint8_t)(HEART_B * level));
+            for (int i = 0; i < n; i++) it[i] = c;
+
+      - addressable_lambda:
+          name: "Soft Glow"
+          update_interval: 30ms
+          lambda: |-
+            float ur, ug, ub;
+            id(accent_light).current_values.as_rgb(&ur, &ug, &ub);
+
+            const float BREATHE_PERIOD = 8.0f;   // TUNE seconds per full breathe cycle
+            const float MIN_LEVEL = 0.55f;       // TUNE how deep the glow dims at its lowest point
+            const float EASE_CURVE = 1.5f;       // TUNE higher = softer, more lingering ease in/out
+            const float RIPPLE_AMOUNT = 0.15f;   // TUNE phase variation around the ring - 0 for a flat synced pulse
+
+            float t = fx_t();
+            int n = it.size();
+
+            for (int i = 0; i < n; i++) {
+              float theta = (i / (float) n) * 6.2831853f;   // integer harmonic (k=1) -> seamless wrap
+              float phase_offset = RIPPLE_AMOUNT * sinf(theta);
+
+              float breathe = sinf((t / BREATHE_PERIOD) * 6.2831853f + phase_offset) * 0.5f + 0.5f;
+              breathe = powf(breathe, EASE_CURVE);
+              float level = MIN_LEVEL + (1.0f - MIN_LEVEL) * breathe;
+
+              it[i] = Color((uint8_t)(ur * 255.0f * level), (uint8_t)(ug * 255.0f * level), (uint8_t)(ub * 255.0f * level));
+            }
+
+      - addressable_lambda:
+          name: "Rolling Fog (Pronounced)"
+          update_interval: 30ms
+          lambda: |-
+            static const uint8_t pal_fog[16][3] = {
+              {10,12,14},{20,22,25},{35,37,40},{50,53,58},
+              {65,68,74},{80,84,92},{95,100,108},{110,115,124},
+              {125,130,140},{140,146,156},{158,164,174},{176,182,192},
+              {195,200,208},{212,216,222},{228,231,236},{245,247,250}
+            };
+
+            auto ring_noise = [](float theta_mult, float t_offset) -> float {
+              return sinf(3.0f  * theta_mult + t_offset * 1.00f) * 0.500f
+                   + sinf(7.0f  * theta_mult + t_offset * 1.31f + 1.7f) * 0.250f
+                   + sinf(13.0f * theta_mult + t_offset * 1.77f + 3.1f) * 0.125f
+                   + sinf(23.0f * theta_mult + t_offset * 2.35f + 0.6f) * 0.0625f;
+            };
+
+            float t = fx_t();
+            int n = it.size();
+
+            // wider swing than the original (was 0.65-1.0) - fog visibly clears
+            // before thickening back up, instead of always staying mostly opaque
+            float thickness = 0.35f + 0.65f * (sinf(t * 0.03f) * 0.5f + 0.5f);
+
+            const float CONTRAST = 1.6f;   // TUNE >1 pushes values toward dark/bright ends - higher = more defined banks
+
+            for (int i = 0; i < n; i++) {
+              float theta = (i / (float) n) * 6.2831853f;
+
+              // faster drift than the original (was 0.9/0.6/1.3) - the roll
+              // itself should read as motion, not a slow shimmer
+              float layer1 = ring_noise(theta * 2.0f, t * 1.3f);
+              float layer2 = ring_noise(theta * 3.0f, -t * 0.9f + 5.2f);
+              float layer3 = ring_noise(theta * 5.0f, t * 1.8f + 2.7f);
+              float combined = layer1 * 0.55f + layer2 * 0.30f + layer3 * 0.15f;   // TUNE layer weights
+
+              float v = combined * 0.5f + 0.5f;
+              v *= thickness;
+
+              // contrast boost around the midpoint - this is what turns a smooth
+              // pale-grey blur into visibly distinct thick/thin fog banks
+              v = 0.5f + (v - 0.5f) * CONTRAST;
+              if (v < 0.0f) v = 0.0f;
+              if (v > 1.0f) v = 1.0f;
+
+              float pos = v * 15.0f;
+              int idx0 = (int) pos; int idx1 = (idx0 + 1) % 16; float frac = pos - idx0;
+
+              float r = pal_fog[idx0][0]*(1-frac) + pal_fog[idx1][0]*frac;
+              float g = pal_fog[idx0][1]*(1-frac) + pal_fog[idx1][1]*frac;
+              float b = pal_fog[idx0][2]*(1-frac) + pal_fog[idx1][2]*frac;
+              it[i] = Color((uint8_t) r, (uint8_t) g, (uint8_t) b);
+            }
+
+      - addressable_lambda:
+          name: "Pacifica (Calm Lagoon)"
+          update_interval: 20ms
+          lambda: |-
+
+            // Closed form on the shared clock: each layer's phase is the integral
+            // of its wobbling speed (fx_wobble), so every light computes the same
+            // sea at the same moment. It used to integrate frame by frame from
+            // each light's own boot. Phases stay double until folded by fx_wrap.
+            const double T = fx_seconds();
+            // Intensity: swell height (fx_swing) and whitecaps (fx_accents).
+            const float FX_SWING = fx_swing();
+            const double t1 = fx_wobble(T, 3.5, 2.0, 0.1111111111111111, 0.0);
+            const double t2 = fx_wobble(T, 2.5, 1.5, 0.07692307692307693, 1.0);
+            const double t3 = fx_wobble(T, 2.0, 1.0, 0.058823529411764705, 2.0);
+            const double t4 = fx_wobble(T, 1.2, 0.8, 0.047619047619047616, 3.0);
+
+            // TUNE: brighter turquoise/teal palette - lagoon shallows, not open ocean
+            static const uint8_t pal_deep[16][3] = {
+              {5,40,42},{6,48,50},{8,58,60},{10,68,70},
+              {12,78,80},{15,90,92},{18,102,104},{22,115,117},
+              {28,128,130},{35,142,144},{45,156,158},{58,170,172},
+              {75,185,187},{95,200,200},{120,215,213},{150,230,225}
+            };
+            static const uint8_t pal_mid[16][3] = {
+              {10,60,62},{14,72,74},{18,85,87},{24,98,100},
+              {30,112,114},{38,126,128},{48,140,142},{60,155,155},
+              {75,170,168},{92,185,180},{112,198,190},{135,210,198},
+              {160,222,205},{188,232,212},{215,242,220},{240,250,232}
+            };
+            static const uint8_t pal_bright[16][3] = {
+              {40,140,140},{60,160,158},{85,180,175},{112,198,190},
+              {140,213,202},{168,225,212},{195,235,222},{215,242,230},
+              {230,247,238},{240,250,244},{247,252,248},{250,253,250},
+              {252,254,252},{253,254,253},{254,255,254},{255,255,255}
+            };
+
+            int n = it.size();
+
+            for (int i = 0; i < n; i++) {
+              float theta = (i / (float) n) * 6.2831853f;
+
+              float wave1 = sinf(3.0f * theta + fx_wrap(t1 * 0.6, 6.283185307179586)) * 0.5f + 0.5f;
+              float wave2 = sinf(5.0f * theta - fx_wrap(t2 * 0.9, 6.283185307179586) + 1.7f) * 0.5f + 0.5f;
+              float wave3 = sinf(2.0f * theta + fx_wrap(t3 * 0.4, 6.283185307179586) + 3.1f) * 0.5f + 0.5f;
+              float wave4 = sinf(7.0f * theta - fx_wrap(t4 * 1.2, 6.283185307179586) + 4.4f) * 0.5f + 0.5f;
+
+              float r = 0, g = 0, b = 0;
+              int idx0, idx1; float frac, pos;
+
+              const float REPEATS = 3.0f;
+              pos = fmodf((i / (float) n) * REPEATS * 16.0f + fx_wrap(t1 * 0.8, 16.0), 16.0f);
+              if (pos < 0) pos += 16.0f;
+              idx0 = (int) pos; idx1 = (idx0 + 1) % 16; frac = pos - idx0;
+              r += pal_deep[idx0][0]*(1-frac) + pal_deep[idx1][0]*frac;
+              g += pal_deep[idx0][1]*(1-frac) + pal_deep[idx1][1]*frac;
+              b += pal_deep[idx0][2]*(1-frac) + pal_deep[idx1][2]*frac;
+
+              pos = fmodf(wave1*16.0f + fx_wrap(t2 * 0.3, 16.0), 16.0f); if (pos < 0) pos += 16.0f;
+              idx0 = (int) pos; idx1 = (idx0 + 1) % 16; frac = pos - idx0;
+              float w1 = (wave1 * 0.55f) * FX_SWING;
+              r += (pal_mid[idx0][0]*(1-frac) + pal_mid[idx1][0]*frac) * w1;
+              g += (pal_mid[idx0][1]*(1-frac) + pal_mid[idx1][1]*frac) * w1;
+              b += (pal_mid[idx0][2]*(1-frac) + pal_mid[idx1][2]*frac) * w1;
+
+              pos = fmodf(wave2*16.0f + fx_wrap(t3 * 0.4, 16.0), 16.0f); if (pos < 0) pos += 16.0f;
+              idx0 = (int) pos; idx1 = (idx0 + 1) % 16; frac = pos - idx0;
+              float w2 = (wave2 * 0.45f) * FX_SWING;
+              r += (pal_mid[idx0][0]*(1-frac) + pal_mid[idx1][0]*frac) * w2;
+              g += (pal_mid[idx0][1]*(1-frac) + pal_mid[idx1][1]*frac) * w2;
+              b += (pal_mid[idx0][2]*(1-frac) + pal_mid[idx1][2]*frac) * w2;
+
+              // TUNE: softer crest weighting than the original (0.7/0.5) - gentler peaks
+              pos = fmodf(wave3*16.0f + fx_wrap(t4 * 0.5, 16.0), 16.0f); if (pos < 0) pos += 16.0f;
+              idx0 = (int) pos; idx1 = (idx0 + 1) % 16; frac = pos - idx0;
+              float w3 = (powf(wave3, 3.0f) * 0.5f) * FX_SWING;
+              r += (pal_bright[idx0][0]*(1-frac) + pal_bright[idx1][0]*frac) * w3;
+              g += (pal_bright[idx0][1]*(1-frac) + pal_bright[idx1][1]*frac) * w3;
+              b += (pal_bright[idx0][2]*(1-frac) + pal_bright[idx1][2]*frac) * w3;
+
+              float w4 = (powf(wave4, 4.0f) * 0.35f) * FX_SWING;
+              r += pal_bright[15][0] * w4;
+              g += pal_bright[15][1] * w4;
+              b += pal_bright[15][2] * w4;
+
+              if (r > 255) r = 255;
+              if (g > 255) g = 255;
+              if (b > 255) b = 255;
+              it[i] = Color((uint8_t) r, (uint8_t) g, (uint8_t) b);
+            }
+
+            // TUNE: less frequent, softer whitecaps than the original
+            // Whitecaps: drawn from the shared dice for this 120 ms window, so
+            // every ring of the same size foams on the same LEDs.
+            static uint32_t last_whitecap = 0xFFFFFFFFu;
+            const uint32_t wc_b = sync_bucket(T, 0.12);
+            if (wc_b != last_whitecap) {
+              last_whitecap = wc_b;
+              uint32_t wc_k = 0;
+              int num_caps = n / 60 + 1;
+              for (int c = 0; c < num_caps; c++) {
+                int idx = sync_hash(wc_b, wc_k++) % n;
+                Color existing = it[idx].get();
+                uint16_t brightness = existing.r + existing.g + existing.b;
+                if (brightness > 160) {
+                  uint8_t foam = (uint8_t) fminf(255.0f, (20 + (sync_hash(wc_b, wc_k++) % 40)) * fx_accents());
+                  uint16_t nr = existing.r + foam; if (nr > 255) nr = 255;
+                  uint16_t ng = existing.g + foam; if (ng > 255) ng = 255;
+                  uint16_t nb = existing.b + foam; if (nb > 255) nb = 255;
+                  it[idx] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
+                }
+              }
+            }
+
+      # ------------------------------------------------------------------
+      # 2. Pacifica (Storm)
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Pacifica (Storm)"
+          update_interval: 20ms
+          lambda: |-
+
+            // Closed form on the shared clock: each layer's phase is the integral
+            // of its wobbling speed (fx_wobble), so every light computes the same
+            // sea at the same moment. It used to integrate frame by frame from
+            // each light's own boot. Phases stay double until folded by fx_wrap.
+            const double T = fx_seconds();
+            // Intensity: swell height (fx_swing) and whitecaps (fx_accents).
+            const float FX_SWING = fx_swing();
+            const double t1 = fx_wobble(T, 10.0, 6.0, 0.16666666666666666, 0.0);
+            const double t2 = fx_wobble(T, 7.0, 5.0, 0.1111111111111111, 1.0);
+            const double t3 = fx_wobble(T, 5.0, 3.0, 0.08333333333333333, 2.0);
+            const double t4 = fx_wobble(T, 3.5, 2.5, 0.06666666666666667, 3.0);
+
+            // TUNE: dark slate-blue/grey palette - stormy rather than tropical
+            static const uint8_t pal_deep[16][3] = {
+              {2,3,6},{3,4,8},{4,6,11},{5,8,14},
+              {6,10,18},{8,13,23},{10,17,29},{13,22,36},
+              {17,28,44},{22,36,54},{28,46,66},{36,58,80},
+              {46,72,95},{58,88,110},{72,104,124},{88,120,138}
+            };
+            static const uint8_t pal_mid[16][3] = {
+              {4,6,10},{6,9,15},{9,13,21},{13,18,28},
+              {18,24,36},{24,32,46},{32,42,58},{42,54,72},
+              {54,68,88},{68,84,104},{85,102,120},{104,120,136},
+              {125,138,150},{148,156,162},{172,174,174},{195,192,186}
+            };
+            static const uint8_t pal_bright[16][3] = {
+              {20,24,30},{35,40,48},{55,62,70},{78,86,94},
+              {104,112,118},{132,138,142},{160,164,166},{186,188,188},
+              {206,208,206},{222,224,220},{234,236,232},{242,244,240},
+              {247,249,246},{250,252,249},{253,254,252},{255,255,255}
+            };
+
+            int n = it.size();
+
+            for (int i = 0; i < n; i++) {
+              float theta = (i / (float) n) * 6.2831853f;
+
+              float wave1 = sinf(3.0f * theta + fx_wrap(t1 * 0.6, 6.283185307179586)) * 0.5f + 0.5f;
+              float wave2 = sinf(5.0f * theta - fx_wrap(t2 * 0.9, 6.283185307179586) + 1.7f) * 0.5f + 0.5f;
+              float wave3 = sinf(2.0f * theta + fx_wrap(t3 * 0.4, 6.283185307179586) + 3.1f) * 0.5f + 0.5f;
+              float wave4 = sinf(7.0f * theta - fx_wrap(t4 * 1.2, 6.283185307179586) + 4.4f) * 0.5f + 0.5f;
+
+              float r = 0, g = 0, b = 0;
+              int idx0, idx1; float frac, pos;
+
+              const float REPEATS = 3.0f;
+              pos = fmodf((i / (float) n) * REPEATS * 16.0f + fx_wrap(t1 * 0.8, 16.0), 16.0f);
+              if (pos < 0) pos += 16.0f;
+              idx0 = (int) pos; idx1 = (idx0 + 1) % 16; frac = pos - idx0;
+              r += pal_deep[idx0][0]*(1-frac) + pal_deep[idx1][0]*frac;
+              g += pal_deep[idx0][1]*(1-frac) + pal_deep[idx1][1]*frac;
+              b += pal_deep[idx0][2]*(1-frac) + pal_deep[idx1][2]*frac;
+
+              // TUNE: amplified layer weights vs the original (0.55/0.45) - choppier contrast
+              pos = fmodf(wave1*16.0f + fx_wrap(t2 * 0.3, 16.0), 16.0f); if (pos < 0) pos += 16.0f;
+              idx0 = (int) pos; idx1 = (idx0 + 1) % 16; frac = pos - idx0;
+              float w1 = (wave1 * 0.65f) * FX_SWING;
+              r += (pal_mid[idx0][0]*(1-frac) + pal_mid[idx1][0]*frac) * w1;
+              g += (pal_mid[idx0][1]*(1-frac) + pal_mid[idx1][1]*frac) * w1;
+              b += (pal_mid[idx0][2]*(1-frac) + pal_mid[idx1][2]*frac) * w1;
+
+              pos = fmodf(wave2*16.0f + fx_wrap(t3 * 0.4, 16.0), 16.0f); if (pos < 0) pos += 16.0f;
+              idx0 = (int) pos; idx1 = (idx0 + 1) % 16; frac = pos - idx0;
+              float w2 = (wave2 * 0.55f) * FX_SWING;
+              r += (pal_mid[idx0][0]*(1-frac) + pal_mid[idx1][0]*frac) * w2;
+              g += (pal_mid[idx0][1]*(1-frac) + pal_mid[idx1][1]*frac) * w2;
+              b += (pal_mid[idx0][2]*(1-frac) + pal_mid[idx1][2]*frac) * w2;
+
+              // TUNE: lower power exponent than the original (3.0) - crests trigger
+              // more often for a choppier, less selective look
+              pos = fmodf(wave3*16.0f + fx_wrap(t4 * 0.5, 16.0), 16.0f); if (pos < 0) pos += 16.0f;
+              idx0 = (int) pos; idx1 = (idx0 + 1) % 16; frac = pos - idx0;
+              float w3 = (powf(wave3, 2.2f) * 0.85f) * FX_SWING;
+              r += (pal_bright[idx0][0]*(1-frac) + pal_bright[idx1][0]*frac) * w3;
+              g += (pal_bright[idx0][1]*(1-frac) + pal_bright[idx1][1]*frac) * w3;
+              b += (pal_bright[idx0][2]*(1-frac) + pal_bright[idx1][2]*frac) * w3;
+
+              float w4 = (powf(wave4, 3.0f) * 0.65f) * FX_SWING;
+              r += pal_bright[15][0] * w4;
+              g += pal_bright[15][1] * w4;
+              b += pal_bright[15][2] * w4;
+
+              if (r > 255) r = 255;
+              if (g > 255) g = 255;
+              if (b > 255) b = 255;
+              it[i] = Color((uint8_t) r, (uint8_t) g, (uint8_t) b);
+            }
+
+            // TUNE: frequent, bright storm-foam whitecaps
+            // Whitecaps: drawn from the shared dice for this 25 ms window, so
+            // every ring of the same size foams on the same LEDs.
+            static uint32_t last_whitecap = 0xFFFFFFFFu;
+            const uint32_t wc_b = sync_bucket(T, 0.025);
+            if (wc_b != last_whitecap) {
+              last_whitecap = wc_b;
+              uint32_t wc_k = 0;
+              int num_caps = n / 15 + 1;
+              for (int c = 0; c < num_caps; c++) {
+                int idx = sync_hash(wc_b, wc_k++) % n;
+                Color existing = it[idx].get();
+                uint16_t brightness = existing.r + existing.g + existing.b;
+                if (brightness > 50) {
+                  uint8_t foam = (uint8_t) fminf(255.0f, (80 + (sync_hash(wc_b, wc_k++) % 140)) * fx_accents());
+                  uint16_t nr = existing.r + foam; if (nr > 255) nr = 255;
+                  uint16_t ng = existing.g + foam; if (ng > 255) ng = 255;
+                  uint16_t nb = existing.b + foam; if (nb > 255) nb = 255;
+                  it[idx] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
+                }
+              }
+            }
+
+      # ------------------------------------------------------------------
+      # 3. Pacifica (Deep Current)
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Pacifica (Deep Current)"
+          update_interval: 20ms
+          lambda: |-
+
+            // Closed form on the shared clock: each layer's phase is the integral
+            // of its wobbling speed (fx_wobble), so every light computes the same
+            // sea at the same moment. It used to integrate frame by frame from
+            // each light's own boot. Phases stay double until folded by fx_wrap.
+            const double T = fx_seconds();
+            // Intensity: swell height (fx_swing) and whitecaps (fx_accents).
+            const float FX_SWING = fx_swing();
+            const double t1 = fx_wobble(T, 4.0, 2.0, 0.09090909090909091, 0.0);
+            const double t2 = fx_wobble(T, 3.0, 1.5, 0.06666666666666667, 1.0);
+            const double t3 = fx_wobble(T, 2.0, 1.0, 0.05263157894736842, 2.0);
+            const double t4 = fx_wobble(T, 1.2, 0.6, 0.043478260869565216, 3.0);
+
+            // TUNE: deep blue-purple palette, never reaches true white even at "bright"
+            static const uint8_t pal_deep[16][3] = {
+              {0,1,4},{0,1,6},{0,2,8},{0,2,10},
+              {0,3,13},{0,4,16},{1,5,20},{1,6,24},
+              {2,8,29},{3,10,34},{4,13,40},{6,17,47},
+              {9,22,54},{13,28,62},{18,36,70},{24,45,78}
+            };
+            static const uint8_t pal_mid[16][3] = {
+              {1,2,8},{2,3,12},{3,5,17},{4,7,23},
+              {6,10,30},{8,14,38},{11,19,47},{15,25,57},
+              {20,32,68},{27,41,80},{35,52,92},{45,65,105},
+              {58,80,118},{73,97,130},{92,116,142},{114,137,154}
+            };
+            static const uint8_t pal_bright[16][3] = {
+              {3,4,15},{5,7,22},{8,11,31},{12,17,42},
+              {18,25,54},{25,35,68},{34,47,83},{45,62,99},
+              {58,79,115},{74,98,131},{92,118,146},{113,138,160},
+              {136,158,172},{160,177,183},{186,196,193},{212,215,206}
+            };
+
+            int n = it.size();
+
+            for (int i = 0; i < n; i++) {
+              float theta = (i / (float) n) * 6.2831853f;
+
+              float wave1 = sinf(3.0f * theta + fx_wrap(t1 * 0.6, 6.283185307179586)) * 0.5f + 0.5f;
+              float wave2 = sinf(5.0f * theta - fx_wrap(t2 * 0.9, 6.283185307179586) + 1.7f) * 0.5f + 0.5f;
+              float wave3 = sinf(2.0f * theta + fx_wrap(t3 * 0.4, 6.283185307179586) + 3.1f) * 0.5f + 0.5f;
+              float wave4 = sinf(7.0f * theta - fx_wrap(t4 * 1.2, 6.283185307179586) + 4.4f) * 0.5f + 0.5f;
+
+              float r = 0, g = 0, b = 0;
+              int idx0, idx1; float frac, pos;
+
+              const float REPEATS = 3.0f;
+              pos = fmodf((i / (float) n) * REPEATS * 16.0f + fx_wrap(t1 * 0.8, 16.0), 16.0f);
+              if (pos < 0) pos += 16.0f;
+              idx0 = (int) pos; idx1 = (idx0 + 1) % 16; frac = pos - idx0;
+              r += pal_deep[idx0][0]*(1-frac) + pal_deep[idx1][0]*frac;
+              g += pal_deep[idx0][1]*(1-frac) + pal_deep[idx1][1]*frac;
+              b += pal_deep[idx0][2]*(1-frac) + pal_deep[idx1][2]*frac;
+
+              pos = fmodf(wave1*16.0f + fx_wrap(t2 * 0.3, 16.0), 16.0f); if (pos < 0) pos += 16.0f;
+              idx0 = (int) pos; idx1 = (idx0 + 1) % 16; frac = pos - idx0;
+              float w1 = (wave1 * 0.45f) * FX_SWING;
+              r += (pal_mid[idx0][0]*(1-frac) + pal_mid[idx1][0]*frac) * w1;
+              g += (pal_mid[idx0][1]*(1-frac) + pal_mid[idx1][1]*frac) * w1;
+              b += (pal_mid[idx0][2]*(1-frac) + pal_mid[idx1][2]*frac) * w1;
+
+              pos = fmodf(wave2*16.0f + fx_wrap(t3 * 0.4, 16.0), 16.0f); if (pos < 0) pos += 16.0f;
+              idx0 = (int) pos; idx1 = (idx0 + 1) % 16; frac = pos - idx0;
+              float w2 = (wave2 * 0.35f) * FX_SWING;
+              r += (pal_mid[idx0][0]*(1-frac) + pal_mid[idx1][0]*frac) * w2;
+              g += (pal_mid[idx0][1]*(1-frac) + pal_mid[idx1][1]*frac) * w2;
+              b += (pal_mid[idx0][2]*(1-frac) + pal_mid[idx1][2]*frac) * w2;
+
+              // TUNE: much higher power exponents than the original - crests are
+              // rare and subdued, matching a deep-water mood rather than a lit surface
+              pos = fmodf(wave3*16.0f + fx_wrap(t4 * 0.5, 16.0), 16.0f); if (pos < 0) pos += 16.0f;
+              idx0 = (int) pos; idx1 = (idx0 + 1) % 16; frac = pos - idx0;
+              float w3 = (powf(wave3, 4.5f) * 0.40f) * FX_SWING;
+              r += (pal_bright[idx0][0]*(1-frac) + pal_bright[idx1][0]*frac) * w3;
+              g += (pal_bright[idx0][1]*(1-frac) + pal_bright[idx1][1]*frac) * w3;
+              b += (pal_bright[idx0][2]*(1-frac) + pal_bright[idx1][2]*frac) * w3;
+
+              float w4 = (powf(wave4, 5.0f) * 0.25f) * FX_SWING;
+              r += pal_bright[15][0] * w4;
+              g += pal_bright[15][1] * w4;
+              b += pal_bright[15][2] * w4;
+
+              if (r > 255) r = 255;
+              if (g > 255) g = 255;
+              if (b > 255) b = 255;
+              it[i] = Color((uint8_t) r, (uint8_t) g, (uint8_t) b);
+            }
+
+            // TUNE: rare, dim whitecaps - deep water doesn't get bright foam
+            // Whitecaps: drawn from the shared dice for this 200 ms window, so
+            // every ring of the same size foams on the same LEDs.
+            static uint32_t last_whitecap = 0xFFFFFFFFu;
+            const uint32_t wc_b = sync_bucket(T, 0.2);
+            if (wc_b != last_whitecap) {
+              last_whitecap = wc_b;
+              uint32_t wc_k = 0;
+              int num_caps = 1;
+              for (int c = 0; c < num_caps; c++) {
+                int idx = sync_hash(wc_b, wc_k++) % n;
+                Color existing = it[idx].get();
+                uint16_t brightness = existing.r + existing.g + existing.b;
+                if (brightness > 140) {
+                  uint8_t foam = (uint8_t) fminf(255.0f, (15 + (sync_hash(wc_b, wc_k++) % 30)) * fx_accents());
+                  uint16_t nr = existing.r + foam; if (nr > 255) nr = 255;
+                  uint16_t ng = existing.g + foam; if (ng > 255) ng = 255;
+                  uint16_t nb = existing.b + foam; if (nb > 255) nb = 255;
+                  it[idx] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
+                }
+              }
+            }
+
+      # ------------------------------------------------------------------
+      # 4. Aurora (Solar Storm)
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Aurora (Solar Storm)"
+          update_interval: 20ms
+          lambda: |-
+            static const uint8_t pal_aurora[16][3] = {
+              {0,40,10},{0,70,20},{10,100,30},{20,140,40},
+              {40,180,60},{60,210,90},{50,200,130},{40,180,170},
+              {30,150,200},{40,120,210},{70,90,210},{110,70,200},
+              {150,60,190},{190,60,170},{210,70,140},{180,90,120}
+            };
+
+            const int NUM_BANDS = 6;   // TUNE more bands than the original (4) - busier, more chaotic
+            const bool SPARKLE_ENABLE = true;
+            const int SPARKLE_CHANCE_PER_1000 = 12;   // TUNE 3x the original sparkle rate
+
+            float t = fx_t();   // shared clock (was this light's own uptime)
+            int n = it.size();
+            float nf = (float) n;
+
+            for (int i = 0; i < n; i++) {
+              it[i] = Color((uint8_t)(pal_aurora[0][0]/20), (uint8_t)(pal_aurora[0][1]/20), (uint8_t)(pal_aurora[0][2]/20));
+            }
+
+            for (int b = 0; b < NUM_BANDS; b++) {
+              // TUNE: roughly double the drift speed of the original
+              float drift_speed = (4.0f + b) * (b % 2 == 0 ? 1.0f : -1.0f);
+              float band_pos = fmodf(t * drift_speed + b * (nf / NUM_BANDS), nf);
+              if (band_pos < 0) band_pos += nf;
+
+              // TUNE: narrower bands than the original (0.14-0.20) - more distinct, more energetic
+              float width = nf * (0.10f + 0.02f * (b % 3));
+              float breathe_speed = 0.35f + 0.12f * b;   // TUNE faster breathing
+              float breathe_phase = b * 1.7f;
+              float breathing = sinf(t * breathe_speed + breathe_phase) * 0.5f + 0.5f;
+              breathing = powf(breathing, 1.1f);   // TUNE less selective than the original (1.5) - stays brighter more often
+              breathing = clamp01(0.5f + (breathing - 0.5f) * fx_swing());   // intensity: band contrast
+              float hue_speed = 0.5f + 0.15f * b;   // TUNE faster color cycling
+              float hue_phase = b * 3.3f;
+              float hue_pos = fmodf(t * hue_speed + hue_phase, 16.0f);
+              if (hue_pos < 0) hue_pos += 16.0f;
+
+              int idx0 = (int) hue_pos; int idx1 = (idx0 + 1) % 16; float frac = hue_pos - idx0;
+              float br = pal_aurora[idx0][0]*(1-frac) + pal_aurora[idx1][0]*frac;
+              float bg = pal_aurora[idx0][1]*(1-frac) + pal_aurora[idx1][1]*frac;
+              float bb = pal_aurora[idx0][2]*(1-frac) + pal_aurora[idx1][2]*frac;
+
+              for (int i = 0; i < n; i++) {
+                float dist = fabsf((float) i - band_pos);
+                if (dist > nf / 2.0f) dist = nf - dist;
+                float falloff = expf(-(dist * dist) / (2.0f * width * width));
+                float intensity = falloff * breathing;
+                if (intensity < 0.003f) continue;
+
+                Color existing = it[i].get();
+                float r = existing.r + br * intensity; if (r > 255) r = 255;
+                float g = existing.g + bg * intensity; if (g > 255) g = 255;
+                float bl = existing.b + bb * intensity; if (bl > 255) bl = 255;
+                it[i] = Color((uint8_t) r, (uint8_t) g, (uint8_t) bl);
+              }
+            }
+
+            if (SPARKLE_ENABLE) {
+
+              // Sparkles from the shared dice for this frame window, so every
+
+              // ring of the same size sparkles on the same LEDs.
+
+              const uint32_t sp_b = sync_bucket(fx_seconds(), 0.02);
+
+              uint32_t sp_k = 0;
+              int num_checks = n / 20 + 1;
+              for (int c = 0; c < num_checks; c++) {
+                if ((int)(sync_hash(sp_b, sp_k++) % 1000) < SPARKLE_CHANCE_PER_1000 * fx_accents()) {
+                  int idx = (int)(sync_hash(sp_b, sp_k++) % n);
+                  Color existing = it[idx].get();
+                  uint8_t add = 60 + (uint8_t)(sync_hash(sp_b, sp_k++) % 80);   // TUNE brighter sparkle than the original
+                  uint16_t nr = existing.r + add; if (nr > 255) nr = 255;
+                  uint16_t ng = existing.g + add; if (ng > 255) ng = 255;
+                  uint16_t nb = existing.b + add; if (nb > 255) nb = 255;
+                  it[idx] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
+                }
+              }
+            }
+
+      # ------------------------------------------------------------------
+      # 5. Aurora (Pastel Dream)
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Aurora (Pastel Dream)"
+          update_interval: 30ms
+          lambda: |-
+            // TUNE: same palette as the original, blended toward white for a
+            // soft, desaturated pastel look
+            static const uint8_t pal_aurora[16][3] = {
+              {140,190,155},{140,205,165},{145,215,170},{150,225,175},
+              {160,235,185},{170,245,200},{165,240,215},{160,230,225},
+              {155,215,235},{160,200,235},{175,190,235},{195,180,230},
+              {210,175,225},{225,175,220},{235,180,210},{220,185,200}
+            };
+
+            const int NUM_BANDS = 3;   // TUNE fewer bands than the original (4) - calmer
+            const bool SPARKLE_ENABLE = true;
+            const int SPARKLE_CHANCE_PER_1000 = 1;   // TUNE much rarer than the original
+
+            float t = fx_t();   // shared clock (was this light's own uptime)
+            int n = it.size();
+            float nf = (float) n;
+
+            for (int i = 0; i < n; i++) {
+              it[i] = Color((uint8_t)(pal_aurora[0][0]/12), (uint8_t)(pal_aurora[0][1]/12), (uint8_t)(pal_aurora[0][2]/12));
+            }
+
+            for (int b = 0; b < NUM_BANDS; b++) {
+              // TUNE: much slower drift than the original
+              float drift_speed = (1.0f + b * 0.5f) * (b % 2 == 0 ? 1.0f : -1.0f);
+              float band_pos = fmodf(t * drift_speed + b * (nf / NUM_BANDS), nf);
+              if (band_pos < 0) band_pos += nf;
+
+              // TUNE: wider, softer bands than the original (0.14-0.20)
+              float width = nf * (0.18f + 0.03f * (b % 3));
+              float breathe_speed = 0.08f + 0.03f * b;   // TUNE slow, gentle breathing
+              float breathe_phase = b * 1.7f;
+              float breathing = sinf(t * breathe_speed + breathe_phase) * 0.5f + 0.5f;
+              breathing = sq(breathing);   // TUNE softer, more lingering dips than the original (1.5)
+              breathing = clamp01(0.5f + (breathing - 0.5f) * fx_swing());   // intensity: band contrast
+              float hue_speed = 0.10f + 0.03f * b;   // TUNE slow hue drift
+              float hue_phase = b * 3.3f;
+              float hue_pos = fmodf(t * hue_speed + hue_phase, 16.0f);
+              if (hue_pos < 0) hue_pos += 16.0f;
+
+              int idx0 = (int) hue_pos; int idx1 = (idx0 + 1) % 16; float frac = hue_pos - idx0;
+              float br = pal_aurora[idx0][0]*(1-frac) + pal_aurora[idx1][0]*frac;
+              float bg = pal_aurora[idx0][1]*(1-frac) + pal_aurora[idx1][1]*frac;
+              float bb = pal_aurora[idx0][2]*(1-frac) + pal_aurora[idx1][2]*frac;
+
+              for (int i = 0; i < n; i++) {
+                float dist = fabsf((float) i - band_pos);
+                if (dist > nf / 2.0f) dist = nf - dist;
+                float falloff = expf(-(dist * dist) / (2.0f * width * width));
+                float intensity = falloff * breathing * 0.6f;   // TUNE overall dimmer than the original for a soft look
+                if (intensity < 0.003f) continue;
+
+                Color existing = it[i].get();
+                float r = existing.r + br * intensity; if (r > 255) r = 255;
+                float g = existing.g + bg * intensity; if (g > 255) g = 255;
+                float bl = existing.b + bb * intensity; if (bl > 255) bl = 255;
+                it[i] = Color((uint8_t) r, (uint8_t) g, (uint8_t) bl);
+              }
+            }
+
+            if (SPARKLE_ENABLE) {
+
+              // Sparkles from the shared dice for this frame window, so every
+
+              // ring of the same size sparkles on the same LEDs.
+
+              const uint32_t sp_b = sync_bucket(fx_seconds(), 0.03);
+
+              uint32_t sp_k = 0;
+              int num_checks = n / 20 + 1;
+              for (int c = 0; c < num_checks; c++) {
+                if ((int)(sync_hash(sp_b, sp_k++) % 1000) < SPARKLE_CHANCE_PER_1000 * fx_accents()) {
+                  int idx = (int)(sync_hash(sp_b, sp_k++) % n);
+                  Color existing = it[idx].get();
+                  uint8_t add = 20 + (uint8_t)(sync_hash(sp_b, sp_k++) % 30);   // TUNE softer sparkle than the original
+                  uint16_t nr = existing.r + add; if (nr > 255) nr = 255;
+                  uint16_t ng = existing.g + add; if (ng > 255) ng = 255;
+                  uint16_t nb = existing.b + add; if (nb > 255) nb = 255;
+                  it[idx] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
+                }
+              }
+            }
+
+      # ------------------------------------------------------------------
+      # 6. Aurora (Red Sky)
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "Aurora (Red Sky)"
+          update_interval: 20ms
+          lambda: |-
+            // TUNE: rare red/magenta oxygen-glow palette instead of the usual
+            // green-dominant aurora - same pacing as the original otherwise
+            static const uint8_t pal_aurora[16][3] = {
+              {20,0,5},{35,0,8},{55,0,12},{80,2,18},
+              {105,5,25},{130,10,35},{150,20,50},{170,35,68},
+              {185,55,90},{195,80,115},{200,105,140},{205,130,160},
+              {210,150,175},{215,170,190},{220,190,205},{225,205,215}
+            };
+
+            const int NUM_BANDS = 4;
+            const bool SPARKLE_ENABLE = true;
+            const int SPARKLE_CHANCE_PER_1000 = 4;
+
+            float t = fx_t();   // shared clock (was this light's own uptime)
+            int n = it.size();
+            float nf = (float) n;
+
+            for (int i = 0; i < n; i++) {
+              it[i] = Color((uint8_t)(pal_aurora[0][0]/20), (uint8_t)(pal_aurora[0][1]/20), (uint8_t)(pal_aurora[0][2]/20));
+            }
+
+            for (int b = 0; b < NUM_BANDS; b++) {
+              float drift_speed = (2.0f + b) * (b % 2 == 0 ? 1.0f : -1.0f);
+              float band_pos = fmodf(t * drift_speed + b * (nf / NUM_BANDS), nf);
+              if (band_pos < 0) band_pos += nf;
+
+              float width = nf * (0.14f + 0.03f * (b % 3));
+              float breathe_speed = 0.15f + 0.05f * b;
+              float breathe_phase = b * 1.7f;
+              float breathing = sinf(t * breathe_speed + breathe_phase) * 0.5f + 0.5f;
+              breathing = powf(breathing, 1.5f);
+              breathing = clamp01(0.5f + (breathing - 0.5f) * fx_swing());   // intensity: band contrast
+              float hue_speed = 0.25f + 0.08f * b;
+              float hue_phase = b * 3.3f;
+              float hue_pos = fmodf(t * hue_speed + hue_phase, 16.0f);
+              if (hue_pos < 0) hue_pos += 16.0f;
+
+              int idx0 = (int) hue_pos; int idx1 = (idx0 + 1) % 16; float frac = hue_pos - idx0;
+              float br = pal_aurora[idx0][0]*(1-frac) + pal_aurora[idx1][0]*frac;
+              float bg = pal_aurora[idx0][1]*(1-frac) + pal_aurora[idx1][1]*frac;
+              float bb = pal_aurora[idx0][2]*(1-frac) + pal_aurora[idx1][2]*frac;
+
+              for (int i = 0; i < n; i++) {
+                float dist = fabsf((float) i - band_pos);
+                if (dist > nf / 2.0f) dist = nf - dist;
+                float falloff = expf(-(dist * dist) / (2.0f * width * width));
+                float intensity = falloff * breathing;
+                if (intensity < 0.003f) continue;
+
+                Color existing = it[i].get();
+                float r = existing.r + br * intensity; if (r > 255) r = 255;
+                float g = existing.g + bg * intensity; if (g > 255) g = 255;
+                float bl = existing.b + bb * intensity; if (bl > 255) bl = 255;
+                it[i] = Color((uint8_t) r, (uint8_t) g, (uint8_t) bl);
+              }
+            }
+
+            if (SPARKLE_ENABLE) {
+
+              // Sparkles from the shared dice for this frame window, so every
+
+              // ring of the same size sparkles on the same LEDs.
+
+              const uint32_t sp_b = sync_bucket(fx_seconds(), 0.02);
+
+              uint32_t sp_k = 0;
+              int num_checks = n / 20 + 1;
+              for (int c = 0; c < num_checks; c++) {
+                if ((int)(sync_hash(sp_b, sp_k++) % 1000) < SPARKLE_CHANCE_PER_1000 * fx_accents()) {
+                  int idx = (int)(sync_hash(sp_b, sp_k++) % n);
+                  Color existing = it[idx].get();
+                  uint8_t add = 40 + (uint8_t)(sync_hash(sp_b, sp_k++) % 60);
+                  uint16_t nr = existing.r + add; if (nr > 255) nr = 255;
+                  uint16_t ng = existing.g + add; if (ng > 255) ng = 255;
+                  uint16_t nb = existing.b + add; if (nb > 255) nb = 255;
+                  it[idx] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
+                }
+              }
+            }
+

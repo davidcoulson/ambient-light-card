@@ -1,0 +1,99 @@
+# ---------------------------------------------------------------------------
+# Network time for the synchronised light effects.
+#
+# The effects derive their phase from the wall clock (light_effects_helpers.h),
+# so every light lands on the same frame at the same instant with no messages
+# between them. Clock agreement is therefore what keeps a room in step.
+#
+# Point every light at the SAME primary server - ideally one on your own
+# network. The simplest is Home Assistant itself running the chrony app; see
+# docs/time-sync.md. Set these substitutions in your device config (or a
+# shared package) to override the defaults:
+#
+#   substitutions:
+#     ntp_server_1: 192.168.1.10      # your Home Assistant host running chrony
+#     ntp_server_2: pool.ntp.org      # fallbacks, only used if the first fails
+#     ntp_server_3: time.cloudflare.com
+#
+# 5 min holds drift to roughly 6 ms at a typical 20 ppm crystal, well inside
+# the 20-100 ms effect frame interval.
+#
+# Do not also run the homeassistant time platform on these lights: it only
+# delivers whole seconds, writes them with tv_usec = 0, and then refuses to
+# correct any error under one second, which drags lights out of step. If a
+# shared package of yours adds it, remove it here with:
+#   - id: !remove homeassistant_time
+# ---------------------------------------------------------------------------
+substitutions:
+  ntp_server_1: pool.ntp.org
+  ntp_server_2: time.cloudflare.com
+  ntp_server_3: time.google.com
+
+time:
+  - platform: sntp
+    id: sntp_time
+    servers:
+      - ${ntp_server_1}
+      - ${ntp_server_2}
+      - ${ntp_server_3}
+    update_interval: 5min
+    # Fires on EVERY successful poll, not just the first: ESP-IDF's sync
+    # notification callback reaches SNTPComponent::time_synced() each time.
+    on_time_sync:
+      then:
+        - lambda: |-
+            uint32_t m = millis();
+            id(ntp_last_sync_ms) = m ? m : 1;   // 0 is reserved for "never"
+            // ISO string, not a number: a normal sensor goes over the API as a
+            // float32, which resolves epoch seconds only to ~128 s - the same
+            // trap that froze three of the 2D effects.
+            time_t now = ::time(nullptr);
+            struct tm tmv;
+            gmtime_r(&now, &tmv);
+            char buf[32];
+            ::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S+00:00", &tmv);
+            id(ntp_last_sync).publish_state(buf);
+
+# ---------------------------------------------------------------------------
+# NTP health, reported by the device itself.
+#
+# If NTP is silently blocked (a firewall rule between VLANs is the classic),
+# every light keeps running on a clock it can no longer correct and the effects
+# drift out of step with nothing to say why. These two make that failure
+# visible within 15 minutes.
+#
+#   NTP Sync       on while the last successful sync is under 15 min old (three
+#                  missed 5-min polls). Measured on millis(), so a clock step
+#                  from the sync itself cannot fool it. Off from boot until the
+#                  first sync.
+#   Last NTP Sync  the moment of the last successful sync; HA renders it as
+#                  "3 minutes ago". Published only on sync, so no polling churn.
+#
+# What this cannot tell you: WHICH server answered (per-server reachability is
+# not compiled into this lwIP build), or how far the clock is off - a device
+# has no reference to measure its own error against.
+# ---------------------------------------------------------------------------
+globals:
+  - id: ntp_last_sync_ms
+    type: uint32_t
+    restore_value: false
+    initial_value: "0"
+
+binary_sensor:
+  - platform: template
+    name: "NTP Sync"
+    id: ntp_sync_ok
+    device_class: connectivity
+    entity_category: diagnostic
+    lambda: |-
+      uint32_t last = id(ntp_last_sync_ms);
+      // uint32 subtraction is wrap-safe across the 49.7-day millis() rollover.
+      return last != 0 && (uint32_t) (millis() - last) < 15u * 60u * 1000u;
+
+text_sensor:
+  - platform: template
+    name: "Last NTP Sync"
+    id: ntp_last_sync
+    device_class: timestamp
+    entity_category: diagnostic
+    update_interval: never

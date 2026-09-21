@@ -1,0 +1,1115 @@
+# ---------------------------------------------------------------------------
+# 2D effects - the ones that need to know WHERE each light is in the room.
+#
+# Split out from accent_light_nonaddressable_effects.yaml deliberately: these
+# are only meaningful for a set of lights with a surveyed map. The kitchen and
+# home-theater lumaries run the same base package but are single fittings in
+# other rooms, so a wave crossing the room or a ripple expanding by distance
+# has nothing to mean there - the effects would fall back to a MAC hash and
+# just look like noise cluttering the list.
+#
+# Include this ALONGSIDE the base package, only for lights in the mapped room.
+# A device file needs nothing else: each light looks its own position up in
+# common/basement_map.h by its `mac` substitution. That header is the single
+# copy of the room map - move a light there, not here.
+# ---------------------------------------------------------------------------
+
+substitutions:
+  # Where the imagined fire sits, for Hearth and Single Candle (0..1 each axis).
+  fire_x: "0.5"
+  fire_y: "0.5"
+
+esphome:
+  includes:
+    - common/basement_map.h          # pulls in light_effects_helpers.h itself
+    - common/fx2d_render.h           # 2D Pacifica / Aurora renderers
+
+light:
+  - platform: rgb
+    id: !extend accent_light
+    effects:
+
+      # ------------------------------------------------------------------
+      # Canon - one pattern, each light entering at a fixed offset, like a
+      # round sung in parts. Uses position when known, MAC hash otherwise;
+      # either way the offsets never drift apart.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Canon"
+          update_interval: 40ms
+          lambda: |-
+            // Each light enters at a fixed offset set by where it is in the
+            // room, so the round travels rather than scattering.
+            float px, py;
+            light_xy("${mac}", px, py);
+            float pos = px * 0.7f + py * 0.3f;
+
+            const float CYCLE = 4.0f;
+            double T = fx_seconds() + (double) pos * CYCLE;
+
+            float ph = (float) (fmod(T, (double) CYCLE) / CYCLE);
+            float level = ph < 0.35f ? (ph / 0.35f)
+                                     : powf(1.0f - (ph - 0.35f) / 0.65f, 1.6f);
+
+            float r, g, b;
+            hsv_to_rgb(fmodf(0.58f + 0.10f * pos, 1.0f), 0.80f,
+                       clamp01(0.08f + 0.80f * level), r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Wave - SPATIAL. A crest travels along the room. Needs light_pos to
+      # be set; without a map every light falls back to its MAC hash and
+      # this reads as scatter rather than motion.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Wave"
+          update_interval: 25ms
+          lambda: |-
+            // SPATIAL. A straight crest sweeps across the room, and the sweep
+            // direction rotates slowly so it does not always come from the
+            // same wall. Position projected onto the travel direction gives
+            // each light its place in the wave.
+            float px, py;
+            light_xy("${mac}", px, py);
+            double T = fx_seconds();
+
+            float theta = (float) (fmod(T, 60.0) / 60.0) * 6.2831853f;
+            float ux = cosf(theta), uy = sinf(theta);
+            // Projection onto the unit vector, renormalised to roughly 0..1.
+            float proj = (px - ROOM_CX) * ux + (py - ROOM_CY) * uy + 0.5f;
+
+            const float PERIOD = 3.0f;
+            float head = (float) (fmod(T, (double) PERIOD) / PERIOD);
+            float d = fabsf(proj - head);
+            if (d > 0.5f) d = 1.0f - d;
+
+            float level = 0.05f + 0.90f * expf(-sq(d / 0.11f));
+            float r, g, b;
+            hsv_to_rgb(fmodf(0.55f + 0.08f * head, 1.0f), 0.78f, clamp01(level), r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Ripple - SPATIAL. A front expands outward from a point that moves
+      # every few seconds, like a drop landing somewhere in the room.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Ripple"
+          update_interval: 25ms
+          lambda: |-
+            // SPATIAL. A true expanding ring: a drop lands somewhere in the
+            // room and the front spreads outward by real 2D distance, so it
+            // reaches near lights before far ones.
+            float px, py;
+            light_xy("${mac}", px, py);
+            double T = fx_seconds();
+
+            uint32_t slot; float within;
+            sync_slot(T, 5.0f, slot, within);
+
+            float ox = sync_random(slot, 1);
+            float oy = sync_random(slot, 2) * ROOM_ASPECT;
+            float dx = px - ox, dy = py - oy;
+            float dist = sqrtf(dx * dx + dy * dy);
+
+            float front = within * 0.30f;          // ring radius over time
+            float level = 0.04f + 0.92f * expf(-sq((dist - front) / 0.10f));
+            level *= 1.0f - (within / 5.0f) * 0.75f;   // fades as it spreads
+
+            float r, g, b;
+            hsv_to_rgb(0.50f, 0.70f, clamp01(level), r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Chase - SPATIAL. A single bright head runs the length of the room
+      # with a short tail behind it.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Chase"
+          update_interval: 20ms
+          lambda: |-
+            // SPATIAL. A bright head runs left to right across the room with a
+            // short tail. Uses x for the run and a little y so lights on the
+            // same column do not fire as one solid block.
+            float px, py;
+            light_xy("${mac}", px, py);
+            double T = fx_seconds();
+
+            float path = px * 0.88f + py * 0.12f;
+            const float CYCLE = 2.0f;
+            float head = (float) (fmod(T, (double) CYCLE) / CYCLE);
+
+            float d = head - path;
+            if (d < 0.0f) d += 1.0f;               // tail trails behind only
+
+            const float TAIL = 0.16f;
+            float level = d < TAIL ? (1.0f - d / TAIL) : 0.0f;
+            level = 0.03f + 0.95f * level * level;
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    level, level * 0.75f, level * 0.25f);
+
+      # ==================================================================
+      # 2D effects. Each light samples a continuous field at its own place
+      # in the room, so these read as ONE scene spread across 26 points
+      # rather than 26 separate lights doing similar things.
+      # ==================================================================
+
+      # ------------------------------------------------------------------
+      # Hearth - a fire burning in the middle of the room. Brightness falls
+      # off with distance from fire_x/fire_y, the flicker is SHARED so the
+      # whole room surges together, and a surge reaches near lights a beat
+      # before far ones. A little per-light shimmer on top stops it reading
+      # as one big dimmer.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Hearth"
+          update_interval: 40ms
+          lambda: |-
+            static const uint8_t pal_fire[16][3] = {
+              {30,0,0},{60,4,0},{95,10,0},{130,20,0},
+              {165,34,0},{195,52,2},{220,74,4},{238,98,8},
+              {250,124,14},{255,150,24},{255,174,40},{255,196,64},
+              {255,215,96},{255,231,136},{255,243,182},{255,250,220}
+            };
+            float px, py;
+            light_xy("${mac}", px, py);
+            float dx = px - ${fire_x}, dy = py - ${fire_y} * ROOM_ASPECT;
+            float dist = sqrtf(dx * dx + dy * dy);
+
+            double T = fx_seconds();
+            double Td = T - dist * 0.10;          // light reaches near lights first
+
+            float body = 0.55f * sync_noise(Td, 0.55f, 1)
+                       + 0.30f * sync_noise(Td, 0.19f, 2)
+                       + 0.15f * sync_noise(Td, 0.07f, 3);
+
+            uint32_t slot; float within;
+            sync_slot(Td, 4.0f, slot, within);
+            float at = sync_random(slot, 4) * 3.0f;
+            float flare = within > at
+                        ? (0.30f + 0.45f * sync_random(slot, 5)) * fx_accents() * expf(-2.2f * (within - at))
+                        : 0.0f;
+
+            const float R = 0.30f;
+            float fall = 1.0f / (1.0f + (dist / R) * (dist / R));
+            float shim = 0.90f + 0.20f * sync_noise(T, 0.13f, mac_hash32("${mac}"));
+
+            float level = clamp01(fall * (0.42f + 0.55f * (0.5f + (body - 0.5f) * fx_swing()) + flare) * shim);   // intensity: flicker depth, flares
+
+            float r, g, b;
+            lerp_palette16(pal_fire, clamp01(level * 0.70f + fall * 0.30f) * 15.0f, r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    r / 255.0f * level, g / 255.0f * level, b / 255.0f * level);
+
+      # ------------------------------------------------------------------
+      # Single Candle - the same idea wound right down: one small flame in
+      # the middle of the room. Tight falloff, low output, and it gutters
+      # instead of flaring. Meant for a dark room.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Single Candle"
+          update_interval: 50ms
+          lambda: |-
+            float px, py;
+            light_xy("${mac}", px, py);
+            float dx = px - ${fire_x}, dy = py - ${fire_y} * ROOM_ASPECT;
+            float dist = sqrtf(dx * dx + dy * dy);
+
+            double T = fx_seconds();
+            double Td = T - dist * 0.08;
+
+            float body = 0.65f * sync_noise(Td, 0.80f, 6)
+                       + 0.35f * sync_noise(Td, 0.26f, 7);
+
+            uint32_t slot; float within;
+            sync_slot(Td, 9.0f, slot, within);
+            float at = sync_random(slot, 8) * 8.0f;
+            bool guttering = (within > at && within < at + 0.45f * fx_accents());   // intensity: gutters (none when calm)
+
+            const float R = 0.17f;
+            float fall = 1.0f / (1.0f + (dist / R) * (dist / R));
+            float shim = 0.94f + 0.12f * sync_noise(T, 0.17f, mac_hash32("${mac}"));
+
+            float level = fall * (guttering ? 0.12f : (0.26f + 0.16f * (0.5f + (body - 0.5f) * fx_swing()))) * shim;
+            level = clamp01(level);
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    level, level * 0.40f, level * 0.07f);
+
+      # ------------------------------------------------------------------
+      # Clouds - overcast sky drifting across the room. Two noise layers
+      # sampled at this light's position give a field that moves; the
+      # threshold leaves clear blue gaps between the banks.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Clouds"
+          update_interval: 80ms
+          lambda: |-
+            float px, py;
+            light_xy("${mac}", px, py);
+            double T = fx_seconds();
+
+            // Position shifts the sample point; time drifts it along. All in
+            // double: T * 0.014 is ~2.5e7, where a float resolves only to 2.0 and
+            // would swallow the position term whole.
+            double u = px * 2.2 + T * 0.014;
+            double v = py * 1.8 - T * 0.006;
+
+            float n = 0.55f * sync_noise(u + v * 0.7, 1.0f, 21)
+                    + 0.30f * sync_noise(u * 2.1 - v, 0.5f, 22)
+                    + 0.15f * sync_noise(u * 4.3 + v * 2.0, 0.25f, 23);
+
+            float cloud = clamp01((n - 0.42f) * 2.4f);   // gaps of clear sky
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    0.05f + 0.70f * cloud, 0.11f + 0.70f * cloud, 0.30f + 0.52f * cloud);
+
+      # ------------------------------------------------------------------
+      # Milky Way - a galactic band lying across the room, turning slowly
+      # over four minutes. Lights inside the band glow creamy and dense,
+      # the rest are scattered blue-white stars, each twinkling on its own.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Milky Way"
+          update_interval: 60ms
+          lambda: |-
+            float px, py;
+            light_xy("${mac}", px, py);
+            double T = fx_seconds();
+
+            // Band orientation: half a turn every four minutes.
+            float ang = (float) (fmod(T, 240.0) / 240.0) * 3.1415927f;
+            float nx = -sinf(ang), ny = cosf(ang);
+            float d = fabsf((px - ROOM_CX) * nx + (py - ROOM_CY) * ny);
+            float band = expf(-sq(d / 0.12f));
+
+            uint32_t h = mac_hash32("${mac}");
+            float base = 0.03f + 0.09f * (((h >> 3) & 0xFF) / 255.0f);
+            float twinkle = 0.72f + 0.28f * sync_noise(T, 1.6f, h);
+
+            float level = clamp01((base + band * 0.55f) * twinkle);
+
+            // The band runs warm; isolated stars stay blue-white.
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    level * (0.72f + 0.28f * band), level * (0.78f + 0.20f * band), level);
+
+      # ------------------------------------------------------------------
+      # Plasma 2D - the classic plasma field, now sampled in x and y rather
+      # than time alone, so the colour bands lie across the room instead of
+      # every light moving together.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Plasma"
+          update_interval: 40ms
+          lambda: |-
+            float px, py;
+            light_xy("${mac}", px, py);
+            float t = fx_t();
+
+            float rad = sqrtf(sq(px - ROOM_CX) + sq(py - ROOM_CY));
+            float v = sinf(px * 6.0f + t * 0.70f)
+                    + sinf(py * 5.0f - t * 0.50f)
+                    + sinf((px + py) * 4.0f + t * 0.31f)
+                    + sinf(rad * 9.0f - t * 0.90f);
+
+            float hue = fmodf(v / 8.0f + 0.5f, 1.0f);
+            if (hue < 0) hue += 1.0f;
+
+            float r, g, b;
+            hsv_to_rgb(hue, 0.95f, 0.75f, r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Noise Drift - soft organic colour clouds sliding across the room.
+      # Slower and gentler than Plasma; nothing repeats on a period you can
+      # spot, because the layers run at unrelated rates.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Noise Drift"
+          update_interval: 70ms
+          lambda: |-
+            float px, py;
+            light_xy("${mac}", px, py);
+            double T = fx_seconds();
+
+            // Double throughout - see Clouds. A float cannot hold T * rate.
+            double u = px * 1.7 + T * 0.020;
+            double v = py * 1.5 - T * 0.013;
+
+            float hue = 0.60f * sync_noise(u + v * 0.6, 1.0f, 31)
+                      + 0.40f * sync_noise(u * 1.9 - v * 1.3, 0.6f, 32);
+            float lum = 0.35f + 0.45f * sync_noise(u * 0.8 + v, 1.4f, 33);
+
+            float r, g, b;
+            hsv_to_rgb(fmodf(hue, 1.0f), 0.72f, clamp01(lum), r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Metaballs - three soft blobs wandering the room, each light lit by
+      # how close it is to them. Where two overlap they blend rather than
+      # add, which is what keeps it looking like liquid.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Metaballs"
+          update_interval: 50ms
+          lambda: |-
+            float px, py;
+            light_xy("${mac}", px, py);
+            double T = fx_seconds();
+
+            float field = 0.0f, hsum = 0.0f, wsum = 0.0f;
+            for (int i = 0; i < 3; i++) {
+              float bx = sync_noise(T, 11.0f + i * 2.3f, 40 + i);
+              float by = sync_noise(T, 9.5f + i * 3.1f, 50 + i) * ROOM_ASPECT;
+              float dx = px - bx, dy = py - by;
+              float w = 1.0f / (1.0f + (dx * dx + dy * dy) * 26.0f);
+              field += w;
+              hsum += w * (0.08f + 0.30f * i);     // each blob its own colour
+              wsum += w;
+            }
+
+            float hue = wsum > 0.0001f ? hsum / wsum : 0.0f;
+            float level = clamp01(field * 0.85f);
+
+            float r, g, b;
+            hsv_to_rgb(fmodf(hue, 1.0f), 0.85f, level, r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Aurora Curtains - vertical sheets of light that ripple as they
+      # cross the room, the way a real aurora hangs in folds rather than
+      # washing evenly.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Aurora Curtains"
+          update_interval: 60ms
+          lambda: |-
+            float px, py;
+            light_xy("${mac}", px, py);
+            double T = fx_seconds();
+            float t = sync_fold(T);
+
+            // The fold line wanders, so the curtain is never straight.
+            float warp = sync_noise(T, 6.0f, 61) * 0.45f;
+            float s = (px * 2.6f + warp * 2.0f - py * 0.5f) + t * 0.16f;
+
+            float band = sinf(s * 3.1415927f);
+            // Intensity: calmer = softer, wider folds; above normal = sharper, brighter.
+            float level = powf(band > 0.0f ? band : 0.0f, 2.2f * fx_calm(0.45f) + 1.5f * fx_extra());
+            level = 0.05f + 0.70f * fx_calm(0.5f) * (1.0f + 0.3f * fx_extra()) * level;
+
+            float hue = 0.33f + 0.16f * sync_noise(T, 9.0f, 62) + 0.05f * py;
+
+            float r, g, b;
+            hsv_to_rgb(fmodf(hue, 1.0f), 0.80f, clamp01(level), r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Radar Sweep - a beam rotating from the middle of the room, with a
+      # fading trail behind it. A sparse grid renders a moving BOUNDARY far
+      # better than it renders texture, which is why this reads so cleanly.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Radar Sweep"
+          update_interval: 25ms
+          lambda: |-
+            float px, py;
+            light_xy("${mac}", px, py);
+            double T = fx_seconds();
+
+            float ang = atan2f(py - ROOM_CY, px - ROOM_CX);           // -pi..pi
+            float beam = (float) (fmod(T, 4.0) / 4.0) * 6.2831853f - 3.1415927f;
+
+            // Angle BEHIND the beam, so the trail lags rather than leads.
+            float da = beam - ang;
+            while (da < 0.0f) da += 6.2831853f;
+            while (da > 6.2831853f) da -= 6.2831853f;
+
+            float level = 0.03f + 0.95f * expf(-da * 2.6f);     // sharp head, long tail
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    level * 0.15f, level, level * 0.35f);
+
+      # ------------------------------------------------------------------
+      # Shockwave - three rings expanding at once from different points and
+      # at staggered times, each its own colour. Ripple's louder sibling.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Shockwave"
+          update_interval: 25ms
+          lambda: |-
+            float px, py;
+            light_xy("${mac}", px, py);
+            double T = fx_seconds();
+
+            float r = 0, g = 0, b = 0;
+            for (int i = 0; i < 3; i++) {
+              // Each ring runs on its own offset slot, so they overlap.
+              double Ti = T + i * 1.7;
+              uint32_t slot; float within;
+              sync_slot(Ti, 4.5f, slot, within);
+
+              float ox = sync_random(slot, 70 + i);
+              float oy = sync_random(slot, 80 + i) * ROOM_ASPECT;
+              float dx = px - ox, dy = py - oy;
+              float dist = sqrtf(dx * dx + dy * dy);
+
+              float front = within * 0.34f;
+              float amp = expf(-sq((dist - front) / 0.09f))
+                        * (1.0f - within / 4.5f);
+
+              float hue = fmodf(sync_random(slot, 90 + i) * 0.4f + i * 0.33f, 1.0f);
+              float rr, gg, bb;
+              hsv_to_rgb(hue, 0.85f, clamp01(amp), rr, gg, bb);
+              if (rr > r) r = rr;
+              if (gg > g) g = gg;
+              if (bb > b) b = bb;
+            }
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    0.02f + r, 0.02f + g, 0.03f + b);
+
+      # ------------------------------------------------------------------
+      # Comet - a bright head crossing the room on a fresh heading each
+      # pass, dragging a tail that fades behind it along its own track.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Comet"
+          update_interval: 20ms
+          lambda: |-
+            float px, py;
+            light_xy("${mac}", px, py);
+            double T = fx_seconds();
+
+            uint32_t slot; float within;
+            sync_slot(T, 3.5f, slot, within);
+
+            float ang = sync_random(slot, 101) * 6.2831853f;
+            float ux = cosf(ang), uy = sinf(ang);
+
+            // Head travels from one side to the other along the heading.
+            float travel = within / 3.5f;
+            float hx = ROOM_CX - ux * 0.8f + ux * 1.6f * travel;
+            float hy = ROOM_CY - uy * 0.8f + uy * 1.6f * travel;
+
+            float dx = px - hx, dy = py - hy;
+            float along = dx * ux + dy * uy;            // + is ahead of the head
+            float across = fabsf(dx * uy - dy * ux);
+
+            float tail = along < 0.0f ? expf(along * 4.5f) : expf(-along * 26.0f);
+            float level = tail * expf(-sq(across / 0.11f));
+            // The head has left the room by now but the tail has not; ease it
+            // out over the last 15 % rather than cutting it dead at the slot end.
+            if (travel > 0.85f) level *= (1.0f - travel) / 0.15f;
+
+            float hue = fmodf(0.08f + sync_random(slot, 102) * 0.18f, 1.0f);
+            float r, g, b;
+            hsv_to_rgb(hue, 0.55f, clamp01(0.02f + 0.95f * level), r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Flood - a waterline sweeps across the room and fills it, bright at
+      # the edge and deep behind. Rotates a little each pass so it does not
+      # always come from the same wall.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Flood"
+          update_interval: 40ms
+          lambda: |-
+            float px, py;
+            light_xy("${mac}", px, py);
+            double T = fx_seconds();
+
+            uint32_t slot; float within;
+            sync_slot(T, 9.0f, slot, within);
+
+            float ang = sync_random(slot, 110) * 6.2831853f;
+            float proj = (px - ROOM_CX) * cosf(ang) + (py - ROOM_CY) * sinf(ang);
+            proj = proj * 0.9f + 0.5f;                  // roughly 0..1
+
+            // Rise for two thirds of the slot, then drain away.
+            float phase = within / 9.0f;
+            float levelline = phase < 0.66f ? (phase / 0.66f) : (1.0f - (phase - 0.66f) / 0.34f);
+            levelline = clamp01(levelline) * 1.15f - 0.05f;
+
+            float depth = levelline - proj;             // >0 means submerged
+            float level;
+            if (depth > 0.0f) {
+              level = 0.12f + 0.25f * expf(-depth * 6.0f);   // deep water, dim
+              level += 0.75f * expf(-sq(depth / 0.05f));  // bright foam edge
+            } else {
+              level = 0.03f;
+            }
+
+            float r, g, b;
+            hsv_to_rgb(0.55f, 0.75f, clamp01(level), r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ==================================================================
+      # Shared-simulation effects. Every light runs the SAME simulation of
+      # the whole room off the shared clock and lights only its own cell.
+      # Nothing is transmitted between them - they agree because they are
+      # computing the same thing from the same inputs. This is the part a
+      # conventional matrix controller cannot do across 26 separate boards.
+      # ==================================================================
+
+      # ------------------------------------------------------------------
+      # Bouncing Balls - three balls ricocheting around the room. Position
+      # is a triangle wave, which IS an exact elastic bounce, so no state
+      # is carried and every light agrees on where the balls are.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Bouncing Balls"
+          update_interval: 25ms
+          lambda: |-
+            float px, py;
+            light_xy("${mac}", px, py);
+            double T = fx_seconds();
+
+            float r = 0, g = 0, b = 0;
+            const float SPEED[3][2] = {{0.31f, 0.23f}, {0.19f, 0.37f}, {0.43f, 0.13f}};
+            const float HUE[3] = {0.02f, 0.38f, 0.62f};
+
+            for (int i = 0; i < 3; i++) {
+              // Triangle wave in each axis = perfect reflection off the walls.
+              // fmod in DOUBLE, then narrow: (float) T has 128 s resolution,
+              // which pinned all three balls in the corner.
+              float u = (float) fmod(T * SPEED[i][0] + i * 0.7, 2.0);
+              float v = (float) fmod(T * SPEED[i][1] + i * 1.3, 2.0);
+              float bx = u < 1.0f ? u : 2.0f - u;
+              float by = (v < 1.0f ? v : 2.0f - v) * ROOM_ASPECT;
+
+              float dx = px - bx, dy = py - by;
+              float amp = expf(-(dx * dx + dy * dy) / 0.012f);
+
+              float rr, gg, bb;
+              hsv_to_rgb(HUE[i], 0.85f, clamp01(amp), rr, gg, bb);
+              if (rr > r) r = rr;
+              if (gg > g) g = gg;
+              if (bb > b) b = bb;
+            }
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    0.02f + r, 0.02f + g, 0.02f + b);
+
+      # ------------------------------------------------------------------
+      # Swarm - five small agents wandering the room on smooth noise paths.
+      # Tighter and twitchier than Metaballs: a light flares briefly as one
+      # passes and drops straight back.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Swarm"
+          update_interval: 25ms
+          lambda: |-
+            float px, py;
+            light_xy("${mac}", px, py);
+            double T = fx_seconds();
+
+            float best = 0.0f;
+            for (int i = 0; i < 5; i++) {
+              float ax = sync_noise(T, 3.1f + i * 0.7f, 120 + i);
+              float ay = sync_noise(T, 2.7f + i * 0.9f, 130 + i) * ROOM_ASPECT;
+              float dx = px - ax, dy = py - ay;
+              float amp = expf(-(dx * dx + dy * dy) / 0.006f);
+              if (amp > best) best = amp;
+            }
+
+            float level = clamp01(0.03f + 0.95f * best);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    level * 0.85f, level, level * 0.25f);
+
+      # ------------------------------------------------------------------
+      # Black Hole - an attractor drifting through the room. Close in the
+      # lights go DARK, with a bright accretion ring around the void and a
+      # faint blue-shifted glow beyond it.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Black Hole"
+          update_interval: 40ms
+          lambda: |-
+            float px, py;
+            light_xy("${mac}", px, py);
+            double T = fx_seconds();
+
+            float hx = sync_noise(T, 14.0f, 140);
+            float hy = sync_noise(T, 11.0f, 141) * ROOM_ASPECT;
+            float dx = px - hx, dy = py - hy;
+            float dist = sqrtf(dx * dx + dy * dy);
+
+            const float HORIZON = 0.09f, RING = 0.15f;
+            float level;
+            float hue = 0.62f;
+            if (dist < HORIZON) {
+              level = 0.0f;                                   // nothing escapes
+            } else {
+              float ring = expf(-sq((dist - RING) / 0.05f));
+              float halo = 0.10f / (1.0f + dist * 6.0f);
+              level = clamp01(ring * 0.95f + halo);
+              hue = 0.62f - 0.50f * ring;                     // ring burns white-orange
+            }
+
+            float r, g, b;
+            hsv_to_rgb(fmodf(hue + 1.0f, 1.0f), 0.70f, clamp01(level), r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Game of Life - a Life-like automaton on your actual light layout.
+      # Neighbours are whichever lights sit within 0.20 of each other in true
+      # room units, so the board is an irregular graph, not a square grid.
+      #
+      # The rule is B23/S23, not Conway's B3/S23. Conway's numbers assume eight
+      # neighbours; these lights have two to eight, median five, and on that
+      # graph the classic rule is dead or frozen within ~5 generations in 99 %
+      # of rounds (simulated over 2000 rounds) - six seconds of life, then 54 of
+      # a still room. Allowing birth on two neighbours is the same rule scaled
+      # to the thinner graph, and keeps the board moving for ~48 of 50
+      # generations. BIRTH / SURVIVE are bitmasks, bit n = "n live neighbours";
+      # B23/S134 (SURVIVE 0b11010) is a calmer alternative.
+      #
+      # If the board does stall - dead, still, or a two-state blinker - for
+      # three generations it reseeds. The reseed is hashed from the round and
+      # generation, so every light reseeds identically.
+      #
+      # Every light simulates the WHOLE board and displays only its own cell.
+      # They agree because they seed from the same round number and step the
+      # same number of generations - not because anything is sent between them.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Game of Life"
+          update_interval: 60ms
+          lambda: |-
+            static bool     adj_built = false;
+            static uint8_t  nbr[ROOM_N][10];
+            static uint8_t  nbr_n[ROOM_N];
+            static uint8_t  board[ROOM_N];
+            static uint8_t  prev[ROOM_N];
+            static uint8_t  prev2[ROOM_N];
+            static int      cur_round = -1;
+            static int      cur_gen = -1;
+            static int      stall = 0;
+
+            const double ROUND_LEN = 60.0, GEN_LEN = 1.2;
+            const uint16_t BIRTH = 0b01100, SURVIVE = 0b01100;   // B23 / S23
+
+            if (!adj_built) {
+              for (int i = 0; i < ROOM_N; i++) {
+                nbr_n[i] = 0;
+                for (int j = 0; j < ROOM_N; j++) {
+                  if (i == j) continue;
+                  float dx = ROOM_MAP[i].x - ROOM_MAP[j].x;
+                  float dy = (ROOM_MAP[i].y - ROOM_MAP[j].y) * ROOM_ASPECT;
+                  if (dx * dx + dy * dy < 0.20f * 0.20f && nbr_n[i] < 10)
+                    nbr[i][nbr_n[i]++] = j;
+                }
+              }
+              adj_built = true;
+            }
+
+            double T = fx_seconds();
+            int round_no = (int) floor(T / ROUND_LEN);
+            int gen = (int) floor(fmod(T, ROUND_LEN) / GEN_LEN);
+
+            // New round, or the clock stepped backwards: replay from the seed.
+            if (round_no != cur_round || gen < cur_gen) {
+              for (int i = 0; i < ROOM_N; i++) {
+                board[i] = sync_random((uint32_t) round_no, 200 + i) < 0.42f ? 1 : 0;
+                prev[i] = prev2[i] = board[i];
+              }
+              cur_round = round_no;
+              cur_gen = 0;
+              stall = 0;
+            }
+
+            while (cur_gen < gen) {
+              uint8_t next[ROOM_N];
+              bool reseed = stall >= 3;
+              for (int i = 0; i < ROOM_N; i++) {
+                if (reseed) {
+                  next[i] = sync_random((uint32_t) round_no * 64u + (uint32_t) cur_gen, 230 + i) < 0.42f ? 1 : 0;
+                } else {
+                  int live = 0;
+                  for (int k = 0; k < nbr_n[i]; k++) live += board[nbr[i][k]];
+                  next[i] = ((board[i] ? SURVIVE : BIRTH) >> live) & 1;
+                }
+              }
+              bool same1 = true, same2 = true;
+              for (int i = 0; i < ROOM_N; i++) {
+                if (next[i] != board[i]) same1 = false;
+                if (next[i] != prev[i])  same2 = false;
+                prev2[i] = prev[i]; prev[i] = board[i]; board[i] = next[i];
+              }
+              stall = (!reseed && (same1 || same2)) ? stall + 1 : 0;
+              cur_gen++;
+            }
+
+            int me = room_index("${mac}");
+
+            float f = (float) (fmod(T, GEN_LEN) / GEN_LEN);
+            bool now_alive = board[me], was_alive = prev[me];
+
+            float level;
+            if (now_alive && was_alive)        level = 0.85f;
+            else if (now_alive && !was_alive)  level = 0.10f + 0.75f * f;      // born
+            else if (!now_alive && was_alive)  level = 0.85f * (1.0f - f);     // died
+            else                               level = 0.03f;
+
+            // Born cells run green, dying cells fall away through amber.
+            float hue = (now_alive && !was_alive) ? 0.33f
+                      : (!now_alive && was_alive) ? 0.09f : 0.28f;
+            float r, g, b;
+            hsv_to_rgb(hue, 0.80f, clamp01(level), r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Pac-Man - the characters move through the room and light up
+      # whichever fitting they are passing. Pac-Man wanders on a smooth
+      # path; each ghost is simply Pac-Man's own position from a few
+      # seconds earlier, which is why they trail him in single file.
+      #
+      # Unlit fittings hold a dim pellet until Pac-Man reaches them, then
+      # go dark for the rest of the round. Every 24 s a power pellet turns
+      # the ghosts blue for five seconds.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Pac-Man"
+          update_interval: 30ms
+          lambda: |-
+            static bool eaten = false;
+            static int  cur_round = -1;
+
+            float px, py;
+            light_xy("${mac}", px, py);
+            double T = fx_seconds();
+
+            const double ROUND = 24.0;
+            int round_no = (int) floor(T / ROUND);
+            if (round_no != cur_round) {
+              cur_round = round_no;
+              eaten = false;
+              // Joining part-way through a round (reboot, or the effect was just
+              // selected): replay Pac-Man's path from the start of the round to
+              // find out whether he has already been through here, so the pellet
+              // agrees with every other light. At a normal round boundary this
+              // loop runs once; mid-round it is at most 240 steps, one time.
+              for (double ts = round_no * ROUND; ts < T; ts += 0.1) {
+                float ex = px - sync_noise(ts, 5.0f, 300);
+                float ey = py - sync_noise(ts, 4.3f, 301) * ROOM_ASPECT;
+                if (ex * ex + ey * ey < 0.10f * 0.10f) { eaten = true; break; }
+              }
+            }
+
+            // Pac-Man's path. Ghosts read the same path, delayed.
+            float pacx = sync_noise(T, 5.0f, 300);
+            float pacy = sync_noise(T, 4.3f, 301) * ROOM_ASPECT;
+
+            float dxp = px - pacx, dyp = py - pacy;
+            float dpac = sqrtf(dxp * dxp + dyp * dyp);
+            if (dpac < 0.10f) eaten = true;
+
+            bool powered = fmod(T, ROUND) > (ROUND - 5.0);
+
+            // Nearest character wins this fitting.
+            float best = expf(-(dpac * dpac) / 0.006f);
+            float hue = 0.14f, sat = 1.0f;                  // Pac-Man yellow
+
+            const float GHUE[4] = {0.00f, 0.90f, 0.50f, 0.07f};   // red pink cyan orange
+            for (int i = 0; i < 4; i++) {
+              double tg = T - (i + 1) * 1.15;
+              float gx = sync_noise(tg, 5.0f, 300);
+              float gy = sync_noise(tg, 4.3f, 301) * ROOM_ASPECT;
+              float dx = px - gx, dy = py - gy;
+              float amp = expf(-(dx * dx + dy * dy) / 0.005f);
+              if (amp > best) {
+                best = amp;
+                hue = powered ? 0.62f : GHUE[i];
+                sat = powered ? 0.95f : 1.0f;
+              }
+            }
+
+            float r, g, b;
+            if (best > 0.05f) {
+              hsv_to_rgb(hue, sat, clamp01(best), r, g, b);
+            } else {
+              // Pellet: dim warm dot until eaten, then dark maze.
+              float pellet = eaten ? 0.015f : 0.11f;
+              r = pellet; g = pellet * 0.95f; b = pellet * 0.70f;
+            }
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Shore Break - waves rolling in and breaking against the north wall.
+      #
+      # This is the first effect that knows a wall exists. The plan's y axis
+      # is already measured from the north wall, so a light's distance from
+      # the shore IS its y coordinate: F and G sit at the water's edge, Y and
+      # Z are furthest out.
+      #
+      # A wave shoals as it approaches - the front decelerates and the crest
+      # narrows and steepens - then breaks into foam against the wall and
+      # drains back out. Wave height varies per swell, so you get sets and
+      # lulls rather than a metronome.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Shore Break"
+          update_interval: 30ms
+          lambda: |-
+            float px, py;
+            light_xy("${mac}", px, py);
+            float d = py / ROOM_ASPECT;         // 0 at the wall, 1 furthest out
+
+            double T = fx_seconds();
+            const float PERIOD = 7.0f;
+            uint32_t slot; float within;
+            sync_slot(T, PERIOD, slot, within);
+
+            float p = within / PERIOD;
+            float size = 0.55f + 0.65f * sync_random(slot, 210);   // sets and lulls
+
+            float swell = 0.0f, foam = 0.0f;
+
+            if (p < 0.55f) {
+              // Rolling in. Ease-out so it slows as it shoals, the way real
+              // water piles up when the bottom comes shallow.
+              float e = 1.0f - powf(1.0f - clamp01(p / 0.55f), 2.2f);
+              float front = 1.45f - 1.50f * e;   // starts well past Y/Z so it rolls IN, not pops in
+              float rel = d - front;            // >0 means the wave is not here yet
+
+              // Crest narrows and stands up as it nears the wall.
+              float shoal = 1.0f - clamp01(front);
+              float width = 0.16f - 0.10f * shoal;
+              if (width < 0.045f) width = 0.045f;
+
+              float crest = expf(-sq(rel / width));
+              swell = crest * (0.30f + 0.70f * shoal) * size;
+
+              // Once it is close in, the leading face turns over into foam.
+              if (front < 0.30f && rel < 0.02f)
+                foam = crest * 0.85f * size;
+            } else {
+              // Backwash: a thin sheet draining away from the wall.
+              float q = (p - 0.55f) / 0.45f;
+              float edge = q * 0.42f;
+              if (d < edge)
+                swell = 0.12f * (1.0f - q);     // wet and draining
+              foam = expf(-sq((d - edge) / 0.05f)) * 0.45f * (1.0f - q) * size;
+            }
+
+            // Open water behind the break, with a little surface movement.
+            float base = 0.04f + 0.09f * d + 0.03f * sync_noise(T, 1.3f, 211);
+            float total = clamp01(base + swell);
+
+            float r, g, b;
+            hsv_to_rgb(0.53f, 0.80f, total, r, g, b);
+
+            float f = clamp01(foam);
+            r = r * (1.0f - f) + f;
+            g = g * (1.0f - f) + f * 0.98f;
+            b = b * (1.0f - f) + f * 0.95f;
+
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ==================================================================
+      # 2D Pacifica and Aurora. Brightness dims them like any other effect;
+      # intensity is pinned at normal until the room's intensity control
+      # exists. Renderers and the reasoning are in common/fx2d_render.h. Palettes are lifted from the matching 1D
+      # variants so the room version reads as the same effect.
+      # ==================================================================
+
+      # ------------------------------------------------------------------
+      # 2D Pacifica - Open ocean: deep blue swell with cyan-white crests.
+      # Brightness is intensity. energy 0.70, speed 1.0 (fixed per variant).
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Pacifica"
+          update_interval: 50ms
+          lambda: |-
+            static const uint8_t PD[16][3] = {
+              {0,2,8},{0,3,12},{0,4,16},{0,6,21},
+              {0,8,27},{0,10,33},{0,13,40},{0,16,48},
+              {0,20,57},{0,24,66},{0,29,76},{0,34,86},
+              {0,40,97},{2,47,108},{6,55,120},{12,64,132}
+            };
+            static const uint8_t PM[16][3] = {
+              {0,6,8},{0,10,13},{0,15,19},{0,21,26},
+              {0,28,34},{0,36,43},{2,45,53},{4,55,63},
+              {8,66,74},{14,78,86},{22,91,98},{32,105,111},
+              {44,120,124},{58,135,138},{74,150,152},{92,166,166}
+            };
+            static const uint8_t PB[16][3] = {
+              {10,40,50},{20,70,82},{34,100,112},{50,128,140},
+              {70,154,164},{94,176,184},{118,194,200},{142,208,212},
+              {164,220,222},{184,230,231},{200,237,238},{214,242,243},
+              {226,246,247},{236,250,250},{246,253,253},{255,255,255}
+            };
+            float px, py;
+            light_xy("${mac}", px, py);
+            float r, g, b;
+            pacifica2d(px, py, fx_seconds(), fx_intensity(),
+                       0.70f, 1.0f, PD, PM, PB, r, g, b, false);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # 2D Pacifica (Calm Lagoon) - Shallow turquoise water, gentle and slow.
+      # Brightness is intensity. energy 0.45, speed 0.7 (fixed per variant).
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Pacifica (Calm Lagoon)"
+          update_interval: 50ms
+          lambda: |-
+            static const uint8_t PD[16][3] = {
+              {5,40,42},{6,48,50},{8,58,60},{10,68,70},
+              {12,78,80},{15,90,92},{18,102,104},{22,115,117},
+              {28,128,130},{35,142,144},{45,156,158},{58,170,172},
+              {75,185,187},{95,200,200},{120,215,213},{150,230,225}
+            };
+            static const uint8_t PM[16][3] = {
+              {10,60,62},{14,72,74},{18,85,87},{24,98,100},
+              {30,112,114},{38,126,128},{48,140,142},{60,155,155},
+              {75,170,168},{92,185,180},{112,198,190},{135,210,198},
+              {160,222,205},{188,232,212},{215,242,220},{240,250,232}
+            };
+            static const uint8_t PB[16][3] = {
+              {40,140,140},{60,160,158},{85,180,175},{112,198,190},
+              {140,213,202},{168,225,212},{195,235,222},{215,242,230},
+              {230,247,238},{240,250,244},{247,252,248},{250,253,250},
+              {252,254,252},{253,254,253},{254,255,254},{255,255,255}
+            };
+            float px, py;
+            light_xy("${mac}", px, py);
+            float r, g, b;
+            pacifica2d(px, py, fx_seconds(), fx_intensity(),
+                       0.45f, 0.7f, PD, PM, PB, r, g, b, false);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # 2D Pacifica (Storm) - Grey-blue heavy sea, fast chop and the most whitecaps.
+      # Brightness is intensity. energy 1.00, speed 1.4 (fixed per variant).
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Pacifica (Storm)"
+          update_interval: 50ms
+          lambda: |-
+            static const uint8_t PD[16][3] = {
+              {2,3,6},{3,4,8},{4,6,11},{5,8,14},
+              {6,10,18},{8,13,23},{10,17,29},{13,22,36},
+              {17,28,44},{22,36,54},{28,46,66},{36,58,80},
+              {46,72,95},{58,88,110},{72,104,124},{88,120,138}
+            };
+            static const uint8_t PM[16][3] = {
+              {4,6,10},{6,9,15},{9,13,21},{13,18,28},
+              {18,24,36},{24,32,46},{32,42,58},{42,54,72},
+              {54,68,88},{68,84,104},{85,102,120},{104,120,136},
+              {125,138,150},{148,156,162},{172,174,174},{195,192,186}
+            };
+            static const uint8_t PB[16][3] = {
+              {20,24,30},{35,40,48},{55,62,70},{78,86,94},
+              {104,112,118},{132,138,142},{160,164,166},{186,188,188},
+              {206,208,206},{222,224,220},{234,236,232},{242,244,240},
+              {247,249,246},{250,252,249},{253,254,252},{255,255,255}
+            };
+            float px, py;
+            light_xy("${mac}", px, py);
+            float r, g, b;
+            pacifica2d(px, py, fx_seconds(), fx_intensity(),
+                       1.00f, 1.4f, PD, PM, PB, r, g, b, false);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # 2D Pacifica (Deep Current) - Dark navy deep water, slow and moody.
+      # Brightness is intensity. energy 0.55, speed 0.8 (fixed per variant).
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Pacifica (Deep Current)"
+          update_interval: 50ms
+          lambda: |-
+            static const uint8_t PD[16][3] = {
+              {0,1,4},{0,1,6},{0,2,8},{0,2,10},
+              {0,3,13},{0,4,16},{1,5,20},{1,6,24},
+              {2,8,29},{3,10,34},{4,13,40},{6,17,47},
+              {9,22,54},{13,28,62},{18,36,70},{24,45,78}
+            };
+            static const uint8_t PM[16][3] = {
+              {1,2,8},{2,3,12},{3,5,17},{4,7,23},
+              {6,10,30},{8,14,38},{11,19,47},{15,25,57},
+              {20,32,68},{27,41,80},{35,52,92},{45,65,105},
+              {58,80,118},{73,97,130},{92,116,142},{114,137,154}
+            };
+            static const uint8_t PB[16][3] = {
+              {3,4,15},{5,7,22},{8,11,31},{12,17,42},
+              {18,25,54},{25,35,68},{34,47,83},{45,62,99},
+              {58,79,115},{74,98,131},{92,118,146},{113,138,160},
+              {136,158,172},{160,177,183},{186,196,193},{212,215,206}
+            };
+            float px, py;
+            light_xy("${mac}", px, py);
+            float r, g, b;
+            pacifica2d(px, py, fx_seconds(), fx_intensity(),
+                       0.55f, 0.8f, PD, PM, PB, r, g, b, false);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # 2D Aurora (Solar Storm) - Green through cyan to violet and magenta.
+      # Brightness is intensity. Palette drift 0.55 (HUE_SPEED of the 1D
+      # variant) / 60 cycles per second.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Aurora (Solar Storm)"
+          update_interval: 60ms
+          lambda: |-
+            static const uint8_t P[16][3] = {
+              {0,40,10},{0,70,20},{10,100,30},{20,140,40},
+              {40,180,60},{60,210,90},{50,200,130},{40,180,170},
+              {30,150,200},{40,120,210},{70,90,210},{110,70,200},
+              {150,60,190},{190,60,170},{210,70,140},{180,90,120}
+            };
+            float px, py;
+            light_xy("${mac}", px, py);
+            float r, g, b;
+            aurora2d(px, py, fx_seconds(), fx_intensity(),
+                     0.55 / 60.0, P, r, g, b, false);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # 2D Aurora (Pastel Dream) - Soft pastels, very slow colour drift.
+      # Brightness is intensity. Palette drift 0.06 (HUE_SPEED of the 1D
+      # variant) / 60 cycles per second.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Aurora (Pastel Dream)"
+          update_interval: 60ms
+          lambda: |-
+            static const uint8_t P[16][3] = {
+              {140,190,155},{140,205,165},{145,215,170},{150,225,175},
+              {160,235,185},{170,245,200},{165,240,215},{160,230,225},
+              {155,215,235},{160,200,235},{175,190,235},{195,180,230},
+              {210,175,225},{225,175,220},{235,180,210},{220,185,200}
+            };
+            float px, py;
+            light_xy("${mac}", px, py);
+            float r, g, b;
+            aurora2d(px, py, fx_seconds(), fx_intensity(),
+                     0.06 / 60.0, P, r, g, b, false);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # 2D Aurora (Red Sky) - Deep red rising to pink - a rare red aurora.
+      # Brightness is intensity. Palette drift 0.15 (HUE_SPEED of the 1D
+      # variant) / 60 cycles per second.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Aurora (Red Sky)"
+          update_interval: 60ms
+          lambda: |-
+            static const uint8_t P[16][3] = {
+              {20,0,5},{35,0,8},{55,0,12},{80,2,18},
+              {105,5,25},{130,10,35},{150,20,50},{170,35,68},
+              {185,55,90},{195,80,115},{200,105,140},{205,130,160},
+              {210,150,175},{215,170,190},{220,190,205},{225,205,215}
+            };
+            float px, py;
+            light_xy("${mac}", px, py);
+            float r, g, b;
+            aurora2d(px, py, fx_seconds(), fx_intensity(),
+                     0.15 / 60.0, P, r, g, b, false);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
