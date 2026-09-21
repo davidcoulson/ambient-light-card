@@ -415,6 +415,9 @@ inline void radar_ring2d(float px, float py, float ring_cx, float ring_cy, doubl
 // times, each its own colour. Intensity widens the rings.
 inline void shockwave2d(float px, float py, double T, const Room2D &room, float &r, float &g, float &b) {
   r = 0; g = 0; b = 0;
+  // Half the original pace: at 1x the rings used to arrive too quickly to
+  // follow. The room's Speed control still scales it from here.
+  T *= 0.5;
   const float W = 0.09f * fx_swing();
   for (int i = 0; i < 3; i++) {
     // Each ring runs on its own offset slot, so they overlap.
