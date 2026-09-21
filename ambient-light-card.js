@@ -258,7 +258,8 @@ class AmbientLightCard extends HTMLElement {
   setConfig(config) {
     if (!config.entity) throw new Error("entity is required");
     this._config = config;
-    this._pending = {};   // optimistic step index per row, until HA confirms
+    this._pending = {};   // step the user picked, per row, until HA reports a change
+    this._pendBase = {};  // what HA reported for that row when the pick was made
     if (this.shadowRoot) this._build();
   }
 
@@ -396,9 +397,17 @@ class AmbientLightCard extends HTMLElement {
     const v = STEPS[k].values[idx];
     if (k === "brightness") this._call("light", "turn_on", { entity_id: c.entity, brightness_pct: v });
     else this._call("input_number", "set_value", { entity_id: c[k], value: v });
-    // Drop the optimistic value once HA has had a moment to report back.
-    clearTimeout(this._pendT);
-    this._pendT = setTimeout(() => { this._pending = {}; this._update(); }, 2500);
+    // Hold the pick until HA reports this row CHANGING, rather than for a fixed time. A panel
+    // that never hears about a helper (a websocket proxy that trims it, a slow link) would
+    // otherwise snap back to the old value while the lights run the new one.
+    this._pendBase[k] = this._raw(k);
+  }
+
+  // What HA currently reports for a row, as a comparable string; undefined if not visible.
+  _raw(k) {
+    const st = this._state(k === "brightness" ? this._config.entity : this._config[k]);
+    if (!st) return undefined;
+    return k === "brightness" ? `${st.state}/${st.attributes.brightness}` : st.state;
   }
 
   _call(domain, service, data) {
@@ -452,6 +461,15 @@ class AmbientLightCard extends HTMLElement {
     this._root.classList.toggle("dim", !on);
 
     this._renderTiles(st, effect);
+
+    // Release a held pick once HA reports that row changing - to our value, or someone else's.
+    for (const k of Object.keys(this._pending)) {
+      const now = this._raw(k);
+      if (k in this._pendBase && now !== undefined && now !== this._pendBase[k]) {
+        delete this._pending[k];
+        delete this._pendBase[k];
+      }
+    }
 
     const icons = { ...STEPS, intensity: { ...STEPS.intensity, icons: INTENSITY_ICONS[this._fam.icons] } };
     r.querySelectorAll(".stp").forEach((row) => {
