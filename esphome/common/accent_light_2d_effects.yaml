@@ -18,11 +18,17 @@ substitutions:
   # Where the imagined fire sits, for Hearth and Single Candle (0..1 each axis).
   fire_x: "0.5"
   fire_y: "0.5"
+  # The room map: which light sits where. Point this at your own copy, e.g.
+  # common/my_room_map.h in your config directory; the default is the example.
+  room_map: basement_map.h
 
 esphome:
   includes:
-    - common/basement_map.h          # pulls in light_effects_helpers.h itself
-    - common/fx2d_render.h           # 2D Pacifica / Aurora renderers
+  # Headers are named without a directory: ESPHome looks for them in your config
+  # directory first, then next to this file - which is what makes the library
+  # work both as a local copy and as a remote (git) package.
+    - ${room_map}                    # pulls in light_effects_helpers.h itself
+    - fx2d_render.h                  # 2D Pacifica / Aurora renderers
 
 light:
   - platform: rgb

@@ -13,10 +13,18 @@
 # exists. Output is pre-compensated for the ring's gamma so it matches the
 # basement at 100 %.
 # ---------------------------------------------------------------------------
+substitutions:
+  # The ring map: each ring's centre, rotation and direction. Point this at your
+  # own copy in your config directory; the default is the example.
+  ht_map: home_theater_map.h
+
 esphome:
   includes:
-    - common/fx2d_render.h
-    - common/home_theater_map.h
+  # Headers are named without a directory: ESPHome looks for them in your config
+  # directory first, then next to this file - which is what makes the library
+  # work both as a local copy and as a remote (git) package.
+    - fx2d_render.h
+    - ${ht_map}
 
 light:
   - platform: esp32_rmt_led_strip

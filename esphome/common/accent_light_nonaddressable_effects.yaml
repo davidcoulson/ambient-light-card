@@ -69,7 +69,10 @@
 
 esphome:
   includes:
-    - common/light_effects_helpers.h
+  # Headers are named without a directory: ESPHome looks for them in your config
+  # directory first, then next to this file - which is what makes the library
+  # work both as a local copy and as a remote (git) package.
+    - light_effects_helpers.h
 
 light:
   - platform: rgb

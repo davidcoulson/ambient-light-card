@@ -12,7 +12,10 @@
 # light_effects_helpers.h for why gettimeofday() rather than a stamp.
 esphome:
   includes:
-    - common/light_effects_helpers.h
+  # Headers are named without a directory: ESPHome looks for them in your config
+  # directory first, then next to this file - which is what makes the library
+  # work both as a local copy and as a remote (git) package.
+    - light_effects_helpers.h
 
 light:
   - platform: esp32_rmt_led_strip   # swap for your actual platform (neopixelbus, etc.)
