@@ -246,21 +246,6 @@ function tileField(effect) {
   };
 }
 
-// Preview palettes, dark to bright.
-const PAL = {
-  ocean: [[0, 29, 76], [8, 66, 74], [22, 126, 156], [60, 170, 190], [100, 206, 212], [226, 246, 247]],
-  lagoon: [[0, 50, 60], [10, 110, 120], [40, 170, 170], [110, 215, 205], [200, 245, 235]],
-  storm: [[5, 15, 35], [20, 45, 70], [50, 85, 110], [110, 140, 160], [220, 230, 235]],
-  deep: [[0, 5, 40], [0, 20, 90], [10, 50, 140], [40, 90, 180], [120, 170, 230]],
-  aurora: [[20, 140, 40], [60, 210, 90], [40, 180, 170], [40, 120, 210], [110, 70, 200]],
-  solar: [[20, 140, 40], [60, 210, 90], [40, 180, 170], [40, 120, 210], [110, 70, 200], [190, 60, 170]],
-  pastel: [[120, 200, 190], [170, 220, 200], [200, 180, 230], [240, 190, 210], [250, 230, 200]],
-  redsky: [[90, 10, 20], [170, 30, 30], [220, 70, 40], [240, 120, 60], [120, 40, 110]],
-  flame: [[180, 40, 0], [220, 74, 4], [255, 120, 14], [255, 160, 40], [255, 215, 96]],
-  heart: [[150, 6, 20], [200, 10, 30], [235, 40, 60]],
-  tick: [[120, 110, 90], [255, 235, 200]],
-};
-
 function family(effect) {
   const e = (effect || "").toLowerCase();
   if (e.includes("pacifica") || e.includes("tide") || e.includes("shore") || e.includes("caustics") || e.includes("aquarium"))
@@ -273,12 +258,6 @@ function family(effect) {
   if (e.includes("heartbeat")) return { kind: "heart", pal: "heart", icons: "weather" };
   if (e.includes("metronome")) return { kind: "tick", pal: "tick", icons: "weather" };
   return { kind: "glow", pal: null, icons: "weather" };
-}
-
-function palAt(pal, v) {
-  v = Math.max(0, Math.min(0.9999, v)) * (pal.length - 1);
-  const i = Math.floor(v), f = v - i, a = pal[i], b = pal[i + 1];
-  return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
 }
 
 class AmbientLightCard extends HTMLElement {
@@ -594,21 +573,15 @@ class AmbientLightCard extends HTMLElement {
     const ctx = this._ctx, W = this._canvas.width, H = this._canvas.height;
     if (level < 0.01) { ctx.clearRect(0, 0, W, H); return; }
     const img = ctx.createImageData(W, H), d = img.data;
-    const f = this._fam || family(null);
-    const pal = f.pal ? PAL[f.pal] : null;
-    const base = this._rgb || [255, 160, 60];
-    const Iu = Math.min(1, I), X = Math.max(0, Math.min(1, I - 1));
-    // Effect-wide terms for the pulse-type effects.
-    let pulse = 0;
-    if (f.kind === "heart") {
-      const ph = t % 1;
-      const w = 1 - 0.35 * X;
-      pulse = Math.min(1, Math.exp(-Math.pow((ph - 0.08) / (0.05 * w), 2)) + (0.6 + 0.3 * X) * Math.exp(-Math.pow((ph - 0.22) / (0.04 * w), 2)));
-    } else if (f.kind === "tick") {
-      const w = t % 1;
-      pulse = w < 0.25 ? Math.exp(-14 * (1 + X) * w) : 0;
+    // The glow is the running effect's own tile design, so the corner always
+    // matches its tile. With no effect it breathes in the light's colour.
+    if (this._glowFor !== this._effect) {
+      this._glowFor = this._effect;
+      this._glowField = this._effect ? tileField(this._effect) : null;
     }
-    const flick = 0.62 + 0.24 * Math.sin(t * 9) + 0.14 * Math.sin(t * 23 + 1);
+    const field = this._glowField;
+    const base = this._rgb || [255, 160, 60];
+    const Iu = Math.min(1, I);
 
     for (let py = 0; py < H; py++) {
       const v = py / (H - 1);
@@ -622,32 +595,16 @@ class AmbientLightCard extends HTMLElement {
         const fade = q * q * (3 - 2 * q);
         if (fade <= 0) continue;
         let val, rgb;
-        switch (f.kind) {
-          case "wave": {
-            const w = 0.5 + 0.32 * Math.sin(u * 7 + v * 4 - t * 1.1) + 0.2 * Math.sin(u * 4 - v * 6 + t * 0.7);
-            val = 0.35 + (w - 0.35) * (0.4 + 0.6 * Iu) * (1 + 0.5 * X);
-            rgb = palAt(pal, val);
-            break;
-          }
-          case "aurora": {
-            const s = Math.sin((u * 2.6 + 0.35 * Math.sin(t * 0.4 + v * 2.5)) * Math.PI + t * 0.5);
-            val = Math.pow(Math.max(0, s), 1.2 + 1.8 * Iu + 1.5 * X) * (0.35 + 0.65 * Iu) + 0.1;
-            rgb = palAt(pal, (val + t * 0.03) % 1);
-            break;
-          }
-          case "flame":
-            val = 0.55 + (0.45 * flick - 0.25) * (0.3 + 0.7 * Iu) * (1 + 0.6 * X);
-            rgb = palAt(pal, val);
-            break;
-          case "heart":
-          case "tick":
-            val = (f.kind === "tick" ? 0.04 * (1 - X) : 0.15 * (1 - X)) + pulse * (0.3 + 0.7 * Iu);
-            rgb = palAt(pal, Math.min(1, val));
-            break;
-          default: {
-            val = 0.6 + 0.25 * Math.sin(t * 0.8 + u * 2 + v) * Iu;
-            rgb = base;
-          }
+        if (field) {
+          // Sample the tile over the corner the glow covers, so its features
+          // are big enough to read there.
+          rgb = field((u - 0.3) / 0.7, v / 0.5, t, I);
+          // Dark parts of a design fade out rather than smudge the card.
+          const lum = (0.3 * rgb[0] + 0.59 * rgb[1] + 0.11 * rgb[2]) / 255;
+          val = 0.2 + 0.8 * lum;
+        } else {
+          val = 0.6 + 0.25 * Math.sin(t * 0.8 + u * 2 + v) * Iu;
+          rgb = base;
         }
         val = val < 0 ? 0 : val > 1 ? 1 : val;
         const o = (py * W + px) * 4;
