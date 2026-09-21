@@ -186,3 +186,174 @@ inline void aurora2d(float px, float py, double T, float intensity, double drift
   g = soft_knee(cg / 255.0f * lvl);
   b = soft_knee(cb / 255.0f * lvl);
 }
+
+// ---------------------------------------------------------------------------
+// Room-scale renderers shared by the basement lights and the media-room rings.
+//
+// Each was a basement effect written inline for one light; pulled out here so
+// a ring can sample the same scene at each of its LEDs. The arithmetic is the
+// basement's, operation for operation, so the basement renders the same frames
+// it always did. What they need from a room is its aspect (depth / width) and
+// centre, passed as a Room2D, where the basement code used ROOM_* directly.
+//
+// Output is 0..1 RGB, before brightness: a PWM light passes it to out_rgb(), a
+// ring to ht_ring_rgb8(). Intensity enters only through fx_swing() /
+// fx_accents(), both exactly 1 at normal.
+// ---------------------------------------------------------------------------
+struct Room2D {
+  float aspect;   // depth / width: y runs 0..aspect
+  float cx, cy;   // the room's centre, in the same units
+};
+
+// Hearth: a fire at (fire_x, fire_y * aspect). Brightness falls off with
+// distance, the flicker is shared so the room surges together, a surge reaches
+// near points a beat before far ones, and `salt` gives each point its own
+// shimmer (the light's MAC hash; per LED on a ring).
+inline void hearth2d(float px, float py, double T, double fire_x, double fire_y, const Room2D &room,
+                     uint32_t salt, float &r, float &g, float &b) {
+  static const uint8_t pal_fire[16][3] = {
+    {30,0,0},{60,4,0},{95,10,0},{130,20,0},
+    {165,34,0},{195,52,2},{220,74,4},{238,98,8},
+    {250,124,14},{255,150,24},{255,174,40},{255,196,64},
+    {255,215,96},{255,231,136},{255,243,182},{255,250,220}
+  };
+  float dx = px - fire_x, dy = py - fire_y * room.aspect;
+  float dist = sqrtf(dx * dx + dy * dy);
+
+  double Td = T - dist * 0.10;          // light reaches near points first
+
+  float body = 0.55f * sync_noise(Td, 0.55f, 1)
+             + 0.30f * sync_noise(Td, 0.19f, 2)
+             + 0.15f * sync_noise(Td, 0.07f, 3);
+
+  uint32_t slot; float within;
+  sync_slot(Td, 4.0f, slot, within);
+  float at = sync_random(slot, 4) * 3.0f;
+  float flare = within > at
+              ? (0.30f + 0.45f * sync_random(slot, 5)) * fx_accents() * expf(-2.2f * (within - at))
+              : 0.0f;
+
+  const float R = 0.30f;
+  float fall = 1.0f / (1.0f + (dist / R) * (dist / R));
+  float shim = 0.90f + 0.20f * sync_noise(T, 0.13f, salt);
+
+  // Intensity: flicker depth (fx_swing) and flares (fx_accents).
+  float level = clamp01(fall * (0.42f + 0.55f * (0.5f + (body - 0.5f) * fx_swing()) + flare) * shim);
+
+  lerp_palette16(pal_fire, clamp01(level * 0.70f + fall * 0.30f) * 15.0f, r, g, b);
+  r = r / 255.0f * level;
+  g = g / 255.0f * level;
+  b = b / 255.0f * level;
+}
+
+// Clouds: overcast banks drifting over blue sky, with clear gaps between them.
+// Intensity sharpens the banks against the sky.
+inline void clouds2d(float px, float py, double T, float &r, float &g, float &b) {
+  // Position shifts the sample point; time drifts it along. All in double:
+  // T * 0.014 is ~2.5e7, where a float resolves only to 2.0 and would swallow
+  // the position term whole.
+  double u = px * 2.2 + T * 0.014;
+  double v = py * 1.8 - T * 0.006;
+
+  float n = 0.55f * sync_noise(u + v * 0.7, 1.0f, 21)
+          + 0.30f * sync_noise(u * 2.1 - v, 0.5f, 22)
+          + 0.15f * sync_noise(u * 4.3 + v * 2.0, 0.25f, 23);
+
+  float cloud = clamp01((n - 0.42f) * 2.4f * fx_swing());   // gaps of clear sky
+
+  r = 0.05f + 0.70f * cloud;
+  g = 0.11f + 0.70f * cloud;
+  b = 0.30f + 0.52f * cloud;
+}
+
+// Noise Drift: soft organic colour clouds sliding across the room, on layers
+// at unrelated rates so nothing repeats visibly. Intensity is colour depth.
+inline void noise_drift2d(float px, float py, double T, float &r, float &g, float &b) {
+  // Double throughout - see clouds2d. A float cannot hold T * rate.
+  double u = px * 1.7 + T * 0.020;
+  double v = py * 1.5 - T * 0.013;
+
+  float hue = 0.60f * sync_noise(u + v * 0.6, 1.0f, 31)
+            + 0.40f * sync_noise(u * 1.9 - v * 1.3, 0.6f, 32);
+  float lum = 0.35f + 0.45f * sync_noise(u * 0.8 + v, 1.4f, 33);
+
+  hsv_to_rgb(fmodf(hue, 1.0f), clamp01(0.72f * fx_swing()), clamp01(lum), r, g, b);
+}
+
+// Radar Sweep: a beam rotating about the room's centre with a fading trail.
+// Intensity lengthens the trail.
+inline void radar2d(float px, float py, double T, const Room2D &room, float &r, float &g, float &b) {
+  float ang = atan2f(py - room.cy, px - room.cx);           // -pi..pi
+  float beam = (float) (fmod(T, 4.0) / 4.0) * 6.2831853f - 3.1415927f;
+
+  // Angle BEHIND the beam, so the trail lags rather than leads.
+  float da = beam - ang;
+  while (da < 0.0f) da += 6.2831853f;
+  while (da > 6.2831853f) da -= 6.2831853f;
+
+  float level = 0.03f + 0.95f * expf(-da * (2.6f / fx_swing()));     // sharp head, long tail
+
+  r = level * 0.15f;
+  g = level;
+  b = level * 0.35f;
+}
+
+// Shockwave: three rings expanding at once from different points at staggered
+// times, each its own colour. Intensity widens the rings.
+inline void shockwave2d(float px, float py, double T, const Room2D &room, float &r, float &g, float &b) {
+  r = 0; g = 0; b = 0;
+  const float W = 0.09f * fx_swing();
+  for (int i = 0; i < 3; i++) {
+    // Each ring runs on its own offset slot, so they overlap.
+    double Ti = T + i * 1.7;
+    uint32_t slot; float within;
+    sync_slot(Ti, 4.5f, slot, within);
+
+    float ox = sync_random(slot, 70 + i);
+    float oy = sync_random(slot, 80 + i) * room.aspect;
+    float dx = px - ox, dy = py - oy;
+    float dist = sqrtf(dx * dx + dy * dy);
+
+    float front = within * 0.34f;
+    float amp = expf(-sq((dist - front) / W))
+              * (1.0f - within / 4.5f);
+
+    float hue = fmodf(sync_random(slot, 90 + i) * 0.4f + i * 0.33f, 1.0f);
+    float rr, gg, bb;
+    hsv_to_rgb(hue, 0.85f, clamp01(amp), rr, gg, bb);
+    if (rr > r) r = rr;
+    if (gg > g) g = gg;
+    if (bb > b) b = bb;
+  }
+  r += 0.02f;
+  g += 0.02f;
+  b += 0.03f;
+}
+
+// Comet: a bright head crossing the room on a fresh heading each pass, its tail
+// fading behind it along its own track. Intensity lengthens the tail.
+inline void comet2d(float px, float py, double T, const Room2D &room, float &r, float &g, float &b) {
+  uint32_t slot; float within;
+  sync_slot(T, 3.5f, slot, within);
+
+  float ang = sync_random(slot, 101) * 6.2831853f;
+  float ux = cosf(ang), uy = sinf(ang);
+
+  // Head travels from one side to the other along the heading.
+  float travel = within / 3.5f;
+  float hx = room.cx - ux * 0.8f + ux * 1.6f * travel;
+  float hy = room.cy - uy * 0.8f + uy * 1.6f * travel;
+
+  float dx = px - hx, dy = py - hy;
+  float along = dx * ux + dy * uy;            // + is ahead of the head
+  float across = fabsf(dx * uy - dy * ux);
+
+  float tail = along < 0.0f ? expf(along * (4.5f / fx_swing())) : expf(-along * 26.0f);
+  float level = tail * expf(-sq(across / 0.11f));
+  // The head has left the room by now but the tail has not; ease it out over
+  // the last 15 % rather than cutting it dead at the slot end.
+  if (travel > 0.85f) level *= (1.0f - travel) / 0.15f;
+
+  float hue = fmodf(0.08f + sync_random(slot, 102) * 0.18f, 1.0f);
+  hsv_to_rgb(hue, 0.55f, clamp01(0.02f + 0.95f * level), r, g, b);
+}

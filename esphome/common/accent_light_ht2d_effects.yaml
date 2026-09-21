@@ -9,14 +9,21 @@
 #
 # Brightness is ESPHome's: it dims every addressable write through the light's
 # colour correction (an effect cannot bypass it), so these pass apply_level =
-# false. Intensity is pinned at normal until the room's intensity control
-# exists. Output is pre-compensated for the ring's gamma so it matches the
-# basement at 100 %.
+# false. Speed and intensity come from the room's helpers (fx_seconds,
+# fx_intensity). Output is pre-compensated for the ring's gamma so it matches
+# the basement at 100 %.
+#
+# Hearth, Clouds, Noise Drift, Radar Sweep, Shockwave and Comet use the same
+# renderers as the basement (fx2d_render.h), sampled per LED on this room's
+# map; ht_fire_x / ht_fire_y set where the Hearth fire sits.
 # ---------------------------------------------------------------------------
 substitutions:
   # The ring map: each ring's centre, rotation and direction. Point this at your
   # own copy in your config directory; the default is the example.
   ht_map: home_theater_map.h
+  # Where the Hearth fire sits in the media room (0..1 each axis).
+  ht_fire_x: "0.5"
+  ht_fire_y: "0.5"
 
 esphome:
   includes:
@@ -282,6 +289,123 @@ light:
               float px, py, r, g, b;
               ht_led_xy("${mac}", i, n, px, py);
               aurora2d(px, py, T, I, 0.15 / 60.0, P, r, g, b, false);
+              uint8_t R, G, B;
+              ht_ring_rgb8(id(accent_light), r, g, b, R, G, B);
+              it[i] = Color(R, G, B);
+            }
+
+      # ------------------------------------------------------------------
+      # 2D Hearth - a fire in the middle of the room, brightest on the LEDs
+      # facing it; the room surges together and each LED shimmers on its own.
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "2D Hearth"
+          update_interval: 40ms
+          lambda: |-
+            static const Room2D room{HT_ASPECT, 0.5f, 0.5f * HT_ASPECT};
+            const uint32_t salt = mac_hash32("${mac}");
+            const double T = fx_seconds();
+            const int n = it.size();
+            for (int i = 0; i < n; i++) {
+              float px, py, r, g, b;
+              ht_led_xy("${mac}", i, n, px, py);
+              hearth2d(px, py, T, ${ht_fire_x}, ${ht_fire_y}, room, salt + (uint32_t) i * 2654435761u, r, g, b);
+              uint8_t R, G, B;
+              ht_ring_rgb8(id(accent_light), r, g, b, R, G, B);
+              it[i] = Color(R, G, B);
+            }
+
+      # ------------------------------------------------------------------
+      # 2D Clouds - overcast banks drifting across the room over blue sky.
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "2D Clouds"
+          update_interval: 80ms
+          lambda: |-
+            const double T = fx_seconds();
+            const int n = it.size();
+            for (int i = 0; i < n; i++) {
+              float px, py, r, g, b;
+              ht_led_xy("${mac}", i, n, px, py);
+              clouds2d(px, py, T, r, g, b);
+              uint8_t R, G, B;
+              ht_ring_rgb8(id(accent_light), r, g, b, R, G, B);
+              it[i] = Color(R, G, B);
+            }
+
+      # ------------------------------------------------------------------
+      # 2D Noise Drift - soft colour clouds sliding across the room.
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "2D Noise Drift"
+          update_interval: 70ms
+          lambda: |-
+            const double T = fx_seconds();
+            const int n = it.size();
+            for (int i = 0; i < n; i++) {
+              float px, py, r, g, b;
+              ht_led_xy("${mac}", i, n, px, py);
+              noise_drift2d(px, py, T, r, g, b);
+              uint8_t R, G, B;
+              ht_ring_rgb8(id(accent_light), r, g, b, R, G, B);
+              it[i] = Color(R, G, B);
+            }
+
+      # ------------------------------------------------------------------
+      # 2D Radar Sweep - a beam sweeping round the middle of the room; each ring
+      # lights LED by LED as it passes.
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "2D Radar Sweep"
+          update_interval: 25ms
+          lambda: |-
+            static const Room2D room{HT_ASPECT, 0.5f, 0.5f * HT_ASPECT};
+            const double T = fx_seconds();
+            const int n = it.size();
+            for (int i = 0; i < n; i++) {
+              float px, py, r, g, b;
+              ht_led_xy("${mac}", i, n, px, py);
+              radar2d(px, py, T, room, r, g, b);
+              uint8_t R, G, B;
+              ht_ring_rgb8(id(accent_light), r, g, b, R, G, B);
+              it[i] = Color(R, G, B);
+            }
+
+      # ------------------------------------------------------------------
+      # 2D Shockwave - three coloured rings bursting from different points and
+      # rolling across all four fittings.
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "2D Shockwave"
+          update_interval: 25ms
+          lambda: |-
+            static const Room2D room{HT_ASPECT, 0.5f, 0.5f * HT_ASPECT};
+            const double T = fx_seconds();
+            const int n = it.size();
+            for (int i = 0; i < n; i++) {
+              float px, py, r, g, b;
+              ht_led_xy("${mac}", i, n, px, py);
+              shockwave2d(px, py, T, room, r, g, b);
+              uint8_t R, G, B;
+              ht_ring_rgb8(id(accent_light), r, g, b, R, G, B);
+              it[i] = Color(R, G, B);
+            }
+
+      # ------------------------------------------------------------------
+      # 2D Comet - a bright head crossing the room on a fresh heading each
+      # pass, its tail running through the rings behind it.
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "2D Comet"
+          update_interval: 20ms
+          lambda: |-
+            static const Room2D room{HT_ASPECT, 0.5f, 0.5f * HT_ASPECT};
+            const double T = fx_seconds();
+            const int n = it.size();
+            for (int i = 0; i < n; i++) {
+              float px, py, r, g, b;
+              ht_led_xy("${mac}", i, n, px, py);
+              comet2d(px, py, T, room, r, g, b);
               uint8_t R, G, B;
               ht_ring_rgb8(id(accent_light), r, g, b, R, G, B);
               it[i] = Color(R, G, B);
