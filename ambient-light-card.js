@@ -64,6 +64,33 @@ const cellRand = (i, j, k) => { const x = Math.sin(i * 127.1 + j * 311.7 + k * 7
 // streak, storms are dark with flashes, and so on. Checked before the family
 // match, so "Fireflies" twinkles rather than burns.
 function extraField(e, has) {
+  // Three 2D effects with tiles of their own, chosen for the basement panel.
+  const drift = (x, y, t) => 0.5 + 0.25 * Math.sin(x * 3.1 + t * 0.7 + Math.sin(y * 2.3 - t * 0.4))
+    + 0.25 * Math.sin(y * 3.7 - t * 0.5 + Math.sin(x * 1.7 + t * 0.3));
+  // Clouds: overcast banks drifting over blue sky, clear gaps between them.
+  if (has("clouds"))
+    return (u, v, t, I) => {
+      const n = drift(u * 1.6 + t * 0.15, v * 1.4, t * 0.3);
+      const k = cl((n - 0.45) * (2 + Math.min(I, 2)));
+      return mix([70, 140, 215], mix([175, 185, 200], [245, 247, 250], cl(n * 1.2 - 0.3)), k);
+    };
+  // Shockwave: three coloured rings bursting from different points, staggered.
+  if (has("shockwave"))
+    return (u, v, t, I) => {
+      let c = [12, 10, 26];
+      [[0.25, 0.35, 0, 0.95], [0.72, 0.6, 0.33, 0.02], [0.5, 0.8, 0.66, 0.55]].forEach(([x, y, off, h]) => {
+        const p = (t * 0.45 + off) % 1, d = Math.hypot(u - x, (v - y) * 0.74);
+        const r = Math.exp(-Math.pow((d - p * 0.8) * 16, 2)) * (1 - p);
+        c = mix(c, hsl(h, 0.85, 0.6), cl(r * 1.6 * Math.min(I, 1.5)));
+      });
+      return c;
+    };
+  // Noise Drift: soft colour clouds sliding past, never quite repeating.
+  if (has("noise drift"))
+    return (u, v, t, I) => {
+      const n = drift(u * 1.2 - t * 0.12, v * 1.2 + t * 0.05, t * 0.2), m = drift(v * 1.5 + t * 0.08, u * 0.9, t * 0.15 + 3);
+      return hsl(0.55 + 0.35 * n + 0.15 * m, 0.4 + 0.15 * Math.min(I, 1.6), 0.45 + 0.2 * m);
+    };
   // Points of light that twinkle in and out.
   if (has("twinkle", "fairy", "fireflies", "firefly", "lullaby", "sparkle", "stars", "milky way", "bioluminescence", "confetti", "swarm")) {
     const P = has("firefl") ? [[8, 14, 6], [220, 240, 90]] : has("lullaby") ? [[30, 26, 50], [250, 220, 240]]

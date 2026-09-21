@@ -112,6 +112,9 @@ Every effect gets a tile. The design is chosen from the effect's name:
 | Fire | fire, ember, hearth | redder, churning heat with flares |
 | Heartbeat | heartbeat | lub-dub pulse from the centre |
 | Metronome | metronome | sharp warm flash on the beat, alternating sides |
+| Clouds | clouds | overcast banks drifting over blue sky |
+| Shockwave | shockwave | three coloured rings bursting from different points |
+| Noise drift | noise drift | soft colour clouds sliding past |
 | Twinkles | twinkle, fairy, firefly, lullaby, sparkle, stars, milky way, bioluminescence, confetti, swarm | points of light fading in and out |
 | Colour cycle | rainbow, color loop, color drift, pinwheel, unison random | hue sweeping across |
 | Blobs | plasma, lava, metaball, noise, clouds, black hole, flood | slow morphing fields |
