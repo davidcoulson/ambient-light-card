@@ -85,7 +85,9 @@ favorites:                                        # optional, up to 11 tiles, in
 | `effects` | no | Limit the **⋯** list. Default: the light's full effect list, minus `Calibrate:` effects. |
 
 The card uses `ha-card`, so `card_mod` styling works as for any built-in card (the NSPanel setup
-this was built for uses a blurred, semi-transparent glass style).
+this was built for uses a blurred, semi-transparent glass style). The slider knobs, active icons and
+selected tile use your theme's primary colour; set `--ambient-light-card-accent` to change it. The
+header icon takes the light's own colour, like the tile card.
 
 ### The sliders
 

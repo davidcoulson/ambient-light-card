@@ -296,7 +296,9 @@ class AmbientLightCard extends HTMLElement {
     if (!c) return;
     this.shadowRoot.innerHTML = `
       <style>
-        :host { --alc-accent: var(--state-light-active-color, #ff9800); }
+        /* Controls follow the theme's primary colour, like HA's own sliders and nav;
+           set --ambient-light-card-accent (e.g. via card_mod) to override. */
+        :host { --alc-accent: var(--ambient-light-card-accent, var(--primary-color, #03a9f4)); }
         ha-card { position: relative; overflow: hidden; height: 100%; box-sizing: border-box; }
         canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
         .in { position: relative; z-index: 1; padding: 12px 14px 8px; }
