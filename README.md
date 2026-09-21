@@ -9,10 +9,10 @@ small wall panel (it was built for an NSPanel Pro). Instead of an 80-item effect
   running effect's tile animates at the room's current speed and intensity; the rest stay still.
   A **⋯** tile opens the full list.
 - **Brightness, Speed and Intensity** – three four-step sliders with icons. Tap a step or drag.
-- **A corner glow** – a soft live preview of the running effect, fading in from the bottom-right
+- **A corner glow** – a soft live preview of the running effect, fading in from the top-right
   corner of the card.
-- **On/off** – a switch on the right of the header, and the header icon toggles too (like the
-  tile card).
+- **On/off** – tap the round header icon, like the tile card. It fills with the light's colour
+  when on.
 - **A visual editor** – pick the light, helpers, name, icon and favourite effects from the
   dashboard editor, no YAML needed.
 
@@ -111,9 +111,9 @@ Every effect gets a tile. The design is chosen from the effect's name:
 | Heartbeat | heartbeat | lub-dub pulse from the centre |
 | Metronome | metronome | sharp warm flash on the beat, alternating sides |
 | Twinkles | twinkle, fairy, firefly, lullaby, sparkle, stars, milky way, bioluminescence, confetti, swarm | points of light fading in and out |
-| Colour cycle | rainbow, color loop, color drift, pinwheel, unison random, neon | hue sweeping across |
+| Colour cycle | rainbow, color loop, color drift, pinwheel, unison random | hue sweeping across |
 | Blobs | plasma, lava, metaball, noise, clouds, black hole, flood | slow morphing fields |
-| Storm / strobe | lightning, strobe, police, tv simulator, flicker | dark with flashes (police alternates red / blue) |
+| Storm / strobe | lightning, strobe, police, tv simulator, flicker (not candles) | dark with flashes (police alternates red / blue) |
 | Movers | chase, comet, meteor, scanner, sinelon, lighthouse, radar, pac-man, wave, … | a streak with a trail |
 | Ripples | ripple, shockwave, shore break, bubbles, rainfall, fireworks | rings spreading from the middle |
 | Sky | sunrise, sunset, moon | slow sky gradient |

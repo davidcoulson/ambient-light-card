@@ -13,7 +13,7 @@
 // Brightness, speed and intensity are four-step sliders: tap a step or drag
 // along the bar. Brightness drives the light group; speed and intensity set
 // the room's helpers, which the lights import (common/accent_fx_controls.yaml).
-// The bottom-right glow is a live preview of the effect's feel.
+// The top-right glow is a live preview of the effect's feel.
 //
 // Everything is configurable from the dashboard editor (getConfigElement).
 
@@ -313,15 +313,6 @@ class AmbientLightCard extends HTMLElement {
         .ib.off { color: var(--secondary-text-color); }
         .ib.off::before { opacity: .12; }
         .ib:disabled { cursor: default; opacity: .5; }
-        /* Explicit on/off switch on the right of the header. */
-        .tg { flex: none; width: 48px; height: 28px; border-radius: 14px; border: 0; padding: 0; cursor: pointer; position: relative;
-              background: rgba(127,127,127,.35); transition: background .2s; -webkit-tap-highlight-color: transparent; }
-        .tg::after { content: ""; position: absolute; left: 3px; top: 3px; width: 22px; height: 22px; border-radius: 50%;
-                     background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: left .2s; }
-        .tg[aria-checked="true"] { background: var(--alc-accent); }
-        .tg[aria-checked="true"]::after { left: 23px; }
-        .tg:focus-visible { outline: 2px solid var(--alc-accent); outline-offset: 2px; }
-        .tg:disabled { cursor: default; opacity: .5; }
         .tx { flex: 1; min-width: 0; }
         .pri { font-size: var(--card-primary-font-size, 16px); font-weight: 500; color: var(--primary-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .sec { font-size: var(--card-secondary-font-size, 14px); color: var(--secondary-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -353,7 +344,6 @@ class AmbientLightCard extends HTMLElement {
           <div class="hd">
             <button class="ib" id="ib" aria-label="Turn on or off"><ha-icon icon="${c.icon || "mdi:television-ambient-light"}"></ha-icon></button>
             <div class="tx"><div class="pri">${c.name || "Ambient lights"}</div><div class="sec" id="sec"></div></div>
-            <button class="tg" id="tg" role="switch" aria-checked="false" aria-label="Lights on or off"></button>
           </div>
           ${["brightness", "speed", "intensity"].filter((k) => k === "brightness" || c[k]).map((k) => `
             <div class="stp" data-k="${k}" role="slider" aria-label="${k}" aria-valuemin="0" aria-valuemax="3">
@@ -374,7 +364,6 @@ class AmbientLightCard extends HTMLElement {
       this._call("light", this._on ? "turn_off" : "turn_on", { entity_id: c.entity });
     };
     r.getElementById("ib").addEventListener("click", toggle);
-    r.getElementById("tg").addEventListener("click", toggle);
     this._favKey = null;
     r.querySelectorAll(".stp").forEach((row) => this._bindRow(row));
     this._effectsKey = null;
@@ -454,9 +443,6 @@ class AmbientLightCard extends HTMLElement {
     ib.classList.toggle("off", !on);
     ib.disabled = !st || st.state === "unavailable";
     ib.setAttribute("aria-pressed", on ? "true" : "false");
-    const tg = r.getElementById("tg");
-    tg.setAttribute("aria-checked", on ? "true" : "false");
-    tg.disabled = ib.disabled;
     // Like the tile card, the icon takes the light's colour when it has one.
     const rgb = on && st.attributes.rgb_color;
     if (rgb) this.style.setProperty("--alc-icon", `rgb(${rgb.join(",")})`);
@@ -581,8 +567,10 @@ class AmbientLightCard extends HTMLElement {
       const v = py / (H - 1);
       for (let px = 0; px < W; px++) {
         const u = px / (W - 1);
-        // Corner wedge: full in the bottom-right, gone toward the top-left.
-        let q = 1 - ((1 - u) + (1 - v) * 1.3) / 1.05;
+        // Corner wedge: full in the top-right, gone toward the left and down.
+        // Falls off faster downward so it stays behind the header and sliders,
+        // clear of the effect tiles.
+        let q = 1 - ((1 - u) + v * 2.2) / 1.05;
         q = q < 0 ? 0 : q > 1 ? 1 : q;
         const fade = q * q * (3 - 2 * q);
         if (fade <= 0) continue;
