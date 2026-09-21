@@ -246,24 +246,38 @@ inline void hearth2d(float px, float py, double T, double fire_x, double fire_y,
   b = b / 255.0f * level;
 }
 
-// Clouds: overcast banks drifting over blue sky, with clear gaps between them.
-// Intensity sharpens the banks against the sky.
+// Clouds: banks of cloud blowing across the room over blue sky, changing shape
+// as they go. Real 2D noise, so the banks are patches with clear gaps between
+// them rather than parallel stripes. Intensity is the weather: calm is thin
+// wisps over a lot of blue; normal is fair-weather cumulus; beyond normal the
+// banks thicken, cover most of the sky and their bellies go storm-grey.
 inline void clouds2d(float px, float py, double T, float &r, float &g, float &b) {
-  // Position shifts the sample point; time drifts it along. All in double:
-  // T * 0.014 is ~2.5e7, where a float resolves only to 2.0 and would swallow
-  // the position term whole.
-  double u = px * 2.2 + T * 0.014;
-  double v = py * 1.8 - T * 0.006;
+  const float S = fx_swing(), X = fx_extra();
+  // Wind carries the field across the room (~25 s per cloud-width at normal
+  // speed); `e` slides the finer layers against it so banks evolve rather
+  // than translate rigidly. All in double: T * rate is ~1e8, where a float
+  // would swallow the position term. Every term stays positive (see
+  // sync_noise2).
+  double u = px * 2.6 + T * 0.040;
+  double v = py * 2.6 + T * 0.011;
+  double e = T * 0.023;
+  float n = 0.55f * sync_noise2(u, v, 21)
+          + 0.30f * sync_noise2(u * 2.1 + e, v * 2.1, 22)
+          + 0.15f * sync_noise2(u * 4.3, v * 4.3 + e * 1.7, 23);
 
-  float n = 0.55f * sync_noise(u + v * 0.7, 1.0f, 21)
-          + 0.30f * sync_noise(u * 2.1 - v, 0.5f, 22)
-          + 0.15f * sync_noise(u * 4.3 + v * 2.0, 0.25f, 23);
+  // Coverage: how much of the sky is cloud. More sky when calm, less in a storm.
+  float cover = 0.47f + 0.15f * (1.0f - S) - 0.08f * X;
+  float cloud = clamp01((n - cover) * (3.0f + 1.5f * X));
+  // How deep inside a bank this point is: the edges catch the light, the
+  // middle is thicker and greyer - much greyer as a storm builds.
+  float core = clamp01((n - cover - 0.10f) * 4.0f);
+  float lit = 0.92f - core * (0.22f + 0.45f * X);
 
-  float cloud = clamp01((n - 0.42f) * 2.4f * fx_swing());   // gaps of clear sky
-
-  r = 0.05f + 0.70f * cloud;
-  g = 0.11f + 0.70f * cloud;
-  b = 0.30f + 0.52f * cloud;
+  const float SKY_R = 0.04f, SKY_G = 0.13f, SKY_B = 0.42f;
+  float cr = lit * 0.93f, cg = lit * 0.96f, cb = lit;
+  r = SKY_R + (cr - SKY_R) * cloud;
+  g = SKY_G + (cg - SKY_G) * cloud;
+  b = SKY_B + (cb - SKY_B) * cloud;
 }
 
 // Noise Drift: soft organic colour clouds sliding across the room, on layers

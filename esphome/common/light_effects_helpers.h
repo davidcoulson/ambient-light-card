@@ -286,6 +286,21 @@ inline float sync_noise(double t, float period, uint32_t salt) {
   return a + (c - a) * s;
 }
 
+// Smooth 2D value noise on the shared dice: every light computes the same
+// field. Coordinates must be non-negative (they index the dice), which the
+// callers keep true by drifting with +T. One unit is one noise cell.
+inline float sync_noise2(double x, double y, uint32_t salt) {
+  double fx = floor(x), fy = floor(y);
+  uint32_t ix = sync_u32(fx), iy = sync_u32(fy);
+  float tx = (float) (x - fx), ty = (float) (y - fy);
+  tx = tx * tx * (3.0f - 2.0f * tx);
+  ty = ty * ty * (3.0f - 2.0f * ty);
+  auto at = [&](uint32_t i, uint32_t j) { return sync_random(i * 2654435761u ^ j * 2246822519u, salt); };
+  float a = at(ix, iy), b = at(ix + 1, iy), c = at(ix, iy + 1), d = at(ix + 1, iy + 1);
+  float top = a + (b - a) * tx, bot = c + (d - c) * tx;
+  return top + (bot - top) * ty;
+}
+
 // (The room map - ROOM_MAP, light_xy(), room_index() - lives in basement_map.h.)
 
 // ---------------------------------------------------------------------------

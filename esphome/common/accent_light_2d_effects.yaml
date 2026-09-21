@@ -215,9 +215,9 @@ light:
                     level, level * 0.40f, level * 0.07f);
 
       # ------------------------------------------------------------------
-      # Clouds - overcast sky drifting across the room. Two noise layers
-      # sampled at this light's position give a field that moves; the
-      # threshold leaves clear blue gaps between the banks.
+      # Clouds - banks of cloud blowing across the room over blue sky,
+      # changing shape as they go, with clear gaps between them. Intensity is
+      # the weather: wisps when calm, storm-grey banks at the top.
       # ------------------------------------------------------------------
       - lambda:
           name: "2D Clouds"
