@@ -231,6 +231,24 @@ light:
             out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
 
       # ------------------------------------------------------------------
+      # Weather - the weather on the intensity control: a clear blue sky
+      # with a few wisps at 0, fair-weather cumulus at 64, a dimming overcast
+      # at 128, rain at 192, and at 255 a thunderstorm - near-dark, heavy rain
+      # shimmer, and lightning striking somewhere in the room, flaring the
+      # lights near it. See weather2d() in fx2d_render.h.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "2D Weather"
+          update_interval: 25ms
+          lambda: |-
+            float px, py;
+            light_xy("${mac}", px, py);
+            static const Room2D room{ROOM_ASPECT, ROOM_CX, ROOM_CY};
+            float r, g, b;
+            weather2d(px, py, fx_seconds(), room, mac_hash32("${mac}"), r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
       # Milky Way - a galactic band lying across the room, turning slowly
       # over four minutes. Lights inside the band glow creamy and dense,
       # the rest are scattered blue-white stars, each twinkling on its own.

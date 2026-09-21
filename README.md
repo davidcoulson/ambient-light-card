@@ -112,6 +112,7 @@ Every effect gets a tile. The design is chosen from the effect's name:
 | Fire | fire, ember, hearth | redder, churning heat with flares |
 | Heartbeat | heartbeat | lub-dub pulse from the centre |
 | Metronome | metronome | sharp warm flash on the beat, alternating sides |
+| Weather | weather | the sky follows intensity: clear, cloud, rain, then a dark storm with lightning |
 | Clouds | clouds | overcast banks drifting over blue sky |
 | Shockwave | shockwave | three coloured rings bursting from different points |
 | Noise drift | noise drift | soft colour clouds sliding past |

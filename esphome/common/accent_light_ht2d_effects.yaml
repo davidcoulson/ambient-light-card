@@ -352,8 +352,9 @@ light:
             }
 
       # ------------------------------------------------------------------
-      # 2D Radar Sweep - a beam sweeping round the middle of the room; each ring
-      # lights LED by LED as it passes.
+      # 2D Radar Sweep - every ring is its own radar screen, its sweep pointing
+      # the same way as a beam turning round the middle of the room; the ring
+      # that beam is passing over is brightest.
       # ------------------------------------------------------------------
       - addressable_lambda:
           name: "2D Radar Sweep"
@@ -362,10 +363,20 @@ light:
             static const Room2D room{HT_ASPECT, 0.5f, 0.5f * HT_ASPECT};
             const double T = fx_seconds();
             const int n = it.size();
+            // This ring's centre: the mean of its LED positions on the map.
+            float rcx = 0.0f, rcy = 0.0f;
+            for (int i = 0; i < n; i++) {
+              float lx, ly;
+              ht_led_xy("${mac}", i, n, lx, ly);
+              rcx += lx;
+              rcy += ly;
+            }
+            rcx /= n;
+            rcy /= n;
             for (int i = 0; i < n; i++) {
               float px, py, r, g, b;
               ht_led_xy("${mac}", i, n, px, py);
-              radar2d(px, py, T, room, r, g, b);
+              radar_ring2d(px, py, rcx, rcy, T, room, r, g, b);
               uint8_t R, G, B;
               ht_ring_rgb8(id(accent_light), r, g, b, R, G, B);
               it[i] = Color(R, G, B);
@@ -406,6 +417,28 @@ light:
               float px, py, r, g, b;
               ht_led_xy("${mac}", i, n, px, py);
               comet2d(px, py, T, room, r, g, b);
+              uint8_t R, G, B;
+              ht_ring_rgb8(id(accent_light), r, g, b, R, G, B);
+              it[i] = Color(R, G, B);
+            }
+
+      # ------------------------------------------------------------------
+      # 2D Weather - the weather on the intensity control: clear sky at 0,
+      # fair at 64, overcast at 128, rain at 192, and a thunderstorm at 255
+      # with lightning striking somewhere in the room.
+      # ------------------------------------------------------------------
+      - addressable_lambda:
+          name: "2D Weather"
+          update_interval: 25ms
+          lambda: |-
+            static const Room2D room{HT_ASPECT, 0.5f, 0.5f * HT_ASPECT};
+            const uint32_t salt = mac_hash32("${mac}");
+            const double T = fx_seconds();
+            const int n = it.size();
+            for (int i = 0; i < n; i++) {
+              float px, py, r, g, b;
+              ht_led_xy("${mac}", i, n, px, py);
+              weather2d(px, py, T, room, salt + (uint32_t) i * 2654435761u, r, g, b);
               uint8_t R, G, B;
               ht_ring_rgb8(id(accent_light), r, g, b, R, G, B);
               it[i] = Color(R, G, B);

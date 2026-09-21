@@ -67,6 +67,27 @@ function extraField(e, has) {
   // Three 2D effects with tiles of their own, chosen for the basement panel.
   const drift = (x, y, t) => 0.5 + 0.25 * Math.sin(x * 3.1 + t * 0.7 + Math.sin(y * 2.3 - t * 0.4))
     + 0.25 * Math.sin(y * 3.7 - t * 0.5 + Math.sin(x * 1.7 + t * 0.3));
+  // Weather: intensity is the weather itself - clear blue with a few wisps at
+  // the bottom, cloud and dimming light through the middle, rain and then a
+  // dark thunderstorm with lightning flashes at the top.
+  if (has("weather"))
+    return (u, v, t, I) => {
+      const w = cl(I * 0.5), rain = cl((w - 0.55) / 0.25), storm = cl((w - 0.8) / 0.2);
+      const n = drift(u * 1.6 + t * (0.15 + 0.2 * storm), v * 1.4, t * 0.3);
+      const cloud = cl((n - (0.72 - 0.5 * w)) * 3.5);
+      const day = 1 - 0.8 * cl((w - 0.3) / 0.7);
+      let c = mix(mix([70, 140, 215], [30, 36, 48], 1 - day), mix([240, 244, 250], [95, 100, 112], w).map((x) => x * (0.35 + 0.65 * day)), cloud);
+      if (rain > 0) {
+        const streak = Math.pow(Math.max(0, Math.sin(u * 40 + (v - t * 2.5) * 12)), 12);
+        c = mix(c, [150, 170, 200], cl(streak * rain * 0.5));
+      }
+      if (storm > 0) {
+        const slot = Math.floor(t / 2.2), w2 = t - slot * 2.2, at = cellRand(slot, 0, 9) * 1.6;
+        const f = w2 > at && w2 < at + 0.35 ? Math.exp(-(w2 - at) * 9) * (0.6 + 0.4 * Math.sin((w2 - at) * 70)) : 0;
+        c = mix(c, [235, 240, 255], cl(f * storm));
+      }
+      return c;
+    };
   // Clouds: overcast banks drifting over blue sky, clear gaps between them.
   if (has("clouds"))
     return (u, v, t, I) => {

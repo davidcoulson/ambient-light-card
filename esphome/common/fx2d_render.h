@@ -280,6 +280,77 @@ inline void clouds2d(float px, float py, double T, float &r, float &g, float &b)
   b = SKY_B + (cb - SKY_B) * cloud;
 }
 
+// Weather: the whole of the weather on the intensity control. The room's own
+// sky, from a clear blue day with a few wisps (0) through fair-weather cumulus
+// (64) and a dimming overcast (128) to rain (192) and a thunderstorm (255) -
+// near-dark, heavy rain shimmer, and lightning striking somewhere in the room,
+// flaring the lights near it and lighting the rest faintly, in the ragged
+// double and triple flashes real lightning makes. Speed scales wind, rain and
+// how often it strikes. `salt` gives each point its own raindrops.
+inline void weather2d(float px, float py, double T, const Room2D &room, uint32_t salt,
+                      float &r, float &g, float &b) {
+  const float w = clamp01(fx_intensity() * 0.5f);        // 0 clear .. 0.5 normal .. 1 storm
+  const float rain = clamp01((w - 0.55f) / 0.25f);       // rain from ~140
+  const float storm = clamp01((w - 0.80f) / 0.20f);      // lightning from ~205
+
+  // Cloud field: as clouds2d, with the wind picking up as the storm builds.
+  double u = px * 2.6 + T * (0.040 + 0.050 * storm);
+  double v = py * 2.6 + T * 0.011;
+  double e = T * 0.023;
+  float n = 0.55f * sync_noise2(u, v, 41)
+          + 0.30f * sync_noise2(u * 2.1 + e, v * 2.1, 42)
+          + 0.15f * sync_noise2(u * 4.3, v * 4.3 + e * 1.7, 43);
+  float cover = 0.53f - 0.47f * w;                        // ~8 % cloud clear .. ~65 % normal .. solid
+  float cloud = clamp01((n - cover) * 3.0f);
+  float core = clamp01((n - cover - 0.08f) * 4.0f);
+
+  // Daylight fails as the weather worsens; clouds go from white to slate.
+  float day = 1.0f - 0.82f * clamp01((w - 0.30f) / 0.70f);
+  float dark = 1.0f - day;
+  float skr = 0.05f + (0.05f - 0.05f) * dark, skg = 0.16f + (0.07f - 0.16f) * dark, skb = 0.48f + (0.12f - 0.48f) * dark;
+  float lit = (0.95f - core * (0.20f + 0.50f * w)) * (0.30f + 0.70f * day);
+  r = skr + (lit * 0.93f - skr) * cloud;
+  g = skg + (lit * 0.96f - skg) * cloud;
+  b = skb + (lit - skb) * cloud;
+
+  // Rain: each point flickers on its own fast noise, darker and a touch blue.
+  if (rain > 0.0f) {
+    float drop = sync_noise(T, 0.07f, salt);
+    float k = 1.0f - rain * (0.25f + 0.35f * drop);
+    r *= k; g *= k; b *= k * 0.9f + 0.1f;
+    b += rain * 0.04f * drop;
+  }
+
+  // Lightning: one possible strike per 5 s slot, likelier as the storm builds.
+  if (storm > 0.0f) {
+    uint32_t slot; float within;
+    sync_slot(T, 5.0f, slot, within);
+    if (sync_random(slot, 301) < 0.35f + 0.55f * storm) {
+      float at = sync_random(slot, 302) * 3.5f;
+      float dt = within - at;
+      if (dt > 0.0f && dt < 1.2f) {
+        // 1-3 flashes a fraction of a second apart, each a sharp spike.
+        int flashes = 1 + (int) (sync_random(slot, 305) * 2.99f);
+        float f = 0.0f;
+        for (int k = 0; k < flashes; k++) {
+          float tk = k * (0.10f + 0.08f * sync_random(slot, 310 + k));
+          float amp = k == 0 ? 1.0f : 0.55f + 0.4f * sync_random(slot, 320 + k);
+          // Each flash holds ~50 ms, then fades over ~0.1 s.
+          if (dt > tk) f += amp * (dt - tk < 0.05f ? 1.0f : expf(-(dt - tk - 0.05f) / 0.09f));
+        }
+        float sx = sync_random(slot, 303), sy = sync_random(slot, 304) * room.aspect;
+        float dx = px - sx, dy = py - sy;
+        float fall = 1.0f / (1.0f + (dx * dx + dy * dy) / (0.30f * 0.30f));
+        float flash = clamp01(f) * (0.18f + 0.82f * fall) * storm;
+        r += flash * 0.80f;
+        g += flash * 0.86f;
+        b += flash;
+      }
+    }
+  }
+  r = clamp01(r); g = clamp01(g); b = clamp01(b);
+}
+
 // Noise Drift: soft organic colour clouds sliding across the room, on layers
 // at unrelated rates so nothing repeats visibly. Intensity is colour depth.
 inline void noise_drift2d(float px, float py, double T, float &r, float &g, float &b) {
@@ -307,6 +378,31 @@ inline void radar2d(float px, float py, double T, const Room2D &room, float &r, 
 
   float level = 0.03f + 0.95f * expf(-da * (2.6f / fx_swing()));     // sharp head, long tail
 
+  r = level * 0.15f;
+  g = level;
+  b = level * 0.35f;
+}
+
+// Radar Sweep for a ring: each ring is its own little radar screen. Its sweep
+// points the same way as the room's beam at every moment, so four rings turn
+// together, and the ring the room beam is passing over is brightest. At room
+// scale a ring spans only a sliver of the beam's circle and just blinks as the
+// beam crosses it; this keeps the room-scale idea and gives every ring a sweep
+// you can see. (ring_cx, ring_cy) is the ring's centre on the room map.
+inline void radar_ring2d(float px, float py, float ring_cx, float ring_cy, double T, const Room2D &room,
+                         float &r, float &g, float &b) {
+  float beam = (float) (fmod(T, 4.0) / 4.0) * 6.2831853f - 3.1415927f;
+  auto behind = [beam](float ang) {
+    float da = beam - ang;
+    while (da < 0.0f) da += 6.2831853f;
+    while (da > 6.2831853f) da -= 6.2831853f;
+    return da;
+  };
+  // The sweep around this ring, with its trail. Intensity lengthens the trail.
+  float local = expf(-behind(atan2f(py - ring_cy, px - ring_cx)) * (2.6f / fx_swing()));
+  // How close the room beam is to this ring: brightest as it passes over.
+  float near = expf(-behind(atan2f(ring_cy - room.cy, ring_cx - room.cx)) * 1.3f);
+  float level = 0.03f + 0.95f * local * (0.35f + 0.65f * near);
   r = level * 0.15f;
   g = level;
   b = level * 0.35f;
