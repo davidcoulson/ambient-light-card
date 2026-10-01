@@ -1,5 +1,6 @@
 # ---------------------------------------------------------------------------
-# All 37 addressable-LED effects for the 48-LED circular ring, as a
+# All 37 addressable-LED effects for a circular ring (built for the 36-LED
+# Lumary RGBAI and the 13-LED Govee H60A1; any length works), as a
 # complete light: block (platform + id + full effects list) rather than a
 # bare effects-only file - for use with ESPHome's !extend, or just as a
 # standalone full config to copy from directly.
@@ -453,8 +454,10 @@ light:
             // Position comes straight from the shared clock rather than being
             // integrated frame by frame, so it no longer depends on when the
             // effect started and every ring shows the head at the same angle.
-            // Speed is expressed per REVOLUTION (SPEED was tuned as LEDs/s on a
-            // 48-LED ring), so a 13-LED and a 48-LED ring stay in step too.
+            // Speed is expressed per REVOLUTION: SPEED is LEDs/s on a 48-LED
+            // reference ring, i.e. SPEED/48 turns a second, so rings of any
+            // length (13, 36, ...) stay in step. 48 is a fixed reference, not
+            // the ring size - changing it changes the speed on every ring.
 
             const float SPEED = 30.0f;
             const float DECAY = 1.0f - 0.25f / fx_swing();   // intensity: tail length
@@ -493,8 +496,10 @@ light:
             // Position comes straight from the shared clock rather than being
             // integrated frame by frame, so it no longer depends on when the
             // effect started and every ring shows the head at the same angle.
-            // Speed is expressed per REVOLUTION (SPEED was tuned as LEDs/s on a
-            // 48-LED ring), so a 13-LED and a 48-LED ring stay in step too.
+            // Speed is expressed per REVOLUTION: SPEED is LEDs/s on a 48-LED
+            // reference ring, i.e. SPEED/48 turns a second, so rings of any
+            // length (13, 36, ...) stay in step. 48 is a fixed reference, not
+            // the ring size - changing it changes the speed on every ring.
 
             const float SPEED = 40.0f;
             const float EYE_WIDTH = 4.0f * fx_swing();   // intensity: eye width
@@ -1176,7 +1181,7 @@ light:
           name: "Theater Chase"
           update_interval: 20ms
           lambda: |-
-            const int GROUP_SIZE = 3;   // divides evenly into 48 - keep it that way if you resize
+            const int GROUP_SIZE = 3;   // divides the 36-LED ring evenly, so the pattern wraps without a seam (a 13-LED ring shows one)
             const uint32_t STEP_MS = 100;
 
             static int      offset = 0;
@@ -1280,8 +1285,10 @@ light:
             // Position comes straight from the shared clock rather than being
             // integrated frame by frame, so it no longer depends on when the
             // effect started and every ring shows the head at the same angle.
-            // Speed is expressed per REVOLUTION (SPEED was tuned as LEDs/s on a
-            // 48-LED ring), so a 13-LED and a 48-LED ring stay in step too.
+            // Speed is expressed per REVOLUTION: SPEED is LEDs/s on a 48-LED
+            // reference ring, i.e. SPEED/48 turns a second, so rings of any
+            // length (13, 36, ...) stay in step. 48 is a fixed reference, not
+            // the ring size - changing it changes the speed on every ring.
 
             const float SPEED = 25.0f;
             const float DECAY = 1.0f - 0.15f / fx_swing();   // intensity: beam trail
@@ -1874,7 +1881,8 @@ light:
             // sparks are hashed from the tick number. Nothing older than ~32 ticks
             // can show in the picture, so joining late skips straight to there
             // instead of replaying up to a minute - measured at 2.3 ms a tick on the
-            // 48-LED ring, which was ~7 s of 280 ms main-loop stalls.
+            // Lumary RGBAI ring (then configured for 48 LEDs), which was ~7 s of
+            // 280 ms main-loop stalls.
             const uint32_t LS_HORIZON = 32;
             if (ls_target > ls.tick + LS_HORIZON) {
               ls.tick = ls_target - LS_HORIZON;

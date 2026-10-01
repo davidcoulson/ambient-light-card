@@ -4,7 +4,8 @@ The light-side half of the Ambient Light Card: about 80 effects for ESPHome ligh
 the wall clock so every light in a room shows the same frame at the same moment – with no leader,
 no messages between lights, and a light that reboots rejoins in step on its next frame.
 
-Tested on ESP32-C3 PWM RGB+CW/WW bulbs and 48-LED addressable rings, ESPHome 2026.9.
+Tested on ESP32-C3 PWM RGB+CW/WW bulbs and addressable rings (36-LED Lumary RGBAI, 13-LED
+Govee H60A1), ESPHome 2026.9.
 
 ## Files (`common/`)
 
