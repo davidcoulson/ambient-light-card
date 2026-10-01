@@ -1,6 +1,6 @@
 # ---------------------------------------------------------------------------
-# All 37 addressable-LED effects for a circular ring (built for the 36-LED
-# Lumary RGBAI and the 13-LED Govee H60A1; any length works), as a
+# All 37 addressable-LED effects for a circular ring (built for the Lumary
+# RGBAI, 36 or 48 LEDs, and the 13-LED Govee H60A1; any length works), as a
 # complete light: block (platform + id + full effects list) rather than a
 # bare effects-only file - for use with ESPHome's !extend, or just as a
 # standalone full config to copy from directly.
@@ -1181,7 +1181,7 @@ light:
           name: "Theater Chase"
           update_interval: 20ms
           lambda: |-
-            const int GROUP_SIZE = 3;   // divides the 36-LED ring evenly, so the pattern wraps without a seam (a 13-LED ring shows one)
+            const int GROUP_SIZE = 3;   // divides 36- and 48-LED rings evenly, so the pattern wraps without a seam (a 13-LED ring shows one)
             const uint32_t STEP_MS = 100;
 
             static int      offset = 0;

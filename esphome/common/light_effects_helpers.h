@@ -322,7 +322,7 @@ inline float sync_noise2(double x, double y, uint32_t salt) {
 //
 // The catch-up is capped per frame BY TIME (ls_in_budget), not by tick count.
 // It used to be 120 ticks a frame, and measured on the Lumary RGBAI ring (then
-// configured for 48 LEDs; it has 36) that was
+// configured for 48 LEDs) that was
 // 70-90 ms a frame for Fireworks Burst and 280 ms for Disco Mirror Ball -
 // main-loop stalls long enough to log warnings and stutter. A time cap keeps
 // every frame short whatever a tick costs; catch-up shows as a few seconds of
