@@ -36,6 +36,21 @@ esphome:
   # directory first, then next to this file - which is what makes the library
   # work both as a local copy and as a remote (git) package.
     - light_effects_helpers.h
+  # Hold the white channels off while an RGB effect runs. ESPHome writes the
+  # light's own state to all five channels when an effect starts and whenever
+  # the slider moves, so a bulb that was in a white mode kept its whites lit
+  # under every RGB effect. out_rgb() calls this on every frame - see
+  # g_fx_whites_off in light_effects_helpers.h. ESPHome merges this into your
+  # own on_boot only if yours is a list (`- priority: ...`); a single
+  # automation written as a mapping replaces it, and the whites stay as before.
+  on_boot:
+    - priority: 800.0
+      then:
+        - lambda: |-
+            g_fx_whites_off = []() {
+              id(warm_output)->set_level(0.0f);
+              id(cold_output)->set_level(0.0f);
+            };
 
 light:
   - platform: rgbww

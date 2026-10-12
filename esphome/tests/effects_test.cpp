@@ -12,7 +12,9 @@
 //   - Pacifica (all four ring versions) draws the same frame for the same
 //     instant whatever frames the light drew before it;
 //   - Polyrhythm's threes and fours land together on every downbeat, at
-//     epoch-scale time.
+//     epoch-scale time;
+//   - out_rgb() holds an RGBWW light's white channels off once
+//     g_fx_whites_off is set, and leaves outputs alone when it is not.
 // ---------------------------------------------------------------------------
 
 #include <cmath>
@@ -209,6 +211,34 @@ static void test_polyrhythm() {
     printf("polyrhythm: threes and fours strike on the bar grid at epoch scale\n");
 }
 
+// ---- out_rgb and the white channels ------------------------------------------------
+
+static void test_out_rgb_whites() {
+  const int before = failures;
+  accent_light.current_values.brightness = 1.0f;
+  // An RGB light: no hook, and out_rgb touches only the three outputs it is given.
+  g_fx_whites_off = nullptr;
+  warm_output.level = cold_output.level = 0.7f;
+  out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), 0.2f, 0.4f, 0.6f);
+  CHECK(warm_output.level == 0.7f && cold_output.level == 0.7f, "out_rgb wrote outputs it was not given");
+  CHECK(red_output.level == 0.2f && green_output.level == 0.4f && blue_output.level == 0.6f, "out_rgb levels wrong");
+
+  // An RGBWW light: white_effects.yaml sets the hook at boot, so an RGB frame
+  // clears whatever ESPHome's own state write left on the whites.
+  g_fx_whites_off = []() {
+    id(warm_output)->set_level(0.0f);
+    id(cold_output)->set_level(0.0f);
+  };
+  warm_output.level = cold_output.level = 0.7f;
+  out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), 0.2f, 0.4f, 0.6f);
+  CHECK(warm_output.level == 0.0f && cold_output.level == 0.0f, "whites left at %g / %g under an RGB frame",
+        warm_output.level, cold_output.level);
+  CHECK(red_output.level == 0.2f && green_output.level == 0.4f && blue_output.level == 0.6f, "out_rgb levels wrong");
+  g_fx_whites_off = nullptr;
+  if (failures == before)
+    printf("out_rgb: whites held off on an RGBWW light, untouched on an RGB one\n");
+}
+
 int main() {
   test_fireworks();
   check_pacifica("Pacifica", pacifica_a::run, pacifica_b::run);
@@ -216,6 +246,7 @@ int main() {
   check_pacifica("Pacifica (Storm)", storm_a::run, storm_b::run);
   check_pacifica("Pacifica (Deep Current)", deep_a::run, deep_b::run);
   test_polyrhythm();
+  test_out_rgb_whites();
   if (failures) {
     printf("%d check(s) failed\n", failures);
     return 1;
