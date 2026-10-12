@@ -81,6 +81,7 @@ struct HwSelf {
   uint8_t group;     // YARD_S / YARD_G / YARD_D
   uint8_t k, n;      // index within its group, size of the group
   float x_ft, y_ft, path_ft;
+  float gx_ft, gy_ft;   // the centre of its group
   float door_ft;     // distance from the front door
   float off;         // 0..1, spreads the scattered effects
   bool mapped;
@@ -107,7 +108,11 @@ inline HwSelf hw_lookup(const YardLight *map, int count, const char *name, const
       if (map[r].group != s.group) continue;
       if (r < row) s.k++;
       s.n++;
+      s.gx_ft += map[r].x_ft;
+      s.gy_ft += map[r].y_ft;
     }
+    s.gx_ft /= s.n;
+    s.gy_ft /= s.n;
     s.off = sync_random(s.i + 11, 977);
     s.mapped = true;
     return s;
@@ -464,51 +469,127 @@ inline HwColor hw_interp(const HwKey *k, int n, double s) {
 
 // What the effects see of the weather, in the units Home Assistant reports
 // for a WeatherFlow Tempest in US units: mph, degrees, in/h, degrees F. `on`
-// is true while the weather package is present, the API is connected and the
-// wind reading is valid. Without the package these calm defaults hold, and
-// every effect runs as if the night were still and dry.
+// is true while there is a valid wind reading from Home Assistant. Without the
+// weather package these calm defaults hold, and every effect runs as if the
+// night were still and dry.
 struct HwWeather {
   bool on;
   float wind_mph, gust_mph, lull_mph, dir_deg, rain_inh, temp_f, dew_f;
   float lux;   // measured light, NaN = none (the daylight lift then follows the sun)
 };
 constexpr HwWeather HW_WX_CALM = {false, 0.0f, 0.0f, 0.0f, 270.0f, 0.0f, 50.0f, 35.0f, NAN};
-inline HwWeather g_hw_wx = HW_WX_CALM;
 
-// Raw readings as they arrive from Home Assistant (NaN = unknown).
-struct HwWeatherIn {
-  float wind = NAN, gust = NAN, lull = NAN, dir = NAN, rain = NAN, temp = NAN, dew = NAN;
-  float lux = NAN, lux2 = NAN;   // two light sensors; the higher wins, so a shaded one can't end the day early
+// ---------------------------------------------------------------------------
+// Weather moves on the shared clock, never on arrival.
+//
+// A reading reaches each bulb a moment apart (and a rebooted bulb gets HA's
+// current state when it reconnects), so applying it on arrival would let
+// neighbours run on different weather. Instead each reading is kept with its
+// arrival time, and at every whole minute of the shared clock each bulb
+// promotes the readings it has held for at least HW_WX_SETTLE seconds. Every
+// bulb therefore switches to the same values at the same instant. Rain,
+// temperature, dew point and light then ease in from the previous minute's
+// values over HW_WX_EASE seconds, and effects that move with the wind
+// crossfade from the previous minute's wind - both as functions of the shared
+// clock, so neighbours compute the same frame.
+//
+// What this does not cover, and costs at most one minute: a reading whose
+// arrival straddles the settle cutoff across bulbs, and a bulb that has just
+// booted (it starts from HA's current state). The state is advanced every
+// second by hw_wx_tick() whether or not a weather effect is running, so
+// selecting an effect mid-minute changes nothing.
+// ---------------------------------------------------------------------------
+constexpr double HW_WX_PERIOD = 60.0, HW_WX_SETTLE = 5.0, HW_WX_EASE = 10.0;
+enum HwWxField : uint8_t { HW_WX_WIND, HW_WX_GUST, HW_WX_LULL, HW_WX_DIR, HW_WX_RAIN, HW_WX_TEMP, HW_WX_DEW, HW_WX_LUX,
+                           HW_WX_LUX2, HW_WX_N };
+struct HwWxReading {
+  float v = NAN;
+  double at = -1e18;   // shared-clock arrival time
 };
-inline HwWeatherIn g_hw_wx_in;
+struct HwWxState {
+  HwWxReading in[HW_WX_N];                 // as received from Home Assistant
+  float staged[HW_WX_N] = {NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN};   // promoted at the last minute
+  int64_t minute = INT64_MIN;              // the shared-clock minute `cur` belongs to
+  HwWeather prev = HW_WX_CALM, cur = HW_WX_CALM;
+};
+inline HwWxState g_hw_wxs;
 
-// Called once a second by halloween_weather.yaml with whether Home Assistant
-// (a client subscribed to states, not just any API client) is connected. A
-// reading that is NaN, or any reading while HA is away, falls back to calm;
-// HA only sends a value when it changes, so a reading's age means nothing.
-// Rain, temperature and dew point ease toward the reading over ~10 s, so a
-// value that reaches one bulb a moment before another makes no visible
-// difference; wind is rounded where it is used and latched per cycle by the
-// effects that move with it.
-inline void hw_wx_tick(bool api_connected, float dt) {
-  // Losing Home Assistant drops every cached reading: after a reconnect the
-  // weather stays calm until HA sends fresh states (it does so on subscribe),
-  // rather than reusing values that may be hours old.
-  if (!api_connected) g_hw_wx_in = HwWeatherIn();
-  const HwWeatherIn &in = g_hw_wx_in;
-  auto pick = [&](float v, float calm) { return (!api_connected || std::isnan(v)) ? calm : v; };
-  HwWeather &w = g_hw_wx;
-  w.wind_mph = pick(in.wind, HW_WX_CALM.wind_mph);
-  w.gust_mph = pick(in.gust, HW_WX_CALM.gust_mph);
-  w.lull_mph = pick(in.lull, HW_WX_CALM.lull_mph);
-  w.dir_deg = pick(in.dir, HW_WX_CALM.dir_deg);
-  float k = fminf(1.0f, dt / 10.0f);
-  w.rain_inh += (pick(in.rain, HW_WX_CALM.rain_inh) - w.rain_inh) * k;
-  w.temp_f += (pick(in.temp, HW_WX_CALM.temp_f) - w.temp_f) * k;
-  w.dew_f += (pick(in.dew, HW_WX_CALM.dew_f) - w.dew_f) * k;
-  w.on = api_connected && !std::isnan(in.wind);
-  float lux = std::isnan(in.lux) ? in.lux2 : std::isnan(in.lux2) ? in.lux : fmaxf(in.lux, in.lux2);
-  w.lux = api_connected ? lux : NAN;
+// A reading from Home Assistant (halloween_weather.yaml's sensors).
+inline void hw_wx_in(HwWxField f, float v, double T) { g_hw_wxs.in[f] = {v, T}; }
+
+inline HwWeather hw_wx_from(const float *s) {
+  auto or_calm = [](float v, float calm) { return std::isnan(v) ? calm : v; };
+  HwWeather w = HW_WX_CALM;
+  w.on = !std::isnan(s[HW_WX_WIND]);
+  w.wind_mph = or_calm(s[HW_WX_WIND], HW_WX_CALM.wind_mph);
+  w.gust_mph = or_calm(s[HW_WX_GUST], HW_WX_CALM.gust_mph);
+  w.lull_mph = or_calm(s[HW_WX_LULL], HW_WX_CALM.lull_mph);
+  w.dir_deg = or_calm(s[HW_WX_DIR], HW_WX_CALM.dir_deg);
+  w.rain_inh = or_calm(s[HW_WX_RAIN], HW_WX_CALM.rain_inh);
+  w.temp_f = or_calm(s[HW_WX_TEMP], HW_WX_CALM.temp_f);
+  w.dew_f = or_calm(s[HW_WX_DEW], HW_WX_CALM.dew_f);
+  float a = s[HW_WX_LUX], b = s[HW_WX_LUX2];   // the higher wins, so a shaded sensor can't end the day early
+  w.lux = std::isnan(a) ? b : std::isnan(b) ? a : fmaxf(a, b);
+  return w;
+}
+
+// Promote readings at each new shared-clock minute. Only ever moves forward.
+inline void hw_wx_advance(double T) {
+  HwWxState &st = g_hw_wxs;
+  int64_t m = (int64_t) floor(T / HW_WX_PERIOD);
+  if (st.minute != INT64_MIN && m <= st.minute) return;
+  bool fresh = st.minute == INT64_MIN || m != st.minute + 1;   // just booted, or a gap: no history to blend from
+  double tb = (double) m * HW_WX_PERIOD;
+  for (int f = 0; f < HW_WX_N; f++)
+    if (fresh || st.in[f].at <= tb - HW_WX_SETTLE) st.staged[f] = st.in[f].v;
+  HwWeather now = hw_wx_from(st.staged);
+  st.prev = fresh ? now : st.cur;
+  st.cur = now;
+  st.minute = m;
+}
+
+// The weather at T: this minute's values, the slow ones eased in from the
+// previous minute's. Effects that read the weather take the UNSCALED clock.
+inline HwWeather hw_wx_at(double T) {
+  hw_wx_advance(T);
+  const HwWxState &st = g_hw_wxs;
+  HwWeather w = st.cur;
+  float k = hw_ease(clamp01((float) ((T - (double) st.minute * HW_WX_PERIOD) / HW_WX_EASE)));
+  w.rain_inh = st.prev.rain_inh + (st.cur.rain_inh - st.prev.rain_inh) * k;
+  w.temp_f = st.prev.temp_f + (st.cur.temp_f - st.prev.temp_f) * k;
+  w.dew_f = st.prev.dew_f + (st.cur.dew_f - st.prev.dew_f) * k;
+  if (!std::isnan(st.prev.lux) && !std::isnan(st.cur.lux)) w.lux = st.prev.lux + (st.cur.lux - st.prev.lux) * k;
+  return w;
+}
+// The previous minute's weather, for crossfades and for gusts that began before the minute turned.
+inline const HwWeather &hw_wx_prev(double T) {
+  hw_wx_advance(T);
+  return g_hw_wxs.prev;
+}
+// Seconds since this minute's weather took effect.
+inline double hw_wx_since(double T) {
+  hw_wx_advance(T);
+  return T - (double) g_hw_wxs.minute * HW_WX_PERIOD;
+}
+
+// Called once a second by halloween_weather.yaml with the unscaled clock and
+// whether Home Assistant (a client subscribed to states, not just any API
+// client) is connected. Losing HA drops every reading, timestamped at the
+// loss, so the weather goes calm at the next minute and stays calm after a
+// reconnect until HA sends fresh states (it does so on subscribe).
+inline void hw_wx_tick(bool ha_connected, double T) {
+  if (!ha_connected)
+    for (int f = 0; f < HW_WX_N; f++)
+      if (!std::isnan(g_hw_wxs.in[f].v)) g_hw_wxs.in[f] = {NAN, T};
+  hw_wx_advance(T);
+}
+
+// Fix the weather outright (tests, or a device with no live station): every
+// reading counts as long settled.
+inline void hw_wx_set(const HwWeather &w) {
+  g_hw_wxs = HwWxState();
+  float v[HW_WX_N] = {w.on ? w.wind_mph : NAN, w.gust_mph, w.lull_mph, w.dir_deg, w.rain_inh, w.temp_f, w.dew_f, w.lux, NAN};
+  for (int f = 0; f < HW_WX_N; f++) g_hw_wxs.in[f] = {v[f], -1e18};
 }
 
 // Round half up, the same on every bulb and in the reference.
@@ -528,7 +609,7 @@ inline HwVec hw_wind_to(float dir_deg) {
 // within 5 F of the dew point, a sheen and a slow wet shimmer in rain. Slow by
 // construction; wind never changes brightness here.
 inline HwColor hw_wx_layer(HwColor c, double T, const HwSelf &b) {
-  const HwWeather &w = g_hw_wx;
+  const HwWeather w = hw_wx_at(T);
   float m = fmaxf(fmaxf(fmaxf(c.r, c.g), fmaxf(c.b, c.ww)), c.cw);
   float cold = clamp01((55.0f - hw_q(w.temp_f, 1.0f)) / 20.0f) * 0.35f;
   c = hw_mix(c, {c.r * 0.75f, c.g, c.b + 0.10f * m, c.ww * 0.6f, c.cw + 0.25f * c.ww + 0.05f * m}, cold);
@@ -579,16 +660,26 @@ inline HwColor hw_swap(double T, const HwSelf &b) {
 // downwind when the weather is on, a nightly dice roll otherwise.
 // Takes the unscaled clock.
 // ---------------------------------------------------------------------------
+inline float hw_season_wave(double T, double period, double dir, const HwSelf &b) {
+  double ph = fmod(T / period + dir * (double) hw_across(b) * 0.6, 1.0);
+  if (ph < 0) ph += 1.0;
+  return 0.5f - 0.5f * cosf((float) ph * 6.2832f);
+}
 inline HwColor hw_season(double T, const HwSelf &b) {
   HwEvening e = hw_evening(T);
   float p = (e.oct - 1) / 30.0f;
   HwColor c1 = hw_mix(HW_HARVEST_GOLD, HW_HALLOW_ORANGE, p), c2 = hw_mix(HW_RUST, HW_HALLOW_VIOLET, p * p);
   uint32_t night = (uint32_t) e.night;
-  double dir = g_hw_wx.on ? (hw_wind_to(g_hw_wx.dir_deg).x >= 0.0f ? 1.0 : -1.0) : (sync_random(night, 80) < 0.5f ? 1.0 : -1.0);
+  double dice = sync_random(night, 80) < 0.5f ? 1.0 : -1.0;
+  const HwWeather now = hw_wx_at(T), &before = hw_wx_prev(T);
+  double dir = now.on ? (hw_wind_to(now.dir_deg).x >= 0.0f ? 1.0 : -1.0) : dice;
+  double dir_before = before.on ? (hw_wind_to(before.dir_deg).x >= 0.0f ? 1.0 : -1.0) : dice;
   double period = 300.0 + 120.0 * (double) sync_random(night, 81);
-  double ph = fmod(T / period + dir * (double) hw_across(b) * 0.6, 1.0);
-  if (ph < 0) ph += 1.0;
-  float w = 0.5f - 0.5f * cosf((float) ph * 6.2832f);
+  float w = hw_season_wave(T, period, dir, b);
+  if (dir_before != dir) {   // the wind turned this minute: crossfade the wave's direction over HW_WX_EASE
+    float k = hw_ease(clamp01((float) (hw_wx_since(T) / HW_WX_EASE)));
+    w = hw_season_wave(T, period, dir_before, b) + (w - hw_season_wave(T, period, dir_before, b)) * k;
+  }
   return hw_finish(hw_scale(hw_mix(c1, c2, hw_ease(w)), 0.85f), HW_EMBER);
 }
 
@@ -614,8 +705,10 @@ inline HwColor hw_witching(double T, const HwSelf &b, double lat, double lon) {
 // ---------------------------------------------------------------------------
 // Graveyard Mist - one slow 2D mist field drifting across the yard, teal and
 // bone, moss and lichen, or violet and ash. Each night picks its palette,
-// direction and pace. With the weather on it drifts with the real wind
-// instead, the wind latched per 2-minute slot and crossfaded into the next.
+// direction and pace. With the weather on it drifts with the real wind: one
+// field per weather minute, moving with that minute's wind, crossfaded from
+// the previous minute's over the first 15 s - no state of its own, so a bulb
+// that starts the effect mid-minute shows the same mist as its neighbours.
 // Takes the unscaled clock.
 // ---------------------------------------------------------------------------
 inline float hw_mist_field(const HwSelf &b, uint32_t slot, double w, float wind_mph, float dir_deg) {
@@ -624,27 +717,23 @@ inline float hw_mist_field(const HwSelf &b, uint32_t slot, double w, float wind_
   return sync_noise2(b.x_ft / 22.0 + 1e4 + (double) sync_random(slot, 73) * 5000.0 - wt.x * v * w,
                      b.y_ft / 22.0 + 1e4 + (double) sync_random(slot, 74) * 5000.0 - wt.y * v * w, 31);
 }
+inline float hw_mist_still(double T, const HwSelf &b, uint32_t night) {
+  double a = (double) sync_random(night, 71) * 6.2832, sp = 0.012 + 0.012 * (double) sync_random(night, 72);
+  return sync_noise2(b.x_ft / 22.0 + 1e7 + fmod(T * sp * cos(a), 1e6), b.y_ft / 22.0 + 1e7 + fmod(T * sp * sin(a), 1e6), 31);
+}
 inline HwColor hw_mist(double T, const HwSelf &b) {
   HwEvening e = hw_evening(T);
   uint32_t night = (uint32_t) e.night;
   const HwColor *set = HW_MIST_SETS[(int) (sync_random(night, 70) * 3.0f)];
-  float d;
-  if (g_hw_wx.on) {
-    static uint32_t latched_slot = 0xFFFFFFFFu;
-    static float wind = 0.0f, dir = 270.0f;
-    uint32_t slot;
-    float w;
-    sync_slot(T, 120.0f, slot, w);
-    if (slot != latched_slot) {
-      latched_slot = slot;
-      wind = g_hw_wx.wind_mph;
-      dir = g_hw_wx.dir_deg;
-    }
-    d = hw_mist_field(b, slot, w, wind, dir);
-    if (w > 100.0f) d = d + (hw_mist_field(b, slot + 1, w - 120.0, wind, dir) - d) * hw_ease((w - 100.0f) / 20.0f);
-  } else {
-    double a = (double) sync_random(night, 71) * 6.2832, sp = 0.012 + 0.012 * (double) sync_random(night, 72);
-    d = sync_noise2(b.x_ft / 22.0 + 1e7 + fmod(T * sp * cos(a), 1e6), b.y_ft / 22.0 + 1e7 + fmod(T * sp * sin(a), 1e6), 31);
+  const HwWeather now = hw_wx_at(T), &before = hw_wx_prev(T);
+  uint32_t slot;
+  float w;
+  sync_slot(T, (float) HW_WX_PERIOD, slot, w);   // one field per weather minute
+  float d = now.on ? hw_mist_field(b, slot, w, now.wind_mph, now.dir_deg) : hw_mist_still(T, b, night);
+  if (w < 15.0f) {
+    float d0 = before.on ? hw_mist_field(b, slot - 1, (double) w + HW_WX_PERIOD, before.wind_mph, before.dir_deg)
+                         : hw_mist_still(T, b, night);
+    d = d0 + (d - d0) * hw_ease(w / 15.0f);
   }
   return hw_finish(hw_scale(hw_mix(set[0], set[1], hw_ease(d)), 0.9f), HW_NIGHT_FLOOR);
 }
@@ -652,26 +741,42 @@ inline HwColor hw_mist(double T, const HwSelf &b) {
 // ---------------------------------------------------------------------------
 // Wind-Blown Candles - Jack-o'-Lantern Row's flame without its dice gutters:
 // gusts from the real wind roll through the yard from the windward side at
-// 30 ft/s and bend each flame in turn, at most one gust per 5 s slot. Still
+// 30 ft/s and bend each group of flames in turn, at most one gust per 5 s
+// slot. Still
 // air, or no weather package: steady flames. Runs through the weather layer.
+// Follows real gusts, so it takes the unscaled clock (5 s slots line up with
+// the weather minutes).
 // ---------------------------------------------------------------------------
-inline HwColor hw_windcandles(double T, const HwSelf &b) {
-  const HwWeather &wx = g_hw_wx;
-  HwColor base = hw_jack_base(T, b, true);   // lifted once, at the end
-  float lvl = 1.0f, wind = hw_wind_avg(wx.wind_mph);
+// How far a gust bends this light's flame at T (0..0.28): from the current
+// 5 s slot (back = 0) or the one before (back = 1). Uses the weather that held
+// when that slot began - so a gust that started before the minute turned
+// finishes as it began - with the slot's start worked out in double from its
+// index, so a slot starting exactly on the minute is never misjudged.
+inline float hw_gust_bend(double T, const HwSelf &b, int back) {
+  double s0 = floor(T / 5.0) - back, slot_start = s0 * 5.0;
+  uint32_t slot = sync_u32(s0);
+  float w = (float) (T - slot_start);
+  const HwWeather wx = slot_start < (double) g_hw_wxs.minute * HW_WX_PERIOD ? hw_wx_prev(T) : hw_wx_at(T);
+  float wind = hw_wind_avg(wx.wind_mph);
   float gusty = clamp01((hw_q(wx.gust_mph, 1.0f) - hw_q(wx.lull_mph, 1.0f)) / 15.0f + wind / 30.0f);
-  uint32_t slot;
-  float w;
-  sync_slot(T, 5.0f, slot, w);
+  if (!(sync_random(slot, 131) < gusty)) return 0.0f;
+  HwVec wt = hw_wind_to(wx.dir_deg);
   float at = 0.5f + sync_random(slot, 130) * 2.0f;
-  if (sync_random(slot, 131) < gusty) {
-    HwVec wt = hw_wind_to(wx.dir_deg);
-    float u = w - at - (b.x_ft * wt.x + b.y_ft * wt.y + 80.0f) / 30.0f;
-    float bend = 0.28f * clamp01(wind / 15.0f + 0.3f);
-    if (u >= 0.0f && u < 0.4f) lvl = 1.0f - bend * hw_ease(u / 0.4f);
-    else if (u >= 0.4f && u < 1.3f) lvl = 1.0f - bend * (1.0f - hw_ease((u - 0.4f) / 0.9f));
-  }
-  return hw_finish(hw_wx_layer(hw_scale(base, lvl), T, b), HW_EMBER);
+  // the front reaches a whole group at once (its centre), so neighbours bend
+  // together rather than a few tenths apart - which would add up to flashes
+  float u = w - at - (b.gx_ft * wt.x + b.gy_ft * wt.y + 80.0f) / 30.0f;
+  float bend = 0.28f * clamp01(wind / 15.0f + 0.3f);
+  if (u >= 0.0f && u < 0.4f) return bend * hw_ease(u / 0.4f);
+  if (u >= 0.4f && u < 1.3f) return bend * (1.0f - hw_ease((u - 0.4f) / 0.9f));
+  return 0.0f;
+}
+inline HwColor hw_windcandles(double T, const HwSelf &b) {
+  hw_wx_advance(T);
+  HwColor base = hw_jack_base(T, b, true);   // lifted once, at the end
+  // A gust's front takes up to ~5 s to cross the yard, so the previous slot's
+  // gust may still be reaching downwind lights.
+  float bend = fmaxf(hw_gust_bend(T, b, 0), hw_gust_bend(T, b, 1));
+  return hw_finish(hw_wx_layer(hw_scale(base, 1.0f - bend), T, b), HW_EMBER);
 }
 
 // ---- ambient light for the daylight lift ----
@@ -686,8 +791,13 @@ inline float hw_ambient_from_lux(float lux) {
   float a = clamp01((log10f(fmaxf(lux, 0.01f)) - 0.7f) / 1.9f);
   return a * a * (3.0f - 2.0f * a);
 }
-// Called every 10 s by halloween_effects.yaml.
+// Called every second by halloween_effects.yaml with the unscaled clock. The
+// sun is taken at the start of each 10 s bucket, so bulbs that tick at
+// different moments within it agree; measured light comes eased through the
+// weather timeline.
 inline void hw_ambient_tick(double T, double lat, double lon) {
-  g_hw_amb = std::isnan(g_hw_wx.lux) ? hw_ambient_from_sun(hw_sun_elevation(T, lat, lon)) : hw_ambient_from_lux(g_hw_wx.lux);
+  float lux = hw_wx_at(T).lux;
+  g_hw_amb = std::isnan(lux) ? hw_ambient_from_sun(hw_sun_elevation(floor(T / 10.0) * 10.0, lat, lon))
+                             : hw_ambient_from_lux(lux);
 }
 

@@ -32,7 +32,8 @@
 # under 1 flash per second per light and per group; halloween_fx.h has the
 # rules and tests/halloween_test.cpp checks them. The room Speed helper can
 # slow these effects but not speed them up; the three that follow the
-# calendar (Turning of the Season, Witching Hour, Graveyard Mist) ignore it.
+# calendar (Turning of the Season, Witching Hour, Graveyard Mist) and
+# Wind-Blown Candles, which follows the real wind, ignore it.
 # They also need the time component's timezone to be right, since they read
 # the local date and hour.
 #
@@ -58,10 +59,10 @@ esphome:
     - halloween_fx.h
     - ${yard_map}
 
-# The daylight lift (halloween_fx.h): how light it is outside, every 10 s,
+# The daylight lift (halloween_fx.h): how light it is outside, every second,
 # from measured light if halloween_weather.yaml has it, else from the sun.
 interval:
-  - interval: 10s
+  - interval: 1s
     then:
       - lambda: hw_ambient_tick(sync_seconds(), ${sun_latitude}, ${sun_longitude});
 
@@ -184,6 +185,7 @@ light:
       # ------------------------------------------------------------------
       # Wind-Blown Candles - pumpkin flames bent by real gusts rolling in
       # from the windward side; steady without the weather package.
+      # Unscaled clock: it follows the real wind.
       # ------------------------------------------------------------------
       - lambda:
           name: "Wind-Blown Candles"
@@ -191,4 +193,4 @@ light:
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
             hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
-                   id(warm_output), id(cold_output), hw_windcandles(hw_seconds(), me));
+                   id(warm_output), id(cold_output), hw_windcandles(sync_seconds(), me));

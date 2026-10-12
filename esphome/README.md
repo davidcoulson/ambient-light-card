@@ -167,13 +167,21 @@ Ambient light comes from the sun (`sun_latitude` / `sun_longitude`) or, with
 
 `halloween_weather.yaml` reads a weather station through Home Assistant (the defaults are
 `sensor.tempest_*` names; set your station's entities with the `wx_*` substitutions, in the units
-HA reports in US units: mph, degrees, in/h, °F). Real gusts bend *Wind-Blown Candles* in turn
-from the windward side; the wind steers which way *Turning of the Season* rolls and *Graveyard
-Mist* drifts; rain, cold and air near the dew point tint the candles. Readings reach each bulb a
-moment apart, so they only set slow parameters – rounded, latched per cycle or eased over ~10 s –
-and never time a beat. A reading that is unavailable or unknown, or a lost API connection, falls
-back to calm defaults. Without the package everything still compiles and runs, as on a still, dry
-night.
+HA reports in US units: mph, degrees, in/h, °F). Real gusts bend *Wind-Blown Candles* group by
+group from the windward side; the wind steers which way *Turning of the Season* rolls and
+*Graveyard Mist* drifts; rain, cold and air near the dew point tint the candles.
+
+Readings reach each bulb a moment apart, and a rebooted bulb gets Home Assistant's current state,
+so a reading never takes effect on arrival. Each one is timestamped on the shared clock, and at
+every whole minute each bulb promotes the readings it has held for at least 5 s – so all of them
+switch at the same instant. Slow readings then ease in over 10 s and wind changes crossfade, both
+as functions of the shared clock. Two things can still put one bulb a minute behind: a reading
+arriving across the 5 s cutoff on different bulbs, and a reboot. The tests simulate both and
+check that nothing else does. A reading that is unavailable or unknown, or Home Assistant going
+away (a client subscribed to states, not just any API client such as a log viewer), falls back
+to calm at the next minute, and cached readings are dropped so a reconnect starts fresh. *Wind-Blown
+Candles* follows the real wind, so like the calendar effects it ignores Speed. Without the package
+everything still compiles and runs, as on a still, dry night.
 
 The yard map is a table of `{name, group, x, y, path}` in feet: the group says which part a light
 plays (S – the street bed, G – the driveway wall, D – the front door), x/y place it, and `path` is
@@ -242,9 +250,11 @@ flashes stay at or under 1 per second per light and per group – at 8 pm, at li
 simulated storm for the weather-driven effects; an unmapped light still runs; Speed slows but never
 speeds up; `hw_out()` scales by brightness like `out_rgb()`; the cap and floors both hold; an
 evening keeps its date past midnight and sunset lands within two minutes; the weather falls back
-to calm on unknown readings or a lost API; and the daylight lift only raises channels, stays in
-the cap, adds no flashes and follows the sun or measured light. Parity covers night, storm and
-full-lift frames. It also checks the helpers guard: `halloween_fx.h` compiles against unmarked
+to calm on unknown readings or a lost Home Assistant; seven bulbs fed the same readings with
+different delays, ticking at different moments, show identical frames except around a reboot
+and a reading that straddles the cutoff (and then for no more than two minutes); and the daylight
+lift only raises channels, keeps each in [0, 1], stays in the cap, adds no flashes and follows the
+sun or measured light. Parity covers night, storm, full-lift and weather-turning frames. It also checks the helpers guard: `halloween_fx.h` compiles against unmarked
 v1.2.x helpers and fails against any other API level.
 
 `tests/effect_list.py` reads `esphome config` output and lists a device's light effects and any

@@ -233,13 +233,13 @@ static void test_floor_and_flashes() {
   lights.push_back(hw_me("", "a1b2c3"));          // and an unmapped light
   printf("%-26s %-18s %6s %6s %6s %8s\n", "effect (30 min, 10 ms)", "when", "bulb/s", "group/s", "red/s", "min lum");
   for (const Effect &fx : EFFECTS) {
-    g_hw_wx = HW_WX_CALM;
+    hw_wx_set(HW_WX_CALM);
     check_window(fx, lights, T0, "Oct 31, 8 pm");
     if (follows_clock(fx)) check_window(fx, lights, T_LIGHTS_ON, "Oct 15, 5:45 pm");
     if (reads_weather(fx)) {
-      g_hw_wx = STORM;
+      hw_wx_set(STORM);
       check_window(fx, lights, T0, "Oct 31, storm");
-      g_hw_wx = HW_WX_CALM;
+      hw_wx_set(HW_WX_CALM);
     }
     g_hw_amb = 1.0f;                               // full daylight lift
     check_window(fx, lights, follows_clock(fx) ? T_LIGHTS_ON : T0, "daylight lift");
@@ -271,15 +271,17 @@ static void test_lift() {
     }
   CHECK(hw_ambient_from_sun(-10.0) == 0.0f && hw_ambient_from_sun(10.0) == 1.0f, "sun ambient: 0 in the dark, 1 in daylight");
   CHECK(hw_ambient_from_lux(1.0f) == 0.0f && hw_ambient_from_lux(1000.0f) == 1.0f, "lux ambient: 0 at 1 lx, 1 at 1000 lx");
-  g_hw_wx = HW_WX_CALM;
+  hw_wx_set(HW_WX_CALM);
   hw_ambient_tick(T0, LAT, LON);
   CHECK(g_hw_amb == 0.0f, "8 pm on Oct 31: no lift");
   hw_ambient_tick(T_LIGHTS_ON, LAT, LON);
   CHECK(g_hw_amb > 0.9f, "5:45 pm on Oct 15: full lift (got %.2f)", g_hw_amb);
-  g_hw_wx.lux = 2.0f;
+  HwWeather dim = HW_WX_CALM;
+  dim.lux = 2.0f;
+  hw_wx_set(dim);
   hw_ambient_tick(T_LIGHTS_ON, LAT, LON);
   CHECK(g_hw_amb == 0.0f, "a measured 2 lx (heavy overcast) beats the sun: no lift");
-  g_hw_wx = HW_WX_CALM;
+  hw_wx_set(HW_WX_CALM);
   g_hw_amb = 0.0f;
 }
 
@@ -296,30 +298,122 @@ static void test_calendar_and_sun() {
 }
 
 static void test_weather_plumbing() {
-  g_hw_wx_in = HwWeatherIn();
-  g_hw_wx = HW_WX_CALM;
-  hw_wx_tick(true, 1.0f);
-  CHECK(!g_hw_wx.on && g_hw_wx.wind_mph == 0.0f, "no readings yet: calm, weather off");
-  g_hw_wx_in.wind = 12.0f; g_hw_wx_in.dir = 200.0f; g_hw_wx_in.temp = 40.0f;
-  hw_wx_tick(true, 1.0f);
-  CHECK(g_hw_wx.on && g_hw_wx.wind_mph == 12.0f && g_hw_wx.dir_deg == 200.0f, "wind applies at once");
-  CHECK(g_hw_wx.temp_f < 50.0f && g_hw_wx.temp_f > 47.0f, "temperature eases in (got %.2f)", g_hw_wx.temp_f);
-  for (int k = 0; k < 120; k++) hw_wx_tick(true, 1.0f);
-  CHECK(fabsf(g_hw_wx.temp_f - 40.0f) < 0.01f, "and arrives");
-  g_hw_wx_in.wind = NAN;
-  hw_wx_tick(true, 1.0f);
-  CHECK(!g_hw_wx.on && g_hw_wx.wind_mph == 0.0f, "an unknown wind reading falls back to calm");
-  g_hw_wx_in.wind = 12.0f;
-  hw_wx_tick(false, 1.0f);
-  CHECK(!g_hw_wx.on && g_hw_wx.wind_mph == 0.0f && g_hw_wx.dir_deg == 270.0f, "a lost API falls back to calm");
-  hw_wx_tick(true, 1.0f);
-  CHECK(!g_hw_wx.on && g_hw_wx.wind_mph == 0.0f, "and stays calm after reconnecting until HA sends fresh readings");
-  g_hw_wx_in.wind = 9.0f;
-  hw_wx_tick(true, 1.0f);
-  CHECK(g_hw_wx.on && g_hw_wx.wind_mph == 9.0f, "a fresh reading after reconnecting applies");
-  g_hw_wx_in = HwWeatherIn();
-  g_hw_wx = HW_WX_CALM;
+  const double M = floor(T0 / HW_WX_PERIOD) * HW_WX_PERIOD;   // a whole minute of the shared clock
+  g_hw_wxs = HwWxState();
+  hw_wx_tick(true, M + 1);
+  CHECK(!hw_wx_at(M + 1).on, "no readings yet: calm, weather off");
+  hw_wx_in(HW_WX_WIND, 12.0f, M + 20); hw_wx_in(HW_WX_DIR, 200.0f, M + 20); hw_wx_in(HW_WX_TEMP, 40.0f, M + 20);
+  hw_wx_tick(true, M + 30);
+  CHECK(!hw_wx_at(M + 30).on, "a reading waits for the next whole minute");
+  HwWeather a = hw_wx_at(M + 61);
+  CHECK(a.on && a.wind_mph == 12.0f && a.dir_deg == 200.0f, "wind applies at the minute");
+  CHECK(a.temp_f < 50.0f && a.temp_f > 47.0f, "temperature eases in (got %.2f)", a.temp_f);
+  CHECK(fabsf(hw_wx_at(M + 71).temp_f - 40.0f) < 0.01f, "and arrives 10 s after the minute");
+  hw_wx_in(HW_WX_WIND, 20.0f, M + 120 - 3);                   // inside the 5 s settle window
+  CHECK(hw_wx_at(M + 121).wind_mph == 12.0f, "a reading 3 s before the minute waits a minute more");
+  CHECK(hw_wx_at(M + 181).wind_mph == 20.0f, "and applies at the next");
+  hw_wx_in(HW_WX_WIND, NAN, M + 200);
+  CHECK(!hw_wx_at(M + 241).on && hw_wx_at(M + 241).wind_mph == 0.0f, "an unknown wind reading falls back to calm");
+  hw_wx_in(HW_WX_WIND, 12.0f, M + 250);
+  hw_wx_tick(false, M + 260);                                  // Home Assistant goes away
+  CHECK(!hw_wx_at(M + 301).on && hw_wx_at(M + 301).dir_deg == 270.0f, "losing HA falls back to calm");
+  hw_wx_tick(true, M + 310);
+  CHECK(!hw_wx_at(M + 361).on, "and stays calm after reconnecting until HA sends fresh readings");
+  hw_wx_in(HW_WX_WIND, 9.0f, M + 370);
+  CHECK(hw_wx_at(M + 421).on && hw_wx_at(M + 421).wind_mph == 9.0f, "a fresh reading after reconnecting applies");
+  hw_wx_set(HW_WX_CALM);
 }
+
+// Seven bulbs, each with its own weather state, fed by one Home Assistant
+// with a different delay to each (0 - 0.85 s), ticking at their own phases.
+// The effects that read the weather must show identical frames on every bulb
+// except around two deliberate events - a bulb rebooting, and a reading sent
+// just inside the settle cutoff for some bulbs but not others - and even then
+// for no more than two weather minutes.
+static void test_weather_timeline() {
+  const int N = 7;
+  const float skew[N] = {0.0f, 0.12f, 0.25f, 0.40f, 0.55f, 0.70f, 0.85f};
+  const double start = floor(T0 / HW_WX_PERIOD) * HW_WX_PERIOD - 1800.0, end = start + 2700.0, dt = 0.25;
+  const double reboot_at = start + 900.4;
+  const double straddle_minute = floor((start + 1500.0) / HW_WX_PERIOD) * HW_WX_PERIOD;
+  HwWxState st[N];
+  struct Send { double t; float v[HW_WX_N]; };
+  std::vector<Send> sends;
+  for (double t = start + 7.0; t < end; ) {
+    uint32_t k = (uint32_t) sends.size();
+    Send sd;
+    sd.t = t;
+    float v[HW_WX_N] = {sync_random(k, 1) * 25.0f, 10.0f + sync_random(k, 2) * 30.0f, sync_random(k, 3) * 5.0f,
+                        sync_random(k, 4) * 360.0f, sync_random(k, 5) < 0.3f ? sync_random(k, 6) * 0.4f : 0.0f,
+                        35.0f + sync_random(k, 7) * 30.0f, 30.0f + sync_random(k, 8) * 20.0f, NAN, NAN};
+    memcpy(sd.v, v, sizeof v);
+    double cut = floor(t / HW_WX_PERIOD) * HW_WX_PERIOD + HW_WX_PERIOD - HW_WX_SETTLE;
+    if (t > cut - 1.0 && t <= cut) sd.t = cut + 0.5;           // keep ordinary sends clear of the cutoff
+    sends.push_back(sd);
+    t = sd.t + 47.0 + sync_random(k, 9) * 26.0;
+  }
+  Send late = sends.back();                                    // the deliberate straddle: some bulbs before the cutoff, some after
+  late.t = straddle_minute - HW_WX_SETTLE - 0.3;
+  late.v[HW_WX_DIR] = fmodf(late.v[HW_WX_DIR] + 180.0f, 360.0f);
+  late.v[HW_WX_WIND] = 18.0f;
+  sends.push_back(late);
+  std::sort(sends.begin(), sends.end(), [](const Send &a, const Send &b) { return a.t < b.t; });
+
+  auto lights = yard();
+  const HwSelf &g2 = lights[3], &d1 = lights[5];
+  size_t next[N] = {0, 0, 0, 0, 0, 0, 0};
+  double last_tick[N];
+  for (int i = 0; i < N; i++) last_tick[i] = start - 1.0 + i * 0.13;
+  bool rebooted = false;
+  double diverged = 0.0, outside = 0.0;
+  for (double t = start; t < end; t += dt) {
+    if (!rebooted && t >= reboot_at) {                          // bulb 5 reboots; HA resends its current state 3 s later
+      rebooted = true;
+      st[5] = HwWxState();
+      size_t cur = 0;
+      while (cur + 1 < sends.size() && sends[cur + 1].t <= reboot_at) cur++;
+      next[5] = cur;
+      sends.push_back(sends[cur]);
+      sends.back().t = reboot_at + 3.0 - skew[5];
+      std::sort(sends.begin() + (long) next[5] + 1, sends.end(), [](const Send &a, const Send &b) { return a.t < b.t; });
+      next[5] = cur + 1;
+    }
+    HwColor ref[6];
+    for (int i = 0; i < N; i++) {
+      g_hw_wxs = st[i];
+      while (next[i] < sends.size() && sends[next[i]].t + skew[i] <= t) {
+        if (!(i != 5 && rebooted && sends[next[i]].t == reboot_at + 3.0 - skew[5])) {
+          for (int f = 0; f < HW_WX_N; f++) hw_wx_in((HwWxField) f, sends[next[i]].v[f], sends[next[i]].t + skew[i]);
+        }
+        next[i]++;
+      }
+      while (last_tick[i] + 1.0 <= t) { last_tick[i] += 1.0; hw_wx_tick(true, last_tick[i]); }
+      HwColor c[6] = {hw_mist(t, g2), hw_mist(t, d1), hw_season(t, g2), hw_season(t, d1), hw_windcandles(t, g2),
+                      hw_windcandles(t, d1)};
+      st[i] = g_hw_wxs;
+      if (i == 0) { memcpy(ref, c, sizeof c); continue; }
+      bool same = true;
+      for (int k = 0; k < 6; k++) {
+        const float a[5] = {c[k].r, c[k].g, c[k].b, c[k].ww, c[k].cw}, r[5] = {ref[k].r, ref[k].g, ref[k].b, ref[k].ww, ref[k].cw};
+        for (int ch = 0; ch < 5; ch++) if (fabsf(a[ch] - r[ch]) > 1e-4f) same = false;
+      }
+      if (!same) {
+        diverged += dt;
+        bool near_reboot = i == 5 && t >= reboot_at && t < reboot_at + 2 * HW_WX_PERIOD + HW_WX_EASE;
+        bool near_straddle = t >= straddle_minute && t < straddle_minute + HW_WX_PERIOD + 15.0;
+        if (!near_reboot && !near_straddle) outside += dt;
+      }
+    }
+  }
+  g_hw_wxs = HwWxState();
+  hw_wx_set(HW_WX_CALM);
+  printf("weather timeline: %zu readings to 7 bulbs over 45 min; bulb-seconds out of step: %.1f around the reboot and the straddle, %.1f elsewhere\n",
+         sends.size(), diverged - outside, outside);
+  CHECK(outside == 0.0, "bulbs disagreed about the weather outside the reboot and straddle windows (%.1f bulb-s)", outside);
+  CHECK(diverged > 0.0, "the deliberate straddle and reboot should have shown up");
+  CHECK(diverged - outside <= 6 * (2 * HW_WX_PERIOD + HW_WX_EASE), "divergence lasted longer than two weather minutes");
+}
+
 
 static void test_speed() {
   fx_set_speed(255.0f);   // ~4x on other effects
@@ -368,22 +462,35 @@ static void test_out() {
 static void dump() {
   auto lights = yard();
   printf("effect,light,t,r,g,b,ww,cw\n");
-  for (int pass = 0; pass < 3; pass++)      // 0 calm, 1 storm, 2 daylight lift
+  // the minute's weather when it has just changed: last minute calm from the west, this one the storm
+  HwWeather before = HW_WX_CALM;
+  before.on = true;
+  before.wind_mph = 6.0f;
+  before.dir_deg = 45.0f;
+  for (int pass = 0; pass < 4; pass++)      // 0 calm, 1 storm, 2 daylight lift, 3 the weather turning
     for (const Effect &fx : EFFECTS) {
-      if (pass == 1 && !reads_weather(fx)) continue;
+      if ((pass == 1 || pass == 3) && !reads_weather(fx)) continue;
       bool storm = pass == 1;
-      g_hw_wx = storm ? STORM : HW_WX_CALM;
+      hw_wx_set(storm ? STORM : HW_WX_CALM);
       g_hw_amb = pass == 2 ? 1.0f : 0.0f;
       double base = follows_clock(fx) ? T_LIGHTS_ON : T0;
       for (int i = 0; i < YARD_N; i++)
         for (int k = 0; k < 4000; k++) {
           double t = base + k * 1.3719;
+          if (pass == 3) {                   // pin this minute's state: `before` last minute, STORM now
+            int64_t m = (int64_t) floor(t / HW_WX_PERIOD);
+            hw_wx_set(STORM);
+            hw_wx_advance(t);
+            g_hw_wxs.prev = before;
+            g_hw_wxs.minute = m;
+          }
           HwColor c = fx.fn(t, lights[i]);
-          printf("%s%s,%s,%.4f,%.6f,%.6f,%.6f,%.6f,%.6f\n", fx.key, pass == 1 ? "@storm" : pass == 2 ? "@day" : "",
+          printf("%s%s,%s,%.4f,%.6f,%.6f,%.6f,%.6f,%.6f\n", fx.key,
+                 pass == 1 ? "@storm" : pass == 2 ? "@day" : pass == 3 ? "@turn" : "",
                  YARD_MAP[i].name, t, c.r, c.g, c.b, c.ww, c.cw);
         }
     }
-  g_hw_wx = HW_WX_CALM;
+  hw_wx_set(HW_WX_CALM);
   g_hw_amb = 0.0f;
 }
 
@@ -400,6 +507,7 @@ int main(int argc, char **argv) {
   test_out();
   test_calendar_and_sun();
   test_weather_plumbing();
+  test_weather_timeline();
   test_lift();
   test_floor_and_flashes();
   if (failures) {

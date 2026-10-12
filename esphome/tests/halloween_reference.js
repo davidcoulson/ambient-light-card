@@ -34,7 +34,9 @@ var ROLE = ["S", "G", "D"];
 // the group, group size and a per-bulb offset from the shared dice.
 function self(i) {
   var r = YARD[i], same = YARD.filter(function (o) { return o.g === r.g; });
-  return { i: i, id: r.id, role: ROLE[r.g], gi: r.g, k: same.indexOf(r), n: same.length,
+  var gx = same.reduce(function (a, o) { return a + o.x; }, 0) / same.length;
+  var gy = same.reduce(function (a, o) { return a + o.y; }, 0) / same.length;
+  return { i: i, id: r.id, role: ROLE[r.g], gi: r.g, k: same.indexOf(r), n: same.length, gx: gx, gy: gy,
            x: r.x, y: r.y, path: r.path, h: r.h, door: Math.hypot(r.x - DOOR.x, r.y - DOOR.y),
            off: sync_random(i + 11, 977) };
 }
@@ -425,26 +427,40 @@ function sync_noise2(x, y, salt) {
 
 // ---- weather (halloween_weather.yaml on the bulb) ----
 // Readings in the units Home Assistant reports for a WeatherFlow Tempest in
-// US units: mph, degrees, in/h, degrees F. `on` is true while the weather
-// package is present, the API is connected and the wind reading is valid;
-// otherwise every effect sees these calm defaults.
+// US units: mph, degrees, in/h, degrees F. `on` is true while there is a valid
+// wind reading; otherwise every effect sees these calm defaults.
+// On the bulb, weather changes only at whole minutes of the shared clock
+// (hw_wx_advance): WX is this minute's weather, WXP the previous minute's
+// (null = the same). Slow readings ease from WXP to WX over the first 10 s of
+// the minute, and wind-driven motion crossfades from WXP's.
 var WX = { on: false, windMph: 0, gustMph: 0, lullMph: 0, dirDeg: 270, rainInH: 0, tempF: 50, dewF: 35 };
+var WXP = null;
+var WX_PERIOD = 60, WX_EASE = 10;
+function wxPrev() { return WXP || WX; }
+function wxSince(T) { return T - Math.floor(T / WX_PERIOD) * WX_PERIOD; }
+function wxAt(T) {
+  var p = wxPrev(), k = ease(clamp01(wxSince(T) / WX_EASE)), w = Object.assign({}, WX);
+  w.rainInH = p.rainInH + (WX.rainInH - p.rainInH) * k;
+  w.tempF = p.tempF + (WX.tempF - p.tempF) * k;
+  w.dewF = p.dewF + (WX.dewF - p.dewF) * k;
+  return w;
+}
 function q(v, step) { return Math.floor(v / step + 0.5) * step; }   // round half up, as the bulb does
-function windAvg() { return Math.min(30, q(WX.windMph, 1)); }
-function windTo() { var a = (q(WX.dirDeg, 22.5) + 180) * Math.PI / 180; return { x: Math.sin(a), y: -Math.cos(a) }; }
-function along(b) { var w = windTo(); return b.x * w.x + b.y * w.y; }
+function windAvg(w) { return Math.min(30, q((w || WX).windMph, 1)); }
+function windTo(w) { var a = (q((w || WX).dirDeg, 22.5) + 180) * Math.PI / 180; return { x: Math.sin(a), y: -Math.cos(a) }; }
+function along(b, w) { var t = windTo(w); return b.x * t.x + b.y * t.y; }
 
 // The weather layer: a cooler cast on cold nights, a pale fog near the dew
 // point, a sheen and a slow wet shimmer in rain. Slow changes only; wind does
 // not touch brightness here.
 function wxLayer(c, T, b) {
-  var m = Math.max(c[0], c[1], c[2], c[3], c[4]);
-  var cold = clamp01((55 - q(WX.tempF, 1)) / 20) * 0.35;
+  var W = wxAt(T), m = Math.max(c[0], c[1], c[2], c[3], c[4]);
+  var cold = clamp01((55 - q(W.tempF, 1)) / 20) * 0.35;
   c = mix(c, [c[0] * 0.75, c[1], c[2] + 0.10 * m, c[3] * 0.6, c[4] + 0.25 * c[3] + 0.05 * m], cold);
-  var fog = clamp01((5 - (q(WX.tempF, 1) - q(WX.dewF, 1))) / 5) * 0.45;
+  var fog = clamp01((5 - (q(W.tempF, 1) - q(W.dewF, 1))) / 5) * 0.45;
   var avg = (c[0] + c[1] + c[2]) / 3;
   c = mix(c, [avg, avg, avg, c[3] + avg * 0.2, c[4] + avg * 0.2], fog);
-  var wet = clamp01(q(WX.rainInH, 0.01) / 0.3);
+  var wet = clamp01(q(W.rainInH, 0.01) / 0.3);
   if (wet > 0) {
     c = add(c, [0, 0, 0.03 * wet, 0, 0.06 * wet]);
     c = sc(c, 1 + 0.06 * wet * (sync_noise(T + F(b.off * 5), F(1.3), b.i + 70) - 0.5) * 2);
@@ -471,13 +487,19 @@ var MIST_SETS = [
 // rust, Oct 31 pumpkin and violet; each evening that date's two colours roll
 // across the front of the house in a 5-7 minute wave (downwind when the
 // weather is on, a nightly dice roll otherwise).
+function seasonWave(T, period, dir, b) {
+  var ph = fmodp(T / period + dir * across(b) * 0.6, 1);
+  return 0.5 - 0.5 * Math.cos(ph * 6.2832);
+}
 function season(T, b) {
   var e = evening(T), p = (e.oct - 1) / 30;
   var c1 = mix(HARVEST_GOLD, HALLOW_ORANGE, p), c2 = mix(RUST, HALLOW_VIOLET, p * p);
-  var dir = WX.on ? (windTo().x >= 0 ? 1 : -1) : sync_random(e.night, 80) < 0.5 ? 1 : -1;
+  var dice = sync_random(e.night, 80) < 0.5 ? 1 : -1, prev = wxPrev();
+  var dir = WX.on ? (windTo(WX).x >= 0 ? 1 : -1) : dice;
+  var dirBefore = prev.on ? (windTo(prev).x >= 0 ? 1 : -1) : dice;
   var period = 300 + 120 * sync_random(e.night, 81);
-  var ph = fmodp(T / period + dir * across(b) * 0.6, 1);
-  var w = 0.5 - 0.5 * Math.cos(ph * 6.2832);
+  var w = seasonWave(T, period, dir, b);
+  if (dirBefore !== dir) { var w0 = seasonWave(T, period, dirBefore, b); w = w0 + (w - w0) * ease(clamp01(wxSince(T) / WX_EASE)); }
   return out(sc(mix(c1, c2, ease(w)), 0.85), EMBER);
 }
 
@@ -497,21 +519,21 @@ function witching(T, b) {
 // 17. Graveyard Mist: one slow 2D mist field drifting across the yard. Each
 // night picks its palette, direction and pace; with the weather on it drifts
 // with the real wind instead (the bulb latches the wind per 2-minute slot).
-function mistWind(T, b) {
-  function field(slot, w) {
-    var v = (0.5 + windAvg() * 0.08) / 22, wt = windTo();
-    return sync_noise2(b.x / 22 + 1e4 + sync_random(slot, 73) * 5000 - wt.x * v * w, b.y / 22 + 1e4 + sync_random(slot, 74) * 5000 - wt.y * v * w, 31);
-  }
-  var s = sync_slot(T, 120), d = field(s.slot, s.w);
-  return s.w > 100 ? d + (field((s.slot + 1) >>> 0, s.w - 120) - d) * ease((s.w - 100) / 20) : d;
+function mistField(b, slot, w, W) {
+  var v = (0.5 + windAvg(W) * 0.08) / 22, wt = windTo(W);
+  return sync_noise2(b.x / 22 + 1e4 + sync_random(slot, 73) * 5000 - wt.x * v * w, b.y / 22 + 1e4 + sync_random(slot, 74) * 5000 - wt.y * v * w, 31);
+}
+function mistStill(T, b, night) {
+  var a = sync_random(night, 71) * 6.2832, sp = 0.012 + 0.012 * sync_random(night, 72);
+  return sync_noise2(b.x / 22 + 1e7 + (T * sp * Math.cos(a)) % 1e6, b.y / 22 + 1e7 + (T * sp * Math.sin(a)) % 1e6, 31);
 }
 function mist(T, b) {
-  var e = evening(T), set = MIST_SETS[Math.floor(sync_random(e.night, 70) * 3)];
-  var d;
-  if (WX.on) d = mistWind(T, b);
-  else {
-    var a = sync_random(e.night, 71) * 6.2832, sp = 0.012 + 0.012 * sync_random(e.night, 72);
-    d = sync_noise2(b.x / 22 + 1e7 + (T * sp * Math.cos(a)) % 1e6, b.y / 22 + 1e7 + (T * sp * Math.sin(a)) % 1e6, 31);
+  var e = evening(T), set = MIST_SETS[Math.floor(sync_random(e.night, 70) * 3)], prev = wxPrev();
+  var s = sync_slot(T, WX_PERIOD), w = F(s.w);                       // one field per weather minute
+  var d = WX.on ? mistField(b, s.slot, w, WX) : mistStill(T, b, e.night);
+  if (w < 15) {                                                      // crossfade from the previous minute's field
+    var d0 = prev.on ? mistField(b, (s.slot - 1) >>> 0, w + WX_PERIOD, prev) : mistStill(T, b, e.night);
+    d = d0 + (d - d0) * ease(w / 15);
   }
   return out(sc(mix(set[0], set[1], ease(d)), 0.9), NIGHT_FLOOR);
 }
@@ -520,17 +542,22 @@ function mist(T, b) {
 // gutters; instead gusts from the real wind roll through the yard from the
 // windward side and bend each flame in turn, at most one per 5 s slot. Calm
 // air (or no weather): steady flames. Runs through the weather layer.
+function gustBend(T, b, back) {
+  var s0 = Math.floor(T / 5) - back, start = s0 * 5, slot = u32(s0), w = F(T - start);
+  var W = start < Math.floor(T / WX_PERIOD) * WX_PERIOD ? wxPrev() : WX;   // the weather when the slot began
+  var wind = windAvg(W), gusty = clamp01((q(W.gustMph, 1) - q(W.lullMph, 1)) / 15 + wind / 30);
+  if (!(sync_random(slot, 131) < gusty)) return 0;
+  var t = windTo(W), at = 0.5 + sync_random(slot, 130) * 2;
+  var u = w - at - (b.gx * t.x + b.gy * t.y + 80) / 30;                // the front reaches a whole group at once
+  var bend = 0.28 * clamp01(wind / 15 + 0.3);
+  if (u >= 0 && u < 0.4) return bend * ease(u / 0.4);
+  if (u >= 0.4 && u < 1.3) return bend * (1 - ease((u - 0.4) / 0.9));
+  return 0;
+}
 function windcandles(T, b) {
-  var base = jackBase(T, b, true), lvl = 1, wind = windAvg();      // lifted once, at the end
-  var gusty = clamp01((q(WX.gustMph, 1) - q(WX.lullMph, 1)) / 15 + wind / 30);
-  var s = sync_slot(T, 5), at = 0.5 + sync_random(s.slot, 130) * 2;
-  if (sync_random(s.slot, 131) < gusty) {
-    var u = s.w - at - (along(b) + 80) / 30;
-    var bend = 0.28 * clamp01(wind / 15 + 0.3);
-    if (u >= 0 && u < 0.4) lvl = 1 - bend * ease(u / 0.4);
-    else if (u >= 0.4 && u < 1.3) lvl = 1 - bend * (1 - ease((u - 0.4) / 0.9));
-  }
-  return out(wxLayer(sc(base, lvl), T, b), EMBER);
+  var base = jackBase(T, b, true);                                     // lifted once, at the end
+  var bend = Math.max(gustBend(T, b, 0), gustBend(T, b, 1));
+  return out(wxLayer(sc(base, 1 - bend), T, b), EMBER);
 }
 
 // Ambient light for the daylight lift: 0 when the sun is 4 deg or more below
@@ -612,5 +639,6 @@ if (typeof module !== "undefined") {
     toLinear: toLinear, lumRel: lumRel, sync_hash: sync_hash, sync_random: sync_random,
     sync_noise: sync_noise, sync_fold: sync_fold, self: self, WX: WX, SUN: SUN, evening: evening,
     sunElevation: sunElevation, sunsetOn: sunsetOn, sunsetHour: sunsetHour, sync_noise2: sync_noise2,
-    lift: lift, ambientAt: ambientAt, ambientFromLux: ambientFromLux, setAmbient: function (a) { HW_AMB = a; } };
+    lift: lift, ambientAt: ambientAt, ambientFromLux: ambientFromLux, setAmbient: function (a) { HW_AMB = a; },
+    setPrevWeather: function (w) { WXP = w; } };
 }

@@ -19,13 +19,15 @@
 # direction and speed), and the weather layer on Wind-Blown Candles (rain,
 # temperature, dew point).
 #
-# Each reading reaches the bulbs a moment apart, so readings only ever set
-# slow parameters - never when something happens, which stays on the shared
-# clock. Values are rounded where they are used, wind is latched per cycle,
-# and rain / temperature / dew point ease in over ~10 s (hw_wx_tick in
-# halloween_fx.h). A reading that is unavailable or unknown, or the API being
-# disconnected, falls back to calm defaults; nothing keys off a reading's age,
-# because HA only sends a value when it changes.
+# Each reading reaches the bulbs a moment apart, so a reading never takes
+# effect on arrival: it is timestamped on the shared clock, and at each whole
+# minute every bulb promotes the readings it has held for 5 s or more, so all
+# of them switch together. Slow readings then ease in over 10 s and wind
+# changes crossfade, as functions of the shared clock (halloween_fx.h,
+# "Weather moves on the shared clock"). A reading that is unavailable or
+# unknown, or Home Assistant going away, falls back to calm at the next
+# minute; nothing keys off a reading's age, because HA only sends a value when
+# it changes.
 # ---------------------------------------------------------------------------
 
 substitutions:
@@ -48,63 +50,63 @@ sensor:
     internal: true
     on_value:
       then:
-        - lambda: g_hw_wx_in.wind = x;
+        - lambda: hw_wx_in(HW_WX_WIND, x, sync_seconds());
   - platform: homeassistant
     id: hw_wx_gust
     entity_id: ${wx_gust}
     internal: true
     on_value:
       then:
-        - lambda: g_hw_wx_in.gust = x;
+        - lambda: hw_wx_in(HW_WX_GUST, x, sync_seconds());
   - platform: homeassistant
     id: hw_wx_lull
     entity_id: ${wx_lull}
     internal: true
     on_value:
       then:
-        - lambda: g_hw_wx_in.lull = x;
+        - lambda: hw_wx_in(HW_WX_LULL, x, sync_seconds());
   - platform: homeassistant
     id: hw_wx_dir
     entity_id: ${wx_dir}
     internal: true
     on_value:
       then:
-        - lambda: g_hw_wx_in.dir = x;
+        - lambda: hw_wx_in(HW_WX_DIR, x, sync_seconds());
   - platform: homeassistant
     id: hw_wx_rain
     entity_id: ${wx_rain}
     internal: true
     on_value:
       then:
-        - lambda: g_hw_wx_in.rain = x;
+        - lambda: hw_wx_in(HW_WX_RAIN, x, sync_seconds());
   - platform: homeassistant
     id: hw_wx_temp
     entity_id: ${wx_temp}
     internal: true
     on_value:
       then:
-        - lambda: g_hw_wx_in.temp = x;
+        - lambda: hw_wx_in(HW_WX_TEMP, x, sync_seconds());
   - platform: homeassistant
     id: hw_wx_dew
     entity_id: ${wx_dew}
     internal: true
     on_value:
       then:
-        - lambda: g_hw_wx_in.dew = x;
+        - lambda: hw_wx_in(HW_WX_DEW, x, sync_seconds());
   - platform: homeassistant
     id: hw_wx_lux
     entity_id: ${wx_lux}
     internal: true
     on_value:
       then:
-        - lambda: g_hw_wx_in.lux = x;
+        - lambda: hw_wx_in(HW_WX_LUX, x, sync_seconds());
   - platform: homeassistant
     id: hw_wx_lux2
     entity_id: ${wx_lux2}
     internal: true
     on_value:
       then:
-        - lambda: g_hw_wx_in.lux2 = x;
+        - lambda: hw_wx_in(HW_WX_LUX2, x, sync_seconds());
 
 interval:
   - interval: 1s
@@ -114,4 +116,4 @@ interval:
           // is_connected() counts any client.
           hw_wx_tick(api::global_api_server != nullptr &&
                          api::global_api_server->is_connected_with_state_subscription(),
-                     1.0f);
+                     sync_seconds());

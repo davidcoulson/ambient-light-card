@@ -4,7 +4,8 @@
 //
 // Reads the C++ frames from stdin and recomputes each one with
 // halloween_reference.js ("@storm" frames under the simulated storm, "@day"
-// frames with the full daylight lift). Run
+// frames with the full daylight lift, "@turn" frames in a minute whose weather
+// has just changed, which exercise the eases and crossfades). Run
 // with TZ=America/New_York, as run_halloween_tests.sh does: the calendar
 // effects read local time. The bulb works in float and the reference in double,
 // so frames agree to ~1e-4 rather than bit for bit; a sample that lands within
@@ -21,12 +22,15 @@ ref.SELF.forEach((b) => { byName[b.id] = b; });
 // The storm the C++ test simulates for "@storm" frames.
 const CALM = Object.assign({}, ref.WX);
 const STORM = { on: true, windMph: 30, gustMph: 45, lullMph: 5, dirDeg: 225, rainInH: 0.6, tempF: 38, dewF: 37 };
+// "@turn" frames: the weather just changed - last minute a light wind from the northeast, this minute the storm.
+const BEFORE = Object.assign({}, CALM, { on: true, windMph: 6, dirDeg: 45 });
 
 const stats = {};
 for (const line of rows) {
   const [tag, light, t, ...ch] = line.split(",");
   const [key, variant] = tag.split("@");
-  Object.assign(ref.WX, variant === "storm" ? STORM : CALM);
+  Object.assign(ref.WX, variant === "storm" || variant === "turn" ? STORM : CALM);
+  ref.setPrevWeather(variant === "turn" ? BEFORE : null);
   ref.setAmbient(variant === "day" ? 1 : 0);
   const want = ref.FXFN[key](parseFloat(t), byName[light]);
   let diff = 0;
