@@ -11,6 +11,16 @@
 #include <sys/time.h>
 #include <ctime>
 
+// API level of these helpers, for headers that use them from ANOTHER package
+// (halloween_fx.h). ESPHome copies every package's includes into one flat
+// src/ folder, so a device gets exactly one light_effects_helpers.h - the one
+// its light package's ref brings - and a header from a package pinned at a
+// different ref compiles against it. Bump this whenever a helper is added or
+// removed or changes what it returns, so a mismatch fails to compile instead
+// of silently computing something other than the tests and the reference
+// model. Level 1 is the v1.2.0 - v1.2.2 set, which had no marker.
+#define LIGHT_EFFECTS_HELPERS_API 1
+
 
 // Standard HSV -> RGB conversion. h, s, v in [0, 1]; r, g, b out in [0, 1].
 inline void hsv_to_rgb(float h, float s, float v, float &r, float &g, float &b) {

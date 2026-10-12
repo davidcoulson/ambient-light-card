@@ -182,6 +182,58 @@ than its MAC, so a bulb can be replaced without editing the map. A light that is
 still runs every effect, as a lone driveway light. *Blood Moon* uses x for its eclipse sweep; the
 other three use the groups.
 
+### Keeping them off every other light
+
+Give the outdoor bulbs their own wrapper next to their family package, and have only their device
+files include it. Indoor lights keep including the plain family package and never see a Halloween
+effect or a weather sensor:
+
+```yaml
+# common/athom-outdoor.yaml - the yard bulbs, and only them
+substitutions:
+  halloween_ref: <the same tag athom-light.yaml pins for ambient-light-card>
+  sun_latitude: "<your latitude>"
+  sun_longitude: "<your longitude>"
+
+packages:
+  light: !include athom-light.yaml
+  halloween:
+    url: https://github.com/davidcoulson/ambient-light-card
+    ref: ${halloween_ref}
+    files:
+      - path: esphome/common/halloween_effects.yaml
+        vars:
+          sun_latitude: ${sun_latitude}
+          sun_longitude: ${sun_longitude}
+      - path: esphome/common/halloween_weather.yaml
+        vars:
+          wx_wind: sensor.<station>_wind_speed_average
+          # ... the other wx_* entities
+```
+
+```yaml
+# a yard bulb's device file
+substitutions:
+  mac: "a1b2c3"
+  area: "Outdoors"
+  yard_light: "G2"
+
+packages:
+  - !include common/athom-outdoor.yaml
+```
+
+**Pin both packages to the same ref.** `halloween_fx.h` uses `light_effects_helpers.h`, but it
+doesn't bring its own: ESPHome copies every package's includes into one flat `src/` folder, and
+the copy a device gets is the one its light package lists – `athom-light.yaml`'s
+ambient-light-card ref, not the Halloween package's. If two packages listed the same header, the
+last one merged would silently win. So a Halloween package pinned at one ref compiles against
+the helpers of another. To make that safe, `light_effects_helpers.h` now carries
+`LIGHT_EFFECTS_HELPERS_API` (bumped whenever a helper is added, removed or changes its result),
+and `halloween_fx.h` refuses to compile against any other level. That covers both a helper it
+needs that the light's ref doesn't have, and a helper whose behaviour changed under it. The
+v1.2.0–v1.2.2 helpers have no marker and count as level 1, so they work with this release.
+The simplest way to keep the rule is one substitution for the ref, used by both packages.
+
 ### Tests
 
 `tests/run_halloween_tests.sh` builds `tests/halloween_test.cpp` against the real headers and
@@ -192,7 +244,12 @@ speeds up; `hw_out()` scales by brightness like `out_rgb()`; the cap and floors 
 evening keeps its date past midnight and sunset lands within two minutes; the weather falls back
 to calm on unknown readings or a lost API; and the daylight lift only raises channels, stays in
 the cap, adds no flashes and follows the sun or measured light. Parity covers night, storm and
-full-lift frames. With node
+full-lift frames. It also checks the helpers guard: `halloween_fx.h` compiles against unmarked
+v1.2.x helpers and fails against any other API level.
+
+`tests/effect_list.py` reads `esphome config` output and lists a device's light effects and any
+Halloween parts it pulls in. Use it to check that an indoor light is untouched (`--no-halloween`)
+and that its effect list matches a saved one (`--compare`). With node
 installed it then compares the C++ frame by frame against `tests/halloween_reference.js`, the
 same maths in JavaScript that drives the effects' preview page.
 

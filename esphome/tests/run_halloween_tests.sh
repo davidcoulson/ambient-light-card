@@ -11,6 +11,28 @@ trap 'rm -rf "$out"' EXIT
 
 ${CXX:-c++} -std=c++17 -O2 -Wall -Wextra -Wno-unused-function -I"$here/../common" \
   "$here/halloween_test.cpp" -o "$out/halloween_test"
+
+# The helpers guard: halloween_fx.h must compile against unmarked v1.2.x
+# helpers (API level 1) and refuse any other level.
+printf '#include "front_yard_map.h"\nint main() { return 0; }\n' > "$out/guard.cpp"
+mkdir -p "$out/v12" "$out/v2"
+grep -v 'define LIGHT_EFFECTS_HELPERS_API' "$here/../common/light_effects_helpers.h" > "$out/v12/light_effects_helpers.h"
+sed 's/define LIGHT_EFFECTS_HELPERS_API 1/define LIGHT_EFFECTS_HELPERS_API 2/' "$here/../common/light_effects_helpers.h" > "$out/v2/light_effects_helpers.h"
+# a quoted include looks next to the including file first, as it would in ESPHome's flat src/
+for d in v12 v2; do cp "$here/../common/halloween_fx.h" "$here/../common/front_yard_map.h" "$out/$d/"; done
+stubs='-include cstdint -Dmillis()=0u -Dmicros()=0u'
+if ${CXX:-c++} -std=c++17 -fsyntax-only $stubs -I"$out/v12" "$out/guard.cpp" 2>"$out/g1.txt"; then
+  echo "helpers guard: unmarked v1.2.x helpers accepted"
+else
+  echo "FAIL helpers guard: unmarked v1.2.x helpers rejected"; cat "$out/g1.txt"; exit 1
+fi
+if ${CXX:-c++} -std=c++17 -fsyntax-only $stubs -I"$out/v2" "$out/guard.cpp" 2>"$out/g2.txt"; then
+  echo "FAIL helpers guard: a different API level compiled"; exit 1
+elif grep -q "different API level" "$out/g2.txt"; then
+  echo "helpers guard: a different API level is a compile error"
+else
+  echo "FAIL helpers guard: failed for another reason"; cat "$out/g2.txt"; exit 1
+fi
 "$out/halloween_test"
 
 if command -v node >/dev/null 2>&1; then

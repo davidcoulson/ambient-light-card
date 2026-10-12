@@ -32,7 +32,29 @@
 #include <cstdint>
 #include <ctime>
 #include <strings.h>
+
+// The shared helpers come from the LIGHT's package, not this one: ESPHome copies
+// every package's includes into one flat src/ folder, and this package does not
+// list light_effects_helpers.h, so the copy here is whatever ref the light's
+// own ambient-light-card package is pinned at (athom-light.yaml, for example).
+// Rule: pin both packages to the same ambient-light-card ref. This guard turns
+// a mismatch in the helpers' API level into a compile error rather than lights
+// that quietly differ from the tests and the preview.
+#if defined(__has_include)
+#if !__has_include("light_effects_helpers.h")
+#error "halloween_effects.yaml needs light_effects_helpers.h: include accent_light_nonaddressable_effects.yaml or white_effects.yaml from ambient-light-card in the light's package"
+#endif
+#endif
 #include "light_effects_helpers.h"
+#ifdef LIGHT_EFFECTS_HELPERS_API
+#define HW_HELPERS_API_FOUND LIGHT_EFFECTS_HELPERS_API
+#else
+#define HW_HELPERS_API_FOUND 1   // v1.2.0 - v1.2.2 had no marker; their helpers are level 1
+#endif
+#define HW_HELPERS_API_EXPECTED 1
+#if HW_HELPERS_API_FOUND != HW_HELPERS_API_EXPECTED
+#error "light_effects_helpers.h is at a different API level than halloween_fx.h expects: pin the light's ambient-light-card package and the Halloween package to the same ref"
+#endif
 
 // Five PWM levels, 0..1, at 100 % brightness.
 struct HwColor {
