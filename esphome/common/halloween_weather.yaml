@@ -110,4 +110,8 @@ interval:
   - interval: 1s
     then:
       - lambda: |-
-          hw_wx_tick(api::global_api_server != nullptr && api::global_api_server->is_connected(), 1.0f);
+          // Home Assistant specifically: a log viewer is an API client too, and
+          // is_connected() counts any client.
+          hw_wx_tick(api::global_api_server != nullptr &&
+                         api::global_api_server->is_connected_with_state_subscription(),
+                     1.0f);

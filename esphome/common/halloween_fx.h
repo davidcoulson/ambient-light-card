@@ -482,14 +482,19 @@ struct HwWeatherIn {
 };
 inline HwWeatherIn g_hw_wx_in;
 
-// Called once a second by halloween_weather.yaml. A reading that is NaN, or
-// any reading while the API is disconnected, falls back to its calm default;
+// Called once a second by halloween_weather.yaml with whether Home Assistant
+// (a client subscribed to states, not just any API client) is connected. A
+// reading that is NaN, or any reading while HA is away, falls back to calm;
 // HA only sends a value when it changes, so a reading's age means nothing.
 // Rain, temperature and dew point ease toward the reading over ~10 s, so a
 // value that reaches one bulb a moment before another makes no visible
 // difference; wind is rounded where it is used and latched per cycle by the
 // effects that move with it.
 inline void hw_wx_tick(bool api_connected, float dt) {
+  // Losing Home Assistant drops every cached reading: after a reconnect the
+  // weather stays calm until HA sends fresh states (it does so on subscribe),
+  // rather than reusing values that may be hours old.
+  if (!api_connected) g_hw_wx_in = HwWeatherIn();
   const HwWeatherIn &in = g_hw_wx_in;
   auto pick = [&](float v, float calm) { return (!api_connected || std::isnan(v)) ? calm : v; };
   HwWeather &w = g_hw_wx;

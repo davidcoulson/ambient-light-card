@@ -312,6 +312,11 @@ static void test_weather_plumbing() {
   g_hw_wx_in.wind = 12.0f;
   hw_wx_tick(false, 1.0f);
   CHECK(!g_hw_wx.on && g_hw_wx.wind_mph == 0.0f && g_hw_wx.dir_deg == 270.0f, "a lost API falls back to calm");
+  hw_wx_tick(true, 1.0f);
+  CHECK(!g_hw_wx.on && g_hw_wx.wind_mph == 0.0f, "and stays calm after reconnecting until HA sends fresh readings");
+  g_hw_wx_in.wind = 9.0f;
+  hw_wx_tick(true, 1.0f);
+  CHECK(g_hw_wx.on && g_hw_wx.wind_mph == 9.0f, "a fresh reading after reconnecting applies");
   g_hw_wx_in = HwWeatherIn();
   g_hw_wx = HW_WX_CALM;
 }
