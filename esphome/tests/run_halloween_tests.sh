@@ -12,6 +12,13 @@ trap 'rm -rf "$out"' EXIT
 ${CXX:-c++} -std=c++17 -O2 -Wall -Wextra -Wno-unused-function -I"$here/../common" \
   "$here/halloween_test.cpp" -o "$out/halloween_test"
 
+# Lockstep: no Halloween effect may run on a Speed-scaled clock (a Speed change
+# lands on each bulb at a different moment and would jump their phases).
+if grep -nE 'hw_seconds|fx_seconds|fx_t\(|fx_ms|fx_millis' "$here/../common/halloween_effects.yaml" "$here/../common/halloween_fx.h"; then
+  echo "FAIL a Halloween effect uses a Speed-scaled clock"; exit 1
+fi
+echo "lockstep: every Halloween effect runs on the unscaled shared clock"
+
 # The helpers guard: halloween_fx.h must compile against unmarked v1.2.x
 # helpers (API level 1) and refuse any other level.
 printf '#include "front_yard_map.h"\nint main() { return 0; }\n' > "$out/guard.cpp"

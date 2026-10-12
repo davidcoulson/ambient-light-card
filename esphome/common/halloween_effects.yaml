@@ -7,7 +7,7 @@
 #
 #   substitutions:
 #     mac: "a1b2c3"
-#     area: "Outdoors"        # one area for the whole set, so they share Speed
+#     area: "Outdoors"
 #     yard_light: "G2"        # this light's row in the yard map
 #
 #   packages:
@@ -30,12 +30,11 @@
 #
 # Every effect keeps a visible floor (a light never goes dark) and stays at or
 # under 1 flash per second per light and per group; halloween_fx.h has the
-# rules and tests/halloween_test.cpp checks them. The room Speed helper can
-# slow these effects but not speed them up; the three that follow the
-# calendar (Turning of the Season, Witching Hour, Graveyard Mist) and
-# Wind-Blown Candles, which follows the real wind, ignore it.
-# They also need the time component's timezone to be right, since they read
-# the local date and hour.
+# rules and tests/halloween_test.cpp checks them. They ignore the room Speed
+# and Intensity helpers and always run on the unscaled shared clock: a Speed
+# change lands on each bulb at a slightly different moment and would jump
+# neighbours to different phases. Three of them read the local date and hour,
+# so the time component's timezone must be right.
 #
 # halloween_weather.yaml is optional. Without it Wind-Blown Candles burns
 # steady and Season and Mist use their nightly dice instead of the wind.
@@ -75,7 +74,7 @@ light:
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
             hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
             hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
-                   id(warm_output), id(cold_output), hw_jack(hw_seconds(), me));
+                   id(warm_output), id(cold_output), hw_jack(sync_seconds(), me));
 
       # ------------------------------------------------------------------
       # Lightning Over the House - violet night (the floor), one white
@@ -89,7 +88,7 @@ light:
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
             hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
             hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
-                   id(warm_output), id(cold_output), hw_lightning(hw_seconds(), me));
+                   id(warm_output), id(cold_output), hw_lightning(sync_seconds(), me));
 
       # ------------------------------------------------------------------
       # Witch's Cauldron - poison green <-> violet drift per light, a lime
@@ -102,7 +101,7 @@ light:
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
             hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
             hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
-                   id(warm_output), id(cold_output), hw_cauldron(hw_seconds(), me));
+                   id(warm_output), id(cold_output), hw_cauldron(sync_seconds(), me));
 
       # ------------------------------------------------------------------
       # Blood Moon - moon white, then an eclipse sweeps west to east into
@@ -115,7 +114,7 @@ light:
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
             hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
             hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
-                   id(warm_output), id(cold_output), hw_moon(hw_seconds(), me));
+                   id(warm_output), id(cold_output), hw_moon(sync_seconds(), me));
 
       # ------------------------------------------------------------------
       # Heartbeat of the House - a slow red pulse from the front door out
@@ -128,7 +127,7 @@ light:
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
             hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
             hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
-                   id(warm_output), id(cold_output), hw_heart(hw_seconds(), me));
+                   id(warm_output), id(cold_output), hw_heart(sync_seconds(), me));
 
       # ------------------------------------------------------------------
       # Trick-or-Treat Swap - neighbours alternate orange and purple and
@@ -141,7 +140,7 @@ light:
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
             hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
             hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
-                   id(warm_output), id(cold_output), hw_swap(hw_seconds(), me));
+                   id(warm_output), id(cold_output), hw_swap(sync_seconds(), me));
 
       # ------------------------------------------------------------------
       # Turning of the Season - harvest gold on Oct 1 to pumpkin and

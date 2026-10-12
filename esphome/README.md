@@ -122,8 +122,11 @@ Two rules hold for all of them, and the host tests check both:
   no channel drops under it, so a light is always at least ~3 % of full warm white.
 - **Minimal flashing.** At most 1 flash per second per light and per group of neighbouring lights,
   counted the WCAG 2.3.1 way (the limit there is 3). Occasional events – a candle guttering, a
-  bubble – take turns within a group so neighbours never fire in the same second. The room Speed
-  helper can slow these effects but never speed them up, and Intensity is not used.
+  bubble – take turns within a group so neighbours never fire in the same second.
+- **Lockstep, always.** These effects ignore the room Speed and Intensity helpers and run on the
+  unscaled shared clock: a Speed change reaches each bulb at a slightly different moment, so it
+  would jump neighbours to different phases, and dragging the slider could jump an effect in and
+  out of a flash faster than the limit. Their pace is part of the design.
 
 Three of them are made for running every evening of a month: *Turning of the Season* moves from
 harvest gold on October 1 to pumpkin and violet on the 31st, *Witching Hour* moves from amber at
@@ -138,7 +141,7 @@ file is unchanged:
 ```yaml
 substitutions:
   mac: "a1b2c3"
-  area: "Outdoors"       # one area for the whole set, so they share one Speed helper
+  area: "Outdoors"
   yard_light: "G2"       # this light's row in the yard map
 
 packages:
@@ -180,8 +183,7 @@ as functions of the shared clock. Two things can still put one bulb a minute beh
 arriving across the 5 s cutoff on different bulbs, and a reboot. The tests simulate both and
 check that nothing else does. A reading that is unavailable or unknown, or Home Assistant going
 away (a client subscribed to states, not just any API client such as a log viewer), falls back
-to calm at the next minute, and cached readings are dropped so a reconnect starts fresh. *Wind-Blown
-Candles* follows the real wind, so like the calendar effects it ignores Speed. Without the package
+to calm at the next minute, and cached readings are dropped so a reconnect starts fresh. Without the package
 everything still compiles and runs, as on a still, dry night.
 
 The yard map is a table of `{name, group, x, y, path}` in feet: the group says which part a light
@@ -248,8 +250,8 @@ The simplest way to keep the rule is one substitution for the ref, used by both 
 `tests/run_halloween_tests.sh` builds `tests/halloween_test.cpp` against the real headers and
 checks, on every light of the example map: same time and light → same frame; the floor holds;
 flashes stay at or under 1 per second per light and per group – at 8 pm, at lights-on, and in a
-simulated storm for the weather-driven effects; an unmapped light still runs; Speed slows but never
-speeds up; `hw_out()` scales by brightness like `out_rgb()`; the cap and floors both hold; an
+simulated storm for the weather-driven effects; an unmapped light still runs; no effect lambda uses
+a Speed-scaled clock; `hw_out()` scales by brightness like `out_rgb()`; the cap and floors both hold; an
 evening keeps its date past midnight and sunset lands within two minutes; the weather falls back
 to calm on unknown readings or a lost Home Assistant; seven bulbs fed the same readings with
 different delays, ticking at different moments, show identical frames except around a reboot

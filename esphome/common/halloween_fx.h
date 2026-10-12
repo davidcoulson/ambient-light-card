@@ -20,9 +20,12 @@
 //      opposing changes of >= 10 % luminance). The 2.3.1 limit is 3; these
 //      aim far below it, preferring slow swells, fades and drifts.
 //
-// Rule 2 is also why these effects use hw_seconds() rather than fx_seconds():
-// the room Speed helper can slow them down but never speed them up, so a
-// slider at 255 cannot quadruple a flash rate. Intensity is not used.
+// These effects ignore the room Speed and Intensity helpers and always run on
+// the unscaled shared clock (sync_seconds()). Speed scales epoch time the
+// moment a new value lands, and it lands on each bulb at a slightly different
+// moment, so a change would jump neighbours to different phases - and a
+// slider being dragged could jump an effect in and out of a flash faster than
+// rule 2 allows. Their pace is part of the design instead.
 //
 // The maths is mirrored in tests/halloween_reference.js, which also drives
 // the preview page; tests/halloween_parity.js checks the two agree.
@@ -126,14 +129,6 @@ inline HwSelf hw_lookup(const YardLight *map, int count, const char *name, const
   s.off = sync_random(h, 977);
   s.mapped = false;
   return s;
-}
-
-// The effect clock: the shared wall clock, slowed (never sped up) by the room
-// Speed helper. See rule 2 above.
-inline double hw_seconds() {
-  double t = sync_seconds();
-  float s = fx_speed();
-  return s < 1.0f ? t * (double) s : t;
 }
 
 // ---- colour helpers ----
@@ -346,10 +341,9 @@ inline HwColor hw_moon(double T, const HwSelf &b) {
 // Round 2: Heartbeat of the House, Trick-or-Treat Swap, Turning of the Season,
 // Witching Hour, Graveyard Mist and Wind-Blown Candles.
 //
-// Season, Witching Hour and Mist follow the calendar and the local clock, so
-// they take the UNSCALED shared clock (sync_seconds()), like the library's
-// Clock effect: a Speed-scaled clock would land on the wrong date. Anything
-// that multiplies epoch time stays in double, mirrored in
+// Season, Witching Hour and Mist follow the calendar and the local clock, and
+// like every effect here take the unscaled shared clock. Anything that
+// multiplies epoch time stays in double, mirrored in
 // tests/halloween_reference.js.
 // ===========================================================================
 

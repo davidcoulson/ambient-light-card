@@ -8,7 +8,6 @@
 //     than 3 % of full warm white's luminance;
 //   - flashes stay at or under 1 per second per light and per group;
 //   - a light that is not on the map still runs, as a driveway light;
-//   - Speed can slow the effect clock but not speed it up;
 //   - hw_out() applies the brightness slider like out_rgb();
 //   - the calendar, sunset and weather plumbing behave (evening rollover,
 //     calm fallbacks on NaN or a lost API);
@@ -441,16 +440,6 @@ static void test_weather_timeline() {
 }
 
 
-static void test_speed() {
-  fx_set_speed(255.0f);   // ~4x on other effects
-  double a = sync_seconds(), h = hw_seconds(), b = sync_seconds();
-  CHECK(h >= a && h <= b, "Speed above normal must not speed the Halloween clock up");
-  fx_set_speed(64.0f);    // 1/2x
-  a = sync_seconds();
-  h = hw_seconds();
-  CHECK(h > a * 0.49 && h < a * 0.51, "Speed below normal slows it");
-  fx_set_speed(128.0f);
-}
 
 struct FakeValues {
   float b;
@@ -529,7 +518,6 @@ int main(int argc, char **argv) {
   }
   test_identity();
   test_deterministic();
-  test_speed();
   test_out();
   test_calendar_and_sun();
   test_weather_plumbing();
