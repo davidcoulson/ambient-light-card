@@ -507,15 +507,27 @@ struct HwWxReading {
   double at = -1e18;   // shared-clock arrival time
 };
 struct HwWxState {
-  HwWxReading in[HW_WX_N];                 // as received from Home Assistant
+  HwWxReading in[HW_WX_N];                 // the newest reading received from Home Assistant
+  HwWxReading ready[HW_WX_N];              // a settled reading held for the next minute while a newer one waits
   float staged[HW_WX_N] = {NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN};   // promoted at the last minute
   int64_t minute = INT64_MIN;              // the shared-clock minute `cur` belongs to
   HwWeather prev = HW_WX_CALM, cur = HW_WX_CALM;
 };
 inline HwWxState g_hw_wxs;
 
-// A reading from Home Assistant (halloween_weather.yaml's sensors).
-inline void hw_wx_in(HwWxField f, float v, double T) { g_hw_wxs.in[f] = {v, T}; }
+inline void hw_wx_advance(double T);
+// A reading from Home Assistant (halloween_weather.yaml's sensors). It first
+// brings the timeline up to its own arrival time, so a reading already due for
+// promotion is promoted whatever order this bulb's callbacks happen to run in;
+// and if the reading it replaces has already settled for the next minute,
+// that one is held back for it rather than lost.
+inline void hw_wx_in(HwWxField f, float v, double T) {
+  hw_wx_advance(T);
+  HwWxState &st = g_hw_wxs;
+  double cutoff = (double) (st.minute + 1) * HW_WX_PERIOD - HW_WX_SETTLE;
+  if (st.in[f].at <= cutoff && T > cutoff) st.ready[f] = st.in[f];
+  st.in[f] = {v, T};
+}
 
 inline HwWeather hw_wx_from(const float *s) {
   auto or_calm = [](float v, float calm) { return std::isnan(v) ? calm : v; };
@@ -540,8 +552,12 @@ inline void hw_wx_advance(double T) {
   if (st.minute != INT64_MIN && m <= st.minute) return;
   bool fresh = st.minute == INT64_MIN || m != st.minute + 1;   // just booted, or a gap: no history to blend from
   double tb = (double) m * HW_WX_PERIOD;
-  for (int f = 0; f < HW_WX_N; f++)
+  for (int f = 0; f < HW_WX_N; f++) {
+    // the newest reading that had settled by this minute's cutoff
     if (fresh || st.in[f].at <= tb - HW_WX_SETTLE) st.staged[f] = st.in[f].v;
+    else if (st.ready[f].at <= tb - HW_WX_SETTLE && st.ready[f].at > -1e17) st.staged[f] = st.ready[f].v;
+    st.ready[f] = HwWxReading();
+  }
   HwWeather now = hw_wx_from(st.staged);
   st.prev = fresh ? now : st.cur;
   st.cur = now;
@@ -580,7 +596,7 @@ inline double hw_wx_since(double T) {
 inline void hw_wx_tick(bool ha_connected, double T) {
   if (!ha_connected)
     for (int f = 0; f < HW_WX_N; f++)
-      if (!std::isnan(g_hw_wxs.in[f].v)) g_hw_wxs.in[f] = {NAN, T};
+      if (!std::isnan(g_hw_wxs.in[f].v)) hw_wx_in((HwWxField) f, NAN, T);
   hw_wx_advance(T);
 }
 

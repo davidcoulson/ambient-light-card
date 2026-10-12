@@ -312,20 +312,31 @@ static void test_weather_plumbing() {
   hw_wx_in(HW_WX_WIND, 20.0f, M + 120 - 3);                   // inside the 5 s settle window
   CHECK(hw_wx_at(M + 121).wind_mph == 12.0f, "a reading 3 s before the minute waits a minute more");
   CHECK(hw_wx_at(M + 181).wind_mph == 20.0f, "and applies at the next");
-  hw_wx_in(HW_WX_WIND, NAN, M + 200);
-  CHECK(!hw_wx_at(M + 241).on && hw_wx_at(M + 241).wind_mph == 0.0f, "an unknown wind reading falls back to calm");
-  hw_wx_in(HW_WX_WIND, 12.0f, M + 250);
-  hw_wx_tick(false, M + 260);                                  // Home Assistant goes away
-  CHECK(!hw_wx_at(M + 301).on && hw_wx_at(M + 301).dir_deg == 270.0f, "losing HA falls back to calm");
-  hw_wx_tick(true, M + 310);
-  CHECK(!hw_wx_at(M + 361).on, "and stays calm after reconnecting until HA sends fresh readings");
-  hw_wx_in(HW_WX_WIND, 9.0f, M + 370);
-  CHECK(hw_wx_at(M + 421).on && hw_wx_at(M + 421).wind_mph == 9.0f, "a fresh reading after reconnecting applies");
+  // a newer reading must not erase one that had settled for the coming minute,
+  // whichever order this bulb's callbacks run in
+  hw_wx_in(HW_WX_WIND, 14.0f, M + 190);                       // settled for M + 240
+  hw_wx_in(HW_WX_WIND, 16.0f, M + 238);                       // inside the cutoff: for M + 300
+  CHECK(hw_wx_at(M + 241).wind_mph == 14.0f, "a settled reading is held for its minute when a newer one arrives");
+  CHECK(hw_wx_at(M + 301).wind_mph == 16.0f, "and the newer one follows a minute later");
+  hw_wx_in(HW_WX_WIND, 7.0f, M + 320);                        // settled for M + 360
+  hw_wx_in(HW_WX_WIND, 8.0f, M + 360.1);                      // arrives just after the minute, before any frame
+  CHECK(hw_wx_at(M + 360.2).wind_mph == 7.0f, "a reading due at the minute is promoted even if the next one arrives first");
+  hw_wx_in(HW_WX_WIND, NAN, M + 380);
+  CHECK(!hw_wx_at(M + 421).on && hw_wx_at(M + 421).wind_mph == 0.0f, "an unknown wind reading falls back to calm");
+  hw_wx_in(HW_WX_WIND, 12.0f, M + 430);
+  hw_wx_tick(false, M + 440);                                  // Home Assistant goes away
+  CHECK(!hw_wx_at(M + 481).on && hw_wx_at(M + 481).dir_deg == 270.0f, "losing HA falls back to calm");
+  hw_wx_tick(true, M + 490);
+  CHECK(!hw_wx_at(M + 541).on, "and stays calm after reconnecting until HA sends fresh readings");
+  hw_wx_in(HW_WX_WIND, 9.0f, M + 550);
+  CHECK(hw_wx_at(M + 601).on && hw_wx_at(M + 601).wind_mph == 9.0f, "a fresh reading after reconnecting applies");
   hw_wx_set(HW_WX_CALM);
 }
 
 // Seven bulbs, each with its own weather state, fed by one Home Assistant
 // with a different delay to each (0 - 0.85 s), ticking at their own phases.
+// Some readings are followed by another just after the next minute turns, so
+// it reaches each bulb before that bulb has run a frame in the new minute.
 // The effects that read the weather must show identical frames on every bulb
 // except around two deliberate events - a bulb rebooting, and a reading sent
 // just inside the settle cutoff for some bulbs but not others - and even then
@@ -350,6 +361,13 @@ static void test_weather_timeline() {
     double cut = floor(t / HW_WX_PERIOD) * HW_WX_PERIOD + HW_WX_PERIOD - HW_WX_SETTLE;
     if (t > cut - 1.0 && t <= cut) sd.t = cut + 0.5;           // keep ordinary sends clear of the cutoff
     sends.push_back(sd);
+    if (k % 5 == 4) {                                          // a second reading just after the next minute turns, so
+      Send burst = sd;                                         // it reaches each bulb before that bulb's first frame
+      burst.t = floor(sd.t / HW_WX_PERIOD) * HW_WX_PERIOD + HW_WX_PERIOD + 0.1;   // of the minute
+      burst.v[HW_WX_WIND] = fmodf(sd.v[HW_WX_WIND] + 9.0f, 25.0f);
+      burst.v[HW_WX_DIR] = fmodf(sd.v[HW_WX_DIR] + 135.0f, 360.0f);
+      if (burst.t - sd.t > HW_WX_SETTLE) sends.push_back(burst);
+    }
     t = sd.t + 47.0 + sync_random(k, 9) * 26.0;
   }
   Send late = sends.back();                                    // the deliberate straddle: some bulbs before the cutoff, some after
