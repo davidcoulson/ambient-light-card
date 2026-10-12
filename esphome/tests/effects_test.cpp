@@ -10,7 +10,9 @@
 // Checks:
 //   - Fireworks Burst sparks start inside the intended speed and hue spread;
 //   - Pacifica (all four ring versions) draws the same frame for the same
-//     instant whatever frames the light drew before it.
+//     instant whatever frames the light drew before it;
+//   - Polyrhythm's threes and fours land together on every downbeat, at
+//     epoch-scale time.
 // ---------------------------------------------------------------------------
 
 #include <cmath>
@@ -168,12 +170,52 @@ static void check_pacifica(const char *name, RingFx a, RingFx b) {
     printf("pacifica: %s draws the same frame for the same instant\n", name);
 }
 
+// ---- Polyrhythm -----------------------------------------------------------------
+
+// Threes and fours over a 2.4 s bar: both voices strike at the top of every bar
+// (and the threes every 0.8 s, the fours every 0.6 s). At epoch scale a float
+// beat put each voice tens of seconds off, so they never met.
+static float poly_level(float offset, double t) {
+  FX_TEST_OFFSET = offset;
+  g_now = t;
+  red_output.level = green_output.level = blue_output.level = -1.0f;
+  polyrhythm::run(false);
+  // Threes are red-led, fours blue-led; out_rgb writes the level to that channel.
+  return offset < 0.5f ? red_output.level : blue_output.level;
+}
+static void test_polyrhythm() {
+  int bad = 0;
+  for (int k = 0; k < 200; k++) {
+    // Bar starts at epoch scale: n * 2.4 s with n a multiple of 5 is a whole second.
+    const double bar = (750000000.0 + 5.0 * k * 7919.0) * 2.4;
+    for (int voice = 0; voice < 2; voice++) {
+      const float off = voice == 0 ? 0.25f : 0.75f;
+      const double beat = voice == 0 ? 0.8 : 0.6;
+      const int beats = voice == 0 ? 3 : 4;
+      for (int j = 0; j < beats; j++) {
+        // Just after the strike: near full. Just before the next: down near the floor.
+        float on = poly_level(off, bar + j * beat + 0.002);
+        float off_beat = poly_level(off, bar + j * beat + beat * 0.9);
+        if (on < 0.9f || off_beat > 0.1f) {
+          if (bad++ < 5)
+            printf("  %s beat %d of bar %.1f: %.3f just after, %.3f just before the next\n",
+                   voice == 0 ? "threes" : "fours", j, bar, on, off_beat);
+        }
+      }
+    }
+  }
+  CHECK(bad == 0, "polyrhythm: %d beats off the bar grid", bad);
+  if (bad == 0)
+    printf("polyrhythm: threes and fours strike on the bar grid at epoch scale\n");
+}
+
 int main() {
   test_fireworks();
   check_pacifica("Pacifica", pacifica_a::run, pacifica_b::run);
   check_pacifica("Pacifica (Calm Lagoon)", lagoon_a::run, lagoon_b::run);
   check_pacifica("Pacifica (Storm)", storm_a::run, storm_b::run);
   check_pacifica("Pacifica (Deep Current)", deep_a::run, deep_b::run);
+  test_polyrhythm();
   if (failures) {
     printf("%d check(s) failed\n", failures);
     return 1;

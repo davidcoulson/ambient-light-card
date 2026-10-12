@@ -1476,13 +1476,18 @@ light:
           update_interval: 5ms
           lambda: |-
             double T = fx_seconds();
-            const float BAR = 2.4f;
+            const double BAR = 2.4;
 
             bool threes = sync_offset("${mac}") < 0.5f;
             float div = threes ? 3.0f : 4.0f;
-            float beat = BAR / div;                 // 0.8 s or 0.6 s
 
-            float w = (float) fmod(T, (double) beat);
+            // Fold into the bar in double first, then split it into beats. Taking
+            // fmod(T, beat) with a float beat (0.8f is 0.80000001) put each voice
+            // tens of seconds off at epoch scale, so the threes and the fours never
+            // met on the downbeat.
+            float in_bar = fx_wrap(T, BAR);         // 0 - 2.4 s, the same on every light
+            float beat = (float) BAR / div;         // 0.8 s or 0.6 s
+            float w = fmodf(in_bar, beat);
             float level = 0.04f + 0.96f * expf(-11.0f * w);
 
             // The two voices get their own colour so the pattern is readable.

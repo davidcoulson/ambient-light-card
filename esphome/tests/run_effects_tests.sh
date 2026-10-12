@@ -16,7 +16,9 @@ python3 "$here/extract_lambda.py" "$common/accent_light_addressable_effects.yaml
   "lagoon_a=Pacifica (Calm Lagoon)" "lagoon_b=Pacifica (Calm Lagoon)" \
   "storm_a=Pacifica (Storm)" "storm_b=Pacifica (Storm)" \
   "deep_a=Pacifica (Deep Current)" "deep_b=Pacifica (Deep Current)" > "$out/addressable.h"
-cp "$out/addressable.h" "$out/effects_extracted.h"
+python3 "$here/extract_lambda.py" "$common/accent_light_nonaddressable_effects.yaml" \
+  "polyrhythm=Polyrhythm" > "$out/pwm.h"
+cat "$out/addressable.h" "$out/pwm.h" > "$out/effects_extracted.h"
 
 ${CXX:-c++} -std=c++17 -O2 -Wall -Wextra -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable \
   -Wno-unused-but-set-variable -I"$common" -I"$out" "$here/effects_test.cpp" -o "$out/effects_test"
