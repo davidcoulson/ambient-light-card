@@ -114,23 +114,22 @@ light:
 
             // Whitecaps: drawn from the shared dice for this 60 ms window, so
             // every ring of the same size foams on the same LEDs.
-            static uint32_t last_whitecap = 0xFFFFFFFFu;
+            // Added on every frame of the window, not just the first: the frame
+            // above is redrawn from scratch each time, so foam added once showed
+            // for one frame only, and for how long depended on the light's timing.
             const uint32_t wc_b = sync_bucket(T, 0.06);
-            if (wc_b != last_whitecap) {
-              last_whitecap = wc_b;
-              uint32_t wc_k = 0;
-              int num_caps = n / 40 + 1;
-              for (int c = 0; c < num_caps; c++) {
-                int idx = sync_hash(wc_b, wc_k++) % n;
-                Color existing = it[idx].get();
-                uint16_t brightness = existing.r + existing.g + existing.b;
-                if (brightness > 90) {
-                  uint8_t foam = (uint8_t) fminf(255.0f, (40 + (sync_hash(wc_b, wc_k++) % 80)) * fx_accents());
-                  uint16_t nr = existing.r + foam; if (nr > 255) nr = 255;
-                  uint16_t ng = existing.g + foam; if (ng > 255) ng = 255;
-                  uint16_t nb = existing.b + foam; if (nb > 255) nb = 255;
-                  it[idx] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
-                }
+            uint32_t wc_k = 0;
+            int num_caps = n / 40 + 1;
+            for (int c = 0; c < num_caps; c++) {
+              int idx = sync_hash(wc_b, wc_k++) % n;
+              Color existing = it[idx].get();
+              uint16_t brightness = existing.r + existing.g + existing.b;
+              if (brightness > 90) {
+                uint8_t foam = (uint8_t) fminf(255.0f, (40 + (sync_hash(wc_b, wc_k++) % 80)) * fx_accents());
+                uint16_t nr = existing.r + foam; if (nr > 255) nr = 255;
+                uint16_t ng = existing.g + foam; if (ng > 255) ng = 255;
+                uint16_t nb = existing.b + foam; if (nb > 255) nb = 255;
+                it[idx] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
               }
             }
 
@@ -2281,23 +2280,22 @@ light:
             // TUNE: less frequent, softer whitecaps than the original
             // Whitecaps: drawn from the shared dice for this 120 ms window, so
             // every ring of the same size foams on the same LEDs.
-            static uint32_t last_whitecap = 0xFFFFFFFFu;
+            // Added on every frame of the window, not just the first: the frame
+            // above is redrawn from scratch each time, so foam added once showed
+            // for one frame only, and for how long depended on the light's timing.
             const uint32_t wc_b = sync_bucket(T, 0.12);
-            if (wc_b != last_whitecap) {
-              last_whitecap = wc_b;
-              uint32_t wc_k = 0;
-              int num_caps = n / 60 + 1;
-              for (int c = 0; c < num_caps; c++) {
-                int idx = sync_hash(wc_b, wc_k++) % n;
-                Color existing = it[idx].get();
-                uint16_t brightness = existing.r + existing.g + existing.b;
-                if (brightness > 160) {
-                  uint8_t foam = (uint8_t) fminf(255.0f, (20 + (sync_hash(wc_b, wc_k++) % 40)) * fx_accents());
-                  uint16_t nr = existing.r + foam; if (nr > 255) nr = 255;
-                  uint16_t ng = existing.g + foam; if (ng > 255) ng = 255;
-                  uint16_t nb = existing.b + foam; if (nb > 255) nb = 255;
-                  it[idx] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
-                }
+            uint32_t wc_k = 0;
+            int num_caps = n / 60 + 1;
+            for (int c = 0; c < num_caps; c++) {
+              int idx = sync_hash(wc_b, wc_k++) % n;
+              Color existing = it[idx].get();
+              uint16_t brightness = existing.r + existing.g + existing.b;
+              if (brightness > 160) {
+                uint8_t foam = (uint8_t) fminf(255.0f, (20 + (sync_hash(wc_b, wc_k++) % 40)) * fx_accents());
+                uint16_t nr = existing.r + foam; if (nr > 255) nr = 255;
+                uint16_t ng = existing.g + foam; if (ng > 255) ng = 255;
+                uint16_t nb = existing.b + foam; if (nb > 255) nb = 255;
+                it[idx] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
               }
             }
 
@@ -2400,23 +2398,22 @@ light:
             // TUNE: frequent, bright storm-foam whitecaps
             // Whitecaps: drawn from the shared dice for this 25 ms window, so
             // every ring of the same size foams on the same LEDs.
-            static uint32_t last_whitecap = 0xFFFFFFFFu;
+            // Added on every frame of the window, not just the first: the frame
+            // above is redrawn from scratch each time, so foam added once showed
+            // for one frame only, and for how long depended on the light's timing.
             const uint32_t wc_b = sync_bucket(T, 0.025);
-            if (wc_b != last_whitecap) {
-              last_whitecap = wc_b;
-              uint32_t wc_k = 0;
-              int num_caps = n / 15 + 1;
-              for (int c = 0; c < num_caps; c++) {
-                int idx = sync_hash(wc_b, wc_k++) % n;
-                Color existing = it[idx].get();
-                uint16_t brightness = existing.r + existing.g + existing.b;
-                if (brightness > 50) {
-                  uint8_t foam = (uint8_t) fminf(255.0f, (80 + (sync_hash(wc_b, wc_k++) % 140)) * fx_accents());
-                  uint16_t nr = existing.r + foam; if (nr > 255) nr = 255;
-                  uint16_t ng = existing.g + foam; if (ng > 255) ng = 255;
-                  uint16_t nb = existing.b + foam; if (nb > 255) nb = 255;
-                  it[idx] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
-                }
+            uint32_t wc_k = 0;
+            int num_caps = n / 15 + 1;
+            for (int c = 0; c < num_caps; c++) {
+              int idx = sync_hash(wc_b, wc_k++) % n;
+              Color existing = it[idx].get();
+              uint16_t brightness = existing.r + existing.g + existing.b;
+              if (brightness > 50) {
+                uint8_t foam = (uint8_t) fminf(255.0f, (80 + (sync_hash(wc_b, wc_k++) % 140)) * fx_accents());
+                uint16_t nr = existing.r + foam; if (nr > 255) nr = 255;
+                uint16_t ng = existing.g + foam; if (ng > 255) ng = 255;
+                uint16_t nb = existing.b + foam; if (nb > 255) nb = 255;
+                it[idx] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
               }
             }
 
@@ -2518,23 +2515,22 @@ light:
             // TUNE: rare, dim whitecaps - deep water doesn't get bright foam
             // Whitecaps: drawn from the shared dice for this 200 ms window, so
             // every ring of the same size foams on the same LEDs.
-            static uint32_t last_whitecap = 0xFFFFFFFFu;
+            // Added on every frame of the window, not just the first: the frame
+            // above is redrawn from scratch each time, so foam added once showed
+            // for one frame only, and for how long depended on the light's timing.
             const uint32_t wc_b = sync_bucket(T, 0.2);
-            if (wc_b != last_whitecap) {
-              last_whitecap = wc_b;
-              uint32_t wc_k = 0;
-              int num_caps = 1;
-              for (int c = 0; c < num_caps; c++) {
-                int idx = sync_hash(wc_b, wc_k++) % n;
-                Color existing = it[idx].get();
-                uint16_t brightness = existing.r + existing.g + existing.b;
-                if (brightness > 140) {
-                  uint8_t foam = (uint8_t) fminf(255.0f, (15 + (sync_hash(wc_b, wc_k++) % 30)) * fx_accents());
-                  uint16_t nr = existing.r + foam; if (nr > 255) nr = 255;
-                  uint16_t ng = existing.g + foam; if (ng > 255) ng = 255;
-                  uint16_t nb = existing.b + foam; if (nb > 255) nb = 255;
-                  it[idx] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
-                }
+            uint32_t wc_k = 0;
+            int num_caps = 1;
+            for (int c = 0; c < num_caps; c++) {
+              int idx = sync_hash(wc_b, wc_k++) % n;
+              Color existing = it[idx].get();
+              uint16_t brightness = existing.r + existing.g + existing.b;
+              if (brightness > 140) {
+                uint8_t foam = (uint8_t) fminf(255.0f, (15 + (sync_hash(wc_b, wc_k++) % 30)) * fx_accents());
+                uint16_t nr = existing.r + foam; if (nr > 255) nr = 255;
+                uint16_t ng = existing.g + foam; if (ng > 255) ng = 255;
+                uint16_t nb = existing.b + foam; if (nb > 255) nb = 255;
+                it[idx] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
               }
             }
 

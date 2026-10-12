@@ -8,7 +8,9 @@
 // lambdas are the YAML text as it is; nothing is copied by hand.
 //
 // Checks:
-//   - Fireworks Burst sparks start inside the intended speed and hue spread.
+//   - Fireworks Burst sparks start inside the intended speed and hue spread;
+//   - Pacifica (all four ring versions) draws the same frame for the same
+//     instant whatever frames the light drew before it.
 // ---------------------------------------------------------------------------
 
 #include <cmath>
@@ -138,8 +140,40 @@ static void test_fireworks() {
     printf("fireworks: %d sparks, all inside the intended speed and hue spread\n", vels);
 }
 
+// ---- Pacifica -------------------------------------------------------------------
+
+// The frame at an instant must not depend on which frames the light drew before
+// it. Whitecaps used to be added only on a light's FIRST frame in each window,
+// so a light that had just drawn one showed no foam where another showed it.
+typedef void (*RingFx)(FxIt &, Color, bool);
+static void check_pacifica(const char *name, RingFx a, RingFx b) {
+  int diffs = 0;
+  for (int k = 0; k < 400; k++) {
+    const double t = 1.8e9 + k * 0.37;
+    FxIt ra(36), rb(36), fresh(36);
+    // Light A draws 10 ms earlier (same whitecap window, almost always), then at t.
+    g_now = t - 0.010;
+    a(ra, Color(), false);
+    g_now = t;
+    a(ra, Color(), false);
+    // Light B draws only at t.
+    b(rb, Color(), false);
+    // And B again at t: a repeat of the same instant must also match.
+    b(fresh, Color(), false);
+    if (!(ra.px == rb.px) || !(fresh.px == rb.px))
+      diffs++;
+  }
+  CHECK(diffs == 0, "%s: %d of 400 instants drew a different frame depending on the frame before", name, diffs);
+  if (diffs == 0)
+    printf("pacifica: %s draws the same frame for the same instant\n", name);
+}
+
 int main() {
   test_fireworks();
+  check_pacifica("Pacifica", pacifica_a::run, pacifica_b::run);
+  check_pacifica("Pacifica (Calm Lagoon)", lagoon_a::run, lagoon_b::run);
+  check_pacifica("Pacifica (Storm)", storm_a::run, storm_b::run);
+  check_pacifica("Pacifica (Deep Current)", deep_a::run, deep_b::run);
   if (failures) {
     printf("%d check(s) failed\n", failures);
     return 1;
