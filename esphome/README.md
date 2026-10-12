@@ -163,7 +163,8 @@ flicker and pulses keep their night-time swing and no flashes are added; floors 
 Ambient light comes from the sun (`sun_latitude` / `sun_longitude`) or, with
 `halloween_weather.yaml`, from measured light (`wx_lux`, `wx_lux2`: none under 5 lx, full above
 400 lx), which ends the day early on an overcast evening. It is one call, `hw_lift()` in
-`hw_finish()`, plus the 10 s interval that sets `g_hw_amb`.
+`hw_finish()`, plus `hw_frame()` at the start of each effect, which works the ambient light out
+from that frame's shared-clock time – so neighbouring bulbs always get the same lift.
 
 `halloween_weather.yaml` reads a weather station through Home Assistant (the defaults are
 `sensor.tempest_*` names; set your station's entities with the `wx_*` substitutions, in the units

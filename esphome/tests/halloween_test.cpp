@@ -272,14 +272,17 @@ static void test_lift() {
   CHECK(hw_ambient_from_sun(-10.0) == 0.0f && hw_ambient_from_sun(10.0) == 1.0f, "sun ambient: 0 in the dark, 1 in daylight");
   CHECK(hw_ambient_from_lux(1.0f) == 0.0f && hw_ambient_from_lux(1000.0f) == 1.0f, "lux ambient: 0 at 1 lx, 1 at 1000 lx");
   hw_wx_set(HW_WX_CALM);
-  hw_ambient_tick(T0, LAT, LON);
+  hw_frame(T0, LAT, LON);
   CHECK(g_hw_amb == 0.0f, "8 pm on Oct 31: no lift");
-  hw_ambient_tick(T_LIGHTS_ON, LAT, LON);
+  hw_frame(T_LIGHTS_ON, LAT, LON);
   CHECK(g_hw_amb > 0.9f, "5:45 pm on Oct 15: full lift (got %.2f)", g_hw_amb);
+  float a1 = hw_ambient_at(T_LIGHTS_ON + 3600.0, LAT, LON), a2 = hw_ambient_at(T_LIGHTS_ON + 3600.4, LAT, LON);
+  CHECK(fabsf(a1 - a2) < 0.01f && fabsf(hw_ambient_at(T_LIGHTS_ON + 3600.0, LAT, LON) - a1) == 0.0f,
+        "the sun's ambient is smooth and the same for the same time");
   HwWeather dim = HW_WX_CALM;
   dim.lux = 2.0f;
   hw_wx_set(dim);
-  hw_ambient_tick(T_LIGHTS_ON, LAT, LON);
+  hw_frame(T_LIGHTS_ON, LAT, LON);
   CHECK(g_hw_amb == 0.0f, "a measured 2 lx (heavy overcast) beats the sun: no lift");
   hw_wx_set(HW_WX_CALM);
   g_hw_amb = 0.0f;
@@ -340,7 +343,8 @@ static void test_weather_plumbing() {
 // The effects that read the weather must show identical frames on every bulb
 // except around two deliberate events - a bulb rebooting, and a reading sent
 // just inside the settle cutoff for some bulbs but not others - and even then
-// for no more than two weather minutes.
+// for no more than two weather minutes. The lift's ambient (measured light,
+// sometimes lost so it falls back to the sun) is compared the same way.
 static void test_weather_timeline() {
   const int N = 7;
   const float skew[N] = {0.0f, 0.12f, 0.25f, 0.40f, 0.55f, 0.70f, 0.85f};
@@ -356,7 +360,8 @@ static void test_weather_timeline() {
     sd.t = t;
     float v[HW_WX_N] = {sync_random(k, 1) * 25.0f, 10.0f + sync_random(k, 2) * 30.0f, sync_random(k, 3) * 5.0f,
                         sync_random(k, 4) * 360.0f, sync_random(k, 5) < 0.3f ? sync_random(k, 6) * 0.4f : 0.0f,
-                        35.0f + sync_random(k, 7) * 30.0f, 30.0f + sync_random(k, 8) * 20.0f, NAN, NAN};
+                        35.0f + sync_random(k, 7) * 30.0f, 30.0f + sync_random(k, 8) * 20.0f,
+                        sync_random(k, 10) < 0.15f ? NAN : powf(10.0f, sync_random(k, 11) * 3.0f), NAN};   // lux, sometimes lost
     memcpy(sd.v, v, sizeof v);
     double cut = floor(t / HW_WX_PERIOD) * HW_WX_PERIOD + HW_WX_PERIOD - HW_WX_SETTLE;
     if (t > cut - 1.0 && t <= cut) sd.t = cut + 0.5;           // keep ordinary sends clear of the cutoff
@@ -396,7 +401,7 @@ static void test_weather_timeline() {
       std::sort(sends.begin() + (long) next[5] + 1, sends.end(), [](const Send &a, const Send &b) { return a.t < b.t; });
       next[5] = cur + 1;
     }
-    HwColor ref[6];
+    HwColor ref[7];
     for (int i = 0; i < N; i++) {
       g_hw_wxs = st[i];
       while (next[i] < sends.size() && sends[next[i]].t + skew[i] <= t) {
@@ -406,12 +411,14 @@ static void test_weather_timeline() {
         next[i]++;
       }
       while (last_tick[i] + 1.0 <= t) { last_tick[i] += 1.0; hw_wx_tick(true, last_tick[i]); }
-      HwColor c[6] = {hw_mist(t, g2), hw_mist(t, d1), hw_season(t, g2), hw_season(t, d1), hw_windcandles(t, g2),
-                      hw_windcandles(t, d1)};
+      hw_frame(t, LAT, LON);                                     // the lift's ambient, as each lambda sets it
+      float amb = g_hw_amb;
+      HwColor c[7] = {hw_mist(t, g2), hw_mist(t, d1), hw_season(t, g2), hw_season(t, d1), hw_windcandles(t, g2),
+                      hw_windcandles(t, d1), {amb, 0.0f, 0.0f, 0.0f, 0.0f}};
       st[i] = g_hw_wxs;
       if (i == 0) { memcpy(ref, c, sizeof c); continue; }
       bool same = true;
-      for (int k = 0; k < 6; k++) {
+      for (int k = 0; k < 7; k++) {
         const float a[5] = {c[k].r, c[k].g, c[k].b, c[k].ww, c[k].cw}, r[5] = {ref[k].r, ref[k].g, ref[k].b, ref[k].ww, ref[k].cw};
         for (int ch = 0; ch < 5; ch++) if (fabsf(a[ch] - r[ch]) > 1e-4f) same = false;
       }
@@ -425,6 +432,7 @@ static void test_weather_timeline() {
   }
   g_hw_wxs = HwWxState();
   hw_wx_set(HW_WX_CALM);
+  g_hw_amb = 0.0f;
   printf("weather timeline: %zu readings to 7 bulbs over 45 min; bulb-seconds out of step: %.1f around the reboot and the straddle, %.1f elsewhere\n",
          sends.size(), diverged - outside, outside);
   CHECK(outside == 0.0, "bulbs disagreed about the weather outside the reboot and straddle windows (%.1f bulb-s)", outside);

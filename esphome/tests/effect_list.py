@@ -17,7 +17,7 @@ HALLOWEEN_EFFECTS = {
     "Heartbeat of the House", "Trick-or-Treat Swap", "Turning of the Season", "Witching Hour",
     "Graveyard Mist", "Wind-Blown Candles",
 }
-HALLOWEEN_MARKERS = re.compile(r"halloween_fx\.h|front_yard_map\.h|\bhw_wx_[a-z0-9_]+|hw_ambient_tick")
+HALLOWEEN_MARKERS = re.compile(r"halloween_fx\.h|front_yard_map\.h|\bhw_wx_[a-z0-9_]+|hw_frame\(")
 
 
 def effect_names(text):

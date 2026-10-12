@@ -176,10 +176,10 @@ inline HwColor hw_finish_base(const HwColor &c, const HwColor &floor) {
 // HW_LIFT, the hue is kept, and the power cap still holds. Because the amount
 // added does not follow the frame's ups and downs, flicker and pulses keep
 // exactly their night-time swing, so the lift adds no flashes; floors only
-// rise. g_hw_amb (0 dark .. 1 daylight) is set every 10 s by
-// halloween_effects.yaml, from measured light when halloween_weather.yaml has
-// a lux reading, else from the sun's elevation. After dark it is 0 and every
-// effect runs exactly as designed.
+// rise. g_hw_amb (0 dark .. 1 daylight) is set at the start of every frame by
+// hw_frame(), from measured light when halloween_weather.yaml has a lux
+// reading, else from the sun's elevation. After dark it is 0 and every effect
+// runs exactly as designed.
 // ---------------------------------------------------------------------------
 constexpr float HW_LIFT = 0.25f;
 inline float g_hw_amb = 0.0f;
@@ -807,13 +807,29 @@ inline float hw_ambient_from_lux(float lux) {
   float a = clamp01((log10f(fmaxf(lux, 0.01f)) - 0.7f) / 1.9f);
   return a * a * (3.0f - 2.0f * a);
 }
-// Called every second by halloween_effects.yaml with the unscaled clock. The
-// sun is taken at the start of each 10 s bucket, so bulbs that tick at
-// different moments within it agree; measured light comes eased through the
-// weather timeline.
-inline void hw_ambient_tick(double T, double lat, double lon) {
-  float lux = hw_wx_at(T).lux;
-  g_hw_amb = std::isnan(lux) ? hw_ambient_from_sun(hw_sun_elevation(floor(T / 10.0) * 10.0, lat, lon))
-                             : hw_ambient_from_lux(lux);
+// The sun's elevation at T, worked out at the ends of each 10 s bucket and
+// interpolated: smooth, cheap enough to call every frame, and a pure function
+// of T (the cache only remembers the current bucket).
+inline double hw_sun_elevation_smooth(double T, double lat, double lon) {
+  static double key = NAN, klat = NAN, klon = NAN, e0 = 0.0, e1 = 0.0;
+  double b = floor(T / 10.0) * 10.0;
+  if (b != key || lat != klat || lon != klon) {
+    e0 = hw_sun_elevation(b, lat, lon);
+    e1 = hw_sun_elevation(b + 10.0, lat, lon);
+    key = b;
+    klat = lat;
+    klon = lon;
+  }
+  return e0 + (e1 - e0) * (T - b) / 10.0;
 }
+// How light it is outside at T, for the daylight lift: measured light eased
+// through the weather timeline when there is a reading, else the sun.
+inline float hw_ambient_at(double T, double lat, double lon) {
+  float lux = hw_wx_at(T).lux;
+  return std::isnan(lux) ? hw_ambient_from_sun(hw_sun_elevation_smooth(T, lat, lon)) : hw_ambient_from_lux(lux);
+}
+// Every Halloween lambda calls this first, with the UNSCALED clock: the lift a
+// frame gets then depends only on the frame's shared-clock time, not on when
+// this bulb last ran some periodic task.
+inline void hw_frame(double T, double lat, double lon) { g_hw_amb = hw_ambient_at(T, lat, lon); }
 

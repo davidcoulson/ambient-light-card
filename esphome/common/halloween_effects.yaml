@@ -59,13 +59,6 @@ esphome:
     - halloween_fx.h
     - ${yard_map}
 
-# The daylight lift (halloween_fx.h): how light it is outside, every second,
-# from measured light if halloween_weather.yaml has it, else from the sun.
-interval:
-  - interval: 1s
-    then:
-      - lambda: hw_ambient_tick(sync_seconds(), ${sun_latitude}, ${sun_longitude});
-
 light:
   - platform: rgbww
     id: !extend accent_light
@@ -80,6 +73,7 @@ light:
           update_interval: 40ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
             hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
                    id(warm_output), id(cold_output), hw_jack(hw_seconds(), me));
 
@@ -93,6 +87,7 @@ light:
           update_interval: 20ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
             hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
                    id(warm_output), id(cold_output), hw_lightning(hw_seconds(), me));
 
@@ -105,6 +100,7 @@ light:
           update_interval: 50ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
             hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
                    id(warm_output), id(cold_output), hw_cauldron(hw_seconds(), me));
 
@@ -117,6 +113,7 @@ light:
           update_interval: 100ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
             hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
                    id(warm_output), id(cold_output), hw_moon(hw_seconds(), me));
 
@@ -129,6 +126,7 @@ light:
           update_interval: 20ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
             hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
                    id(warm_output), id(cold_output), hw_heart(hw_seconds(), me));
 
@@ -141,6 +139,7 @@ light:
           update_interval: 50ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
             hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
                    id(warm_output), id(cold_output), hw_swap(hw_seconds(), me));
 
@@ -154,6 +153,7 @@ light:
           update_interval: 100ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
             hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
                    id(warm_output), id(cold_output), hw_season(sync_seconds(), me));
 
@@ -166,6 +166,7 @@ light:
           update_interval: 100ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
             hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
                    id(warm_output), id(cold_output),
                    hw_witching(sync_seconds(), me, ${sun_latitude}, ${sun_longitude}));
@@ -179,6 +180,7 @@ light:
           update_interval: 100ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
             hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
                    id(warm_output), id(cold_output), hw_mist(sync_seconds(), me));
 
@@ -192,5 +194,6 @@ light:
           update_interval: 40ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
             hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
                    id(warm_output), id(cold_output), hw_windcandles(sync_seconds(), me));
