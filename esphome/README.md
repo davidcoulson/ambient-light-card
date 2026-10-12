@@ -20,7 +20,8 @@ Tested on ESP32-C3 PWM RGB+CW/WW bulbs and addressable rings (Lumary RGBAI, 36 o
 | `fx2d_render.h` | Shared 2D Pacifica and Aurora renderers. |
 | `basement_map.h`, `home_theater_map.h` | **Example** room maps – replace with your own (see below). |
 | `accent_fx_controls.yaml` | Imports the room's Speed and Intensity helpers from Home Assistant. |
-| `halloween_effects.yaml` | Four Halloween effects for a row of outdoor RGBCW bulbs along a front walk (`platform: rgbww`). |
+| `halloween_effects.yaml` | Ten Halloween effects for a row of outdoor RGBCW bulbs along a front walk (`platform: rgbww`). |
+| `halloween_weather.yaml` | Optional: live weather from Home Assistant for the Halloween effects. |
 | `halloween_fx.h`, `front_yard_map.h` | Their maths, and an **example** yard map – replace with your own. |
 | `ntp.yaml` | SNTP setup plus two health sensors: *NTP Sync* and *Last NTP Sync*. |
 
@@ -109,9 +110,10 @@ and *Calibrate: north + east* – help you find and check a ring's rotation.
 
 ## Halloween effects for outdoor bulbs
 
-`halloween_effects.yaml` adds four effects for RGBCW bulbs placed along the route visitors walk
+`halloween_effects.yaml` adds ten effects for RGBCW bulbs placed along the route visitors walk
 from the street to the front door: *Jack-o'-Lantern Row*, *Lightning Over the House*,
-*Witch's Cauldron* and *Blood Moon*. They mix the colour and white channels in one frame (pumpkin
+*Witch's Cauldron*, *Blood Moon*, *Heartbeat of the House*, *Trick-or-Treat Swap*,
+*Turning of the Season*, *Witching Hour*, *Graveyard Mist* and *Wind-Blown Candles*. They mix the colour and white channels in one frame (pumpkin
 is warm white plus red), so they need an `rgbww` light with all five outputs.
 
 Two rules hold for all of them, and the host tests check both:
@@ -122,6 +124,13 @@ Two rules hold for all of them, and the host tests check both:
   counted the WCAG 2.3.1 way (the limit there is 3). Occasional events – a candle guttering, a
   bubble – take turns within a group so neighbours never fire in the same second. The room Speed
   helper can slow these effects but never speed them up, and Intensity is not used.
+
+Three of them are made for running every evening of a month: *Turning of the Season* moves from
+harvest gold on October 1 to pumpkin and violet on the 31st, *Witching Hour* moves from amber at
+lights-on (an hour before sunset) through violet and teal to red at 11 pm, and *Graveyard Mist*
+picks a new palette, direction and pace each night. They read the local date and hour, so they
+use the unscaled clock and need the time component's timezone to be right; *Witching Hour* also
+needs `sun_latitude` / `sun_longitude` for its sunset (the default is New York City).
 
 Opt a light in from its device file, next to its own package. A light that does not include the
 file is unchanged:
@@ -141,7 +150,20 @@ packages:
       - path: esphome/common/halloween_effects.yaml
         vars:
           yard_map: common/my_front_yard_map.h   # your copy of front_yard_map.h
+          sun_latitude: "<your latitude>"            # e.g. "40.7"
+          sun_longitude: "<your longitude>"          # e.g. "-74.0"
+      - esphome/common/halloween_weather.yaml        # optional
 ```
+
+`halloween_weather.yaml` reads a weather station through Home Assistant (the defaults are
+`sensor.tempest_*` names; set your station's entities with the `wx_*` substitutions, in the units
+HA reports in US units: mph, degrees, in/h, °F). Real gusts bend *Wind-Blown Candles* in turn
+from the windward side; the wind steers which way *Turning of the Season* rolls and *Graveyard
+Mist* drifts; rain, cold and air near the dew point tint the candles. Readings reach each bulb a
+moment apart, so they only set slow parameters – rounded, latched per cycle or eased over ~10 s –
+and never time a beat. A reading that is unavailable or unknown, or a lost API connection, falls
+back to calm defaults. Without the package everything still compiles and runs, as on a still, dry
+night.
 
 The yard map is a table of `{name, group, x, y, path}` in feet: the group says which part a light
 plays (S – the street bed, G – the driveway wall, D – the front door), x/y place it, and `path` is
@@ -154,8 +176,11 @@ other three use the groups.
 
 `tests/run_halloween_tests.sh` builds `tests/halloween_test.cpp` against the real headers and
 checks, on every light of the example map: same time and light → same frame; the floor holds;
-flashes stay at or under 1 per second per light and per group; an unmapped light still runs;
-Speed slows but never speeds up; and `hw_out()` scales by brightness like `out_rgb()`. With node
+flashes stay at or under 1 per second per light and per group – at 8 pm, at lights-on, and in a
+simulated storm for the weather-driven effects; an unmapped light still runs; Speed slows but never
+speeds up; `hw_out()` scales by brightness like `out_rgb()`; an evening keeps its date past
+midnight and sunset lands within two minutes; and the weather falls back to calm on unknown
+readings or a lost API. With node
 installed it then compares the C++ frame by frame against `tests/halloween_reference.js`, the
 same maths in JavaScript that drives the effects' preview page.
 

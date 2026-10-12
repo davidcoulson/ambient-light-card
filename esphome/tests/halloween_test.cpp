@@ -9,14 +9,22 @@
 //   - flashes stay at or under 1 per second per light and per group;
 //   - a light that is not on the map still runs, as a driveway light;
 //   - Speed can slow the effect clock but not speed it up;
-//   - hw_out() applies the brightness slider like out_rgb().
+//   - hw_out() applies the brightness slider like out_rgb();
+//   - the calendar, sunset and weather plumbing behave (evening rollover,
+//     calm fallbacks on NaN or a lost API);
+// and the flash and floor checks also run at lights-on (daylight, for the
+// effects that follow the clock) and in a simulated storm for the effects
+// that read the weather.
+// Local time is pinned to US Eastern so the C++ and the reference agree.
 // `--dump` prints frames on a time grid for halloween_parity.js, which checks
 // the C++ against the reference model the preview page runs.
 // ---------------------------------------------------------------------------
 
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <ctime>
 
 #include <vector>
 #include <algorithm>
@@ -41,6 +49,12 @@ static int failures = 0;
 
 typedef HwColor (*EffectFn)(double, const HwSelf &);
 static HwColor jack_fn(double T, const HwSelf &b) { return hw_jack(T, b); }
+// The place the reference model uses (tests/halloween_reference.js SUN): New York City.
+static const double LAT = 40.7, LON = -74.0;
+static HwColor witching_fn(double T, const HwSelf &b) { return hw_witching(T, b, LAT, LON); }
+
+// A simulated storm: 30 mph gusting 45, a downpour, at the dew point.
+static const HwWeather STORM = {true, 30.0f, 45.0f, 5.0f, 225.0f, 0.6f, 38.0f, 37.0f};
 
 struct Effect {
   const char *key, *name;
@@ -52,7 +66,19 @@ static const Effect EFFECTS[] = {
     {"lightning", "Lightning Over the House", hw_lightning, HW_STORM_FLOOR},
     {"cauldron", "Witch's Cauldron", hw_cauldron, HW_BREW_FLOOR},
     {"moon", "Blood Moon", hw_moon, HW_MOON_FLOOR},
+    {"heart", "Heartbeat of the House", hw_heart, HW_BLOOD_FLOOR},
+    {"swap", "Trick-or-Treat Swap", hw_swap, HW_TREAT_FLOOR},
+    {"season", "Turning of the Season", hw_season, HW_EMBER},
+    {"witching", "Witching Hour", witching_fn, HW_NIGHT_FLOOR},
+    {"mist", "Graveyard Mist", hw_mist, HW_NIGHT_FLOOR},
+    {"windcandles", "Wind-Blown Candles", hw_windcandles, HW_EMBER},
 };
+static bool reads_weather(const Effect &fx) {
+  return !strcmp(fx.key, "windcandles") || !strcmp(fx.key, "mist") || !strcmp(fx.key, "season");
+}
+static bool follows_clock(const Effect &fx) {
+  return !strcmp(fx.key, "season") || !strcmp(fx.key, "witching") || !strcmp(fx.key, "mist");
+}
 
 // Light output of each channel relative to warm white at full, as linear sRGB
 // - a typical RGBCW bulb. Same table as tests/halloween_reference.js.
@@ -157,8 +183,10 @@ static std::vector<HwSelf> yard() {
   return v;
 }
 
-// An October evening in 2026, 20:00 EDT.
+// An October evening in 2026, 20:00 EDT, and an evening two weeks earlier in daylight (17:45 EDT,
+// before sunset, when the lights would already be on).
 static const double T0 = 1793491200.0;
+static const double T_LIGHTS_ON = 1792100700.0;
 
 static void test_identity() {
   auto lights = yard();
@@ -189,18 +217,62 @@ static void test_deterministic() {
   }
 }
 
+static void check_window(const Effect &fx, const std::vector<HwSelf> &lights, double t0, const char *when) {
+  FlashResult r = flash_check(fx, lights, 1800.0, 0.01, t0);
+  printf("%-26s %-18s %6d %6d %6d %8.3f\n", fx.name, when, r.bulb, r.group, r.red, r.min_lum);
+  CHECK(r.floor_ok, "%s (%s): a channel fell under the effect's floor", fx.key, when);
+  CHECK(r.min_lum >= 0.03, "%s (%s): luminance %.3f is under the 3 %% floor", fx.key, when, r.min_lum);
+  CHECK(r.bulb <= 1 && r.group <= 1 && r.red <= 1, "%s (%s): %d/%d/%d flashes per second (bulb/group/red), target 1",
+        fx.key, when, r.bulb, r.group, r.red);
+}
+
 static void test_floor_and_flashes() {
   auto lights = yard();
   lights.push_back(hw_me("", "a1b2c3"));          // and an unmapped light
-  printf("%-26s %6s %6s %6s %8s\n", "effect (30 min, 10 ms)", "bulb/s", "group/s", "red/s", "min lum");
+  printf("%-26s %-18s %6s %6s %6s %8s\n", "effect (30 min, 10 ms)", "when", "bulb/s", "group/s", "red/s", "min lum");
   for (const Effect &fx : EFFECTS) {
-    FlashResult r = flash_check(fx, lights, 1800.0, 0.01, T0);
-    printf("%-26s %6d %6d %6d %8.3f\n", fx.name, r.bulb, r.group, r.red, r.min_lum);
-    CHECK(r.floor_ok, "%s: a channel fell under the effect's floor", fx.key);
-    CHECK(r.min_lum >= 0.03, "%s: luminance %.3f is under the 3 %% floor", fx.key, r.min_lum);
-    CHECK(r.bulb <= 1 && r.group <= 1 && r.red <= 1, "%s: %d/%d/%d flashes per second (bulb/group/red), target 1",
-          fx.key, r.bulb, r.group, r.red);
+    g_hw_wx = HW_WX_CALM;
+    check_window(fx, lights, T0, "Oct 31, 8 pm");
+    if (follows_clock(fx)) check_window(fx, lights, T_LIGHTS_ON, "Oct 15, 5:45 pm");
+    if (reads_weather(fx)) {
+      g_hw_wx = STORM;
+      check_window(fx, lights, T0, "Oct 31, storm");
+      g_hw_wx = HW_WX_CALM;
+    }
   }
+}
+
+static void test_calendar_and_sun() {
+  // 00:30 on Oct 16 still belongs to the evening of Oct 15
+  HwEvening a = hw_evening(T_LIGHTS_ON), b = hw_evening(T_LIGHTS_ON + 6.75 * 3600);
+  CHECK(a.oct == 15 && b.oct == 15 && a.night == b.night, "an evening keeps its date past midnight");
+  CHECK(fabs(b.hour - 24.5) < 1e-6, "00:30 is hour 24.5 of the evening (got %.4f)", b.hour);
+  CHECK(hw_evening(T0).oct == 31 && hw_evening(T0 - 86400.0 * 40).oct == 1, "October dates, clamped outside October");
+  // Sunset in New York City (almanac): 6:38 pm on Oct 1, 5:53 pm on Oct 31, EDT
+  double s1 = hw_sunset_hour(T0 - 30 * 86400.0, LAT, LON), s31 = hw_sunset_hour(T0, LAT, LON);
+  CHECK(fabs(s1 - (18 + 38 / 60.0)) < 2 / 60.0, "Oct 1 sunset %.3f h, expected ~18.63", s1);
+  CHECK(fabs(s31 - (17 + 53 / 60.0)) < 2 / 60.0, "Oct 31 sunset %.3f h, expected ~17.88", s31);
+}
+
+static void test_weather_plumbing() {
+  g_hw_wx_in = HwWeatherIn();
+  g_hw_wx = HW_WX_CALM;
+  hw_wx_tick(true, 1.0f);
+  CHECK(!g_hw_wx.on && g_hw_wx.wind_mph == 0.0f, "no readings yet: calm, weather off");
+  g_hw_wx_in.wind = 12.0f; g_hw_wx_in.dir = 200.0f; g_hw_wx_in.temp = 40.0f;
+  hw_wx_tick(true, 1.0f);
+  CHECK(g_hw_wx.on && g_hw_wx.wind_mph == 12.0f && g_hw_wx.dir_deg == 200.0f, "wind applies at once");
+  CHECK(g_hw_wx.temp_f < 50.0f && g_hw_wx.temp_f > 47.0f, "temperature eases in (got %.2f)", g_hw_wx.temp_f);
+  for (int k = 0; k < 120; k++) hw_wx_tick(true, 1.0f);
+  CHECK(fabsf(g_hw_wx.temp_f - 40.0f) < 0.01f, "and arrives");
+  g_hw_wx_in.wind = NAN;
+  hw_wx_tick(true, 1.0f);
+  CHECK(!g_hw_wx.on && g_hw_wx.wind_mph == 0.0f, "an unknown wind reading falls back to calm");
+  g_hw_wx_in.wind = 12.0f;
+  hw_wx_tick(false, 1.0f);
+  CHECK(!g_hw_wx.on && g_hw_wx.wind_mph == 0.0f && g_hw_wx.dir_deg == 270.0f, "a lost API falls back to calm");
+  g_hw_wx_in = HwWeatherIn();
+  g_hw_wx = HW_WX_CALM;
 }
 
 static void test_speed() {
@@ -246,16 +318,25 @@ static void test_out() {
 static void dump() {
   auto lights = yard();
   printf("effect,light,t,r,g,b,ww,cw\n");
-  for (const Effect &fx : EFFECTS)
-    for (int i = 0; i < YARD_N; i++)
-      for (int k = 0; k < 4000; k++) {
-        double t = T0 + k * 0.1371;
-        HwColor c = fx.fn(t, lights[i]);
-        printf("%s,%s,%.4f,%.6f,%.6f,%.6f,%.6f,%.6f\n", fx.key, YARD_MAP[i].name, t, c.r, c.g, c.b, c.ww, c.cw);
-      }
+  for (int storm = 0; storm < 2; storm++)
+    for (const Effect &fx : EFFECTS) {
+      if (storm && !reads_weather(fx)) continue;
+      g_hw_wx = storm ? STORM : HW_WX_CALM;
+      double base = follows_clock(fx) ? T_LIGHTS_ON : T0;
+      for (int i = 0; i < YARD_N; i++)
+        for (int k = 0; k < 4000; k++) {
+          double t = base + k * 1.3719;
+          HwColor c = fx.fn(t, lights[i]);
+          printf("%s%s,%s,%.4f,%.6f,%.6f,%.6f,%.6f,%.6f\n", fx.key, storm ? "@storm" : "", YARD_MAP[i].name, t, c.r, c.g,
+                 c.b, c.ww, c.cw);
+        }
+    }
+  g_hw_wx = HW_WX_CALM;
 }
 
 int main(int argc, char **argv) {
+  setenv("TZ", "EST5EDT,M3.2.0,M11.1.0", 1);   // US Eastern, as halloween_parity.js runs
+  tzset();
   if (argc > 1 && strcmp(argv[1], "--dump") == 0) {
     dump();
     return 0;
@@ -264,6 +345,8 @@ int main(int argc, char **argv) {
   test_deterministic();
   test_speed();
   test_out();
+  test_calendar_and_sun();
+  test_weather_plumbing();
   test_floor_and_flashes();
   if (failures) {
     printf("%d check(s) failed\n", failures);

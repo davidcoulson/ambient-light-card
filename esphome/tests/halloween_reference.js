@@ -11,7 +11,8 @@
 // bulb, so outputs agree to ~1e-4, not bit for bit.
 //
 // f(T epoch seconds, bulb) -> [r, g, b, ww, cw] PWM levels 0..1, at 100 %
-// brightness.
+// brightness. FLOORS (near the end) lists the effects the bulbs build; the
+// rest are designs the preview page shows.
 // ---------------------------------------------------------------------------
 "use strict";
 
@@ -224,6 +225,9 @@ function watching(T, b) {
   return out(sc(col, lid), EYE_FLOOR);
 }
 
+// 4. Heartbeat of the House (built: hw_heart): a slow red pulse that starts at
+// the door and reaches the street a moment later. 40 bpm; the second beat is
+// kept under the flash threshold.
 function heart(T, b) {
   var P = 1.5, s = sync_slot(T - b.door / 180, P), w = s.w;   // 40 bpm
   var lvl = 0.15 + 0.80 * Math.exp(-6 * w) + (w > 0.35 ? 0.25 * Math.exp(-6 * (w - 0.35)) : 0);
@@ -321,7 +325,7 @@ function seance(T, b) {
   return out(mix(sc(CANDLE, flick), SPIRIT, g), EMBER);
 }
 
-// 14. Trick-or-Treat Swap: neighbours alternate orange and purple and trade
+// 14. Trick-or-Treat Swap (built: hw_swap): neighbours alternate orange and purple and trade
 // colours every 8 s with a 2.5 s crossfade. The two colours carry the same
 // luminance, so a swap reads as a change of hue, not a flash.
 function swap(T, b) {
@@ -332,10 +336,191 @@ function swap(T, b) {
 }
 var YARD_ORDER = [0, 1, 2, 3, 4, 5, 6];
 
+// ======================= BUILT, round 2 =======================
+// Heartbeat of the House (heart) and Trick-or-Treat Swap (swap) are above;
+// these four complete the set built in halloween_fx.h. Products with epoch
+// time are double on both sides; periods handed to sync_* as float are
+// rounded with F() as the bulb sees them.
+
+// Calendar day number of a civil date (days since 1970-01-01), as the bulb's
+// days_from_civil() computes it.
+function daysFromCivil(y, m, d) { return Math.round(Date.UTC(y, m - 1, d) / 86400000); }
+
+// The local evening a moment belongs to: an evening keeps its date until noon
+// the next day. night = its day number (seeds that night's dice), hour = local
+// time in hours counted from that date's midnight (25.5 = 1:30 am), oct = the
+// October date (1 before October, 31 after).
+function evening(T) {
+  var d = new Date(T * 1000), frac = T - Math.floor(T), prev = d.getHours() < 12;
+  var hour = d.getHours() + d.getMinutes() / 60 + (d.getSeconds() + frac) / 3600 + (prev ? 24 : 0);
+  var e = prev ? new Date((Math.floor(T) - 86400) * 1000) : d;
+  var night = daysFromCivil(e.getFullYear(), e.getMonth() + 1, e.getDate());
+  var oct = e.getMonth() === 9 ? e.getDate() : e.getMonth() < 9 ? 1 : 31;
+  return { night: night, hour: hour, oct: oct };
+}
+
+// The sun, for the place set in SUN (sun_latitude / sun_longitude on the bulb).
+// Low-precision almanac formulae, about a minute on sunset.
+var SUN = { lat: 40.7, lon: -74.0 };   // the package default (New York City)
+function sunElevation(T) {
+  var R = Math.PI / 180, n = (T - 946728000) / 86400;
+  var L = (280.460 + 0.9856474 * n) % 360, g = ((357.528 + 0.9856003 * n) % 360) * R;
+  var lam = (L + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * R, eps = (23.439 - 0.0000004 * n) * R;
+  var ra = Math.atan2(Math.cos(eps) * Math.sin(lam), Math.cos(lam)), dec = Math.asin(Math.sin(eps) * Math.sin(lam));
+  var gmst = (18.697374558 + 24.06570982441908 * n) % 24, ha = ((gmst + SUN.lon / 15) * 15) * R - ra;
+  return Math.asin(Math.sin(SUN.lat * R) * Math.sin(dec) + Math.cos(SUN.lat * R) * Math.cos(dec) * Math.cos(ha)) / R;
+}
+// Sunset (sun at -0.833 deg) on T's local date: bisection from 15:00 over seven hours.
+function sunsetOn(T) {
+  var d = new Date(T * 1000), lo = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 15).getTime() / 1000, hi = lo + 7 * 3600;
+  for (var i = 0; i < 30; i++) { var mid = (lo + hi) / 2; if (sunElevation(mid) > -0.833) lo = mid; else hi = mid; }
+  return lo;
+}
+var SUNSET_MEMO = {};
+function sunsetHour(T) {                             // local clock hour of sunset on T's date
+  var d = new Date(T * 1000), key = d.getFullYear() * 400 + d.getMonth() * 32 + d.getDate();
+  if (SUNSET_MEMO[key] === undefined) {
+    var ss = new Date(Math.floor(sunsetOn(T)) * 1000);
+    SUNSET_MEMO[key] = ss.getHours() + ss.getMinutes() / 60 + ss.getSeconds() / 3600;
+  }
+  return SUNSET_MEMO[key];
+}
+
+function interp(keys, s) {                          // keys: [[pos, colour], ...] ascending
+  if (s <= keys[0][0]) return keys[0][1];
+  for (var i = 1; i < keys.length; i++) if (s <= keys[i][0]) return mix(keys[i - 1][1], keys[i][1], ease((s - keys[i - 1][0]) / (keys[i][0] - keys[i - 1][0])));
+  return keys[keys.length - 1][1];
+}
+function across(b) { return (b.x + 23) / 65; }       // 0 = west end of the house front, 1 = east
+
+// sync_noise2 from light_effects_helpers.h.
+function sync_noise2(x, y, salt) {
+  var fx = Math.floor(x), fy = Math.floor(y), ix = u32(fx), iy = u32(fy);
+  var tx = x - fx, ty = y - fy;
+  tx = tx * tx * (3 - 2 * tx); ty = ty * ty * (3 - 2 * ty);
+  function at(i, j) { return sync_random(((Math.imul(i >>> 0, 2654435761) ^ Math.imul(j >>> 0, 2246822519)) >>> 0), salt); }
+  var a = at(ix, iy), b = at((ix + 1) >>> 0, iy), c = at(ix, (iy + 1) >>> 0), d = at((ix + 1) >>> 0, (iy + 1) >>> 0);
+  var top = a + (b - a) * tx, bot = c + (d - c) * tx;
+  return top + (bot - top) * ty;
+}
+
+// ---- weather (halloween_weather.yaml on the bulb) ----
+// Readings in the units Home Assistant reports for a WeatherFlow Tempest in
+// US units: mph, degrees, in/h, degrees F. `on` is true while the weather
+// package is present, the API is connected and the wind reading is valid;
+// otherwise every effect sees these calm defaults.
+var WX = { on: false, windMph: 0, gustMph: 0, lullMph: 0, dirDeg: 270, rainInH: 0, tempF: 50, dewF: 35 };
+function q(v, step) { return Math.floor(v / step + 0.5) * step; }   // round half up, as the bulb does
+function windAvg() { return Math.min(30, q(WX.windMph, 1)); }
+function windTo() { var a = (q(WX.dirDeg, 22.5) + 180) * Math.PI / 180; return { x: Math.sin(a), y: -Math.cos(a) }; }
+function along(b) { var w = windTo(); return b.x * w.x + b.y * w.y; }
+
+// The weather layer: a cooler cast on cold nights, a pale fog near the dew
+// point, a sheen and a slow wet shimmer in rain. Slow changes only; wind does
+// not touch brightness here.
+function wxLayer(c, T, b) {
+  var m = Math.max(c[0], c[1], c[2], c[3], c[4]);
+  var cold = clamp01((55 - q(WX.tempF, 1)) / 20) * 0.35;
+  c = mix(c, [c[0] * 0.75, c[1], c[2] + 0.10 * m, c[3] * 0.6, c[4] + 0.25 * c[3] + 0.05 * m], cold);
+  var fog = clamp01((5 - (q(WX.tempF, 1) - q(WX.dewF, 1))) / 5) * 0.45;
+  var avg = (c[0] + c[1] + c[2]) / 3;
+  c = mix(c, [avg, avg, avg, c[3] + avg * 0.2, c[4] + avg * 0.2], fog);
+  var wet = clamp01(q(WX.rainInH, 0.01) / 0.3);
+  if (wet > 0) {
+    c = add(c, [0, 0, 0.03 * wet, 0, 0.06 * wet]);
+    c = sc(c, 1 + 0.06 * wet * (sync_noise(T + F(b.off * 5), F(1.3), b.i + 70) - 0.5) * 2);
+  }
+  return c;
+}
+
+//                    r     g     b     ww    cw
+var HARVEST_GOLD  = [0.40, 0.20, 0,    0.55, 0   ];
+var RUST          = [0.60, 0.10, 0,    0.20, 0   ];
+var HALLOW_ORANGE = [0.45, 0.08, 0,    0.50, 0   ];
+var HALLOW_VIOLET = [0.50, 0,    1,    0,    0.10];
+var DUSK_AMBER    = [0.35, 0.10, 0,    0.50, 0.05];
+var DEEP_VIOLET   = [0.45, 0,    0.90, 0,    0.10];
+var EERIE_TEAL    = [0,    0.50, 0.40, 0,    0.30];
+var LATE_RED      = [0.60, 0.02, 0,    0.04, 0   ];
+var MIST_SETS = [
+  [[0,    0.15, 0.35, 0,    0.15], [0.05, 0.05, 0.05, 0.25, 0.30]],   // teal and bone
+  [[0.02, 0.30, 0.08, 0,    0.12], [0.06, 0.10, 0.02, 0.30, 0.15]],   // moss and lichen
+  [[0.30, 0,    0.45, 0,    0.10], [0.06, 0.04, 0.06, 0.20, 0.30]]    // dusk violet and ash
+];
+
+// 15. Turning of the Season: the month is the arc. Oct 1 harvest gold and
+// rust, Oct 31 pumpkin and violet; each evening that date's two colours roll
+// across the front of the house in a 5-7 minute wave (downwind when the
+// weather is on, a nightly dice roll otherwise).
+function season(T, b) {
+  var e = evening(T), p = (e.oct - 1) / 30;
+  var c1 = mix(HARVEST_GOLD, HALLOW_ORANGE, p), c2 = mix(RUST, HALLOW_VIOLET, p * p);
+  var dir = WX.on ? (windTo().x >= 0 ? 1 : -1) : sync_random(e.night, 80) < 0.5 ? 1 : -1;
+  var period = 300 + 120 * sync_random(e.night, 81);
+  var ph = fmodp(T / period + dir * across(b) * 0.6, 1);
+  var w = 0.5 - 0.5 * Math.cos(ph * 6.2832);
+  return out(sc(mix(c1, c2, ease(w)), 0.85), EMBER);
+}
+
+// 16. Witching Hour: the evening is the arc, from lights-on (an hour before
+// sunset) to 11 pm: amber through daylight and sunset, deep violet an hour
+// after, eerie teal in the middle of the dark, low red by 11. On each quarter
+// hour a 24 s swell crosses the house from west to east.
+function witching(T, b) {
+  var e = evening(T), sh = sunsetHour(T), mid = (sh + 1.25 + 23) / 2;
+  var col = interp([[sh - 1, DUSK_AMBER], [sh + 0.25, DUSK_AMBER], [sh + 1.25, DEEP_VIOLET], [mid, EERIE_TEAL], [23, LATE_RED]], e.hour);
+  var shimmer = 0.88 + 0.12 * sync_noise2(b.x / 30 + 500 + T * 0.01, b.y / 30 + 500, 33);
+  var qs = fmodp(e.hour * 4, 1) * 900 - across(b) * 12;
+  var chime = qs >= 0 && qs < 24 ? Math.sin(Math.PI * qs / 24) : 0;
+  return out(sc(col, shimmer * (0.75 + 0.25 * chime)), NIGHT_FLOOR);
+}
+
+// 17. Graveyard Mist: one slow 2D mist field drifting across the yard. Each
+// night picks its palette, direction and pace; with the weather on it drifts
+// with the real wind instead (the bulb latches the wind per 2-minute slot).
+function mistWind(T, b) {
+  function field(slot, w) {
+    var v = (0.5 + windAvg() * 0.08) / 22, wt = windTo();
+    return sync_noise2(b.x / 22 + 1e4 + sync_random(slot, 73) * 5000 - wt.x * v * w, b.y / 22 + 1e4 + sync_random(slot, 74) * 5000 - wt.y * v * w, 31);
+  }
+  var s = sync_slot(T, 120), d = field(s.slot, s.w);
+  return s.w > 100 ? d + (field((s.slot + 1) >>> 0, s.w - 120) - d) * ease((s.w - 100) / 20) : d;
+}
+function mist(T, b) {
+  var e = evening(T), set = MIST_SETS[Math.floor(sync_random(e.night, 70) * 3)];
+  var d;
+  if (WX.on) d = mistWind(T, b);
+  else {
+    var a = sync_random(e.night, 71) * 6.2832, sp = 0.012 + 0.012 * sync_random(e.night, 72);
+    d = sync_noise2(b.x / 22 + 1e7 + (T * sp * Math.cos(a)) % 1e6, b.y / 22 + 1e7 + (T * sp * Math.sin(a)) % 1e6, 31);
+  }
+  return out(sc(mix(set[0], set[1], ease(d)), 0.9), NIGHT_FLOOR);
+}
+
+// 22. Wind-Blown Candles: Jack-o'-Lantern Row's flame without its dice
+// gutters; instead gusts from the real wind roll through the yard from the
+// windward side and bend each flame in turn, at most one per 5 s slot. Calm
+// air (or no weather): steady flames. Runs through the weather layer.
+function windcandles(T, b) {
+  var base = jack(T, b, true), lvl = 1, wind = windAvg();
+  var gusty = clamp01((q(WX.gustMph, 1) - q(WX.lullMph, 1)) / 15 + wind / 30);
+  var s = sync_slot(T, 5), at = 0.5 + sync_random(s.slot, 130) * 2;
+  if (sync_random(s.slot, 131) < gusty) {
+    var u = s.w - at - (along(b) + 80) / 30;
+    var bend = 0.28 * clamp01(wind / 15 + 0.3);
+    if (u >= 0 && u < 0.4) lvl = 1 - bend * ease(u / 0.4);
+    else if (u >= 0.4 && u < 1.3) lvl = 1 - bend * (1 - ease((u - 0.4) / 0.9));
+  }
+  return out(wxLayer(sc(base, lvl), T, b), EMBER);
+}
+
 var FXFN = { jack: jack, lightning: lightning, cauldron: cauldron, moon: moon,
   follows: follows, watching: watching, heart: heart, brownout: brownout, ghost: ghost, scare: scare,
-  wisp: wisp, fog: fog, seance: seance, swap: swap };
-var FLOORS = { jack: EMBER, lightning: STORM_FLOOR, cauldron: BREW_FLOOR, moon: MOON_FLOOR };
+  wisp: wisp, fog: fog, seance: seance, swap: swap,
+  season: season, witching: witching, mist: mist, windcandles: windcandles };
+// The effects built in halloween_fx.h, and each one's floor.
+var FLOORS = { jack: EMBER, lightning: STORM_FLOOR, cauldron: BREW_FLOOR, moon: MOON_FLOOR,
+  heart: BLOOD_FLOOR, swap: TREAT_FLOOR, season: EMBER, witching: NIGHT_FLOOR, mist: NIGHT_FLOOR, windcandles: EMBER };
 
 // ======================= appearance + checks =======================
 // Each channel's light output relative to warm white at full, as linear sRGB
@@ -400,5 +585,6 @@ var SELF = YARD.map(function (r, i) { return self(i); });
 if (typeof module !== "undefined") {
   module.exports = { YARD: YARD, SELF: SELF, FXFN: FXFN, FLOORS: FLOORS, flashCheck: flashCheck,
     toLinear: toLinear, lumRel: lumRel, sync_hash: sync_hash, sync_random: sync_random,
-    sync_noise: sync_noise, sync_fold: sync_fold, self: self };
+    sync_noise: sync_noise, sync_fold: sync_fold, self: self, WX: WX, SUN: SUN, evening: evening,
+    sunElevation: sunElevation, sunsetOn: sunsetOn, sunsetHour: sunsetHour, sync_noise2: sync_noise2 };
 }

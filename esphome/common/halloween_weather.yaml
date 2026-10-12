@@ -1,0 +1,94 @@
+# ---------------------------------------------------------------------------
+# Live weather for the Halloween effects - optional, next to
+# halloween_effects.yaml:
+#
+#   files:
+#     - esphome/common/halloween_effects.yaml
+#     - path: esphome/common/halloween_weather.yaml
+#       vars:
+#         wx_wind: sensor.st_xxxxxxxx_wind_speed_average   # your station's entities
+#         ...
+#
+# Reads a weather station through Home Assistant (the defaults below are a
+# WeatherFlow Tempest's entities with the serial left out; set yours). Units
+# are the ones HA reports in US units: mph, degrees, in/h, degrees F.
+#
+# What it drives: Wind-Blown Candles' gusts (wind, gust, lull, direction),
+# which way Turning of the Season rolls and Graveyard Mist drifts (wind
+# direction and speed), and the weather layer on Wind-Blown Candles (rain,
+# temperature, dew point).
+#
+# Each reading reaches the bulbs a moment apart, so readings only ever set
+# slow parameters - never when something happens, which stays on the shared
+# clock. Values are rounded where they are used, wind is latched per cycle,
+# and rain / temperature / dew point ease in over ~10 s (hw_wx_tick in
+# halloween_fx.h). A reading that is unavailable or unknown, or the API being
+# disconnected, falls back to calm defaults; nothing keys off a reading's age,
+# because HA only sends a value when it changes.
+# ---------------------------------------------------------------------------
+
+substitutions:
+  wx_wind: sensor.tempest_wind_speed_average
+  wx_gust: sensor.tempest_wind_gust
+  wx_lull: sensor.tempest_wind_lull
+  wx_dir: sensor.tempest_wind_direction_average
+  wx_rain: sensor.tempest_precipitation_intensity
+  wx_temp: sensor.tempest_temperature
+  wx_dew: sensor.tempest_dew_point
+
+sensor:
+  - platform: homeassistant
+    id: hw_wx_wind
+    entity_id: ${wx_wind}
+    internal: true
+    on_value:
+      then:
+        - lambda: g_hw_wx_in.wind = x;
+  - platform: homeassistant
+    id: hw_wx_gust
+    entity_id: ${wx_gust}
+    internal: true
+    on_value:
+      then:
+        - lambda: g_hw_wx_in.gust = x;
+  - platform: homeassistant
+    id: hw_wx_lull
+    entity_id: ${wx_lull}
+    internal: true
+    on_value:
+      then:
+        - lambda: g_hw_wx_in.lull = x;
+  - platform: homeassistant
+    id: hw_wx_dir
+    entity_id: ${wx_dir}
+    internal: true
+    on_value:
+      then:
+        - lambda: g_hw_wx_in.dir = x;
+  - platform: homeassistant
+    id: hw_wx_rain
+    entity_id: ${wx_rain}
+    internal: true
+    on_value:
+      then:
+        - lambda: g_hw_wx_in.rain = x;
+  - platform: homeassistant
+    id: hw_wx_temp
+    entity_id: ${wx_temp}
+    internal: true
+    on_value:
+      then:
+        - lambda: g_hw_wx_in.temp = x;
+  - platform: homeassistant
+    id: hw_wx_dew
+    entity_id: ${wx_dew}
+    internal: true
+    on_value:
+      then:
+        - lambda: g_hw_wx_in.dew = x;
+
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          hw_wx_tick(api::global_api_server != nullptr && api::global_api_server->is_connected(), 1.0f);

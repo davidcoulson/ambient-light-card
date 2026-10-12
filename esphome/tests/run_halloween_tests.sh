@@ -4,6 +4,7 @@
 #
 #   sh esphome/tests/run_halloween_tests.sh
 set -e
+export TZ=America/New_York      # the calendar effects read local time; the C++ test pins the same zone
 here=$(cd "$(dirname "$0")" && pwd)
 out=$(mktemp -d)
 trap 'rm -rf "$out"' EXIT

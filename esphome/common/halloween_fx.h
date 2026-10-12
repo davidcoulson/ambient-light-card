@@ -30,6 +30,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <ctime>
 #include <strings.h>
 #include "light_effects_helpers.h"
 
@@ -58,6 +59,7 @@ struct HwSelf {
   uint8_t group;     // YARD_S / YARD_G / YARD_D
   uint8_t k, n;      // index within its group, size of the group
   float x_ft, y_ft, path_ft;
+  float door_ft;     // distance from the front door
   float off;         // 0..1, spreads the scattered effects
   bool mapped;
 };
@@ -65,7 +67,8 @@ struct HwSelf {
 // Find `name` (the device's yard_light substitution) in a map. A light that is
 // not on the map still runs every effect: it plays a driveway light on its
 // own, with its offset hashed from its MAC suffix.
-inline HwSelf hw_lookup(const YardLight *map, int count, const char *name, const char *mac) {
+inline HwSelf hw_lookup(const YardLight *map, int count, const char *name, const char *mac, float door_x = 0.0f,
+                        float door_y = 0.0f) {
   HwSelf s{};
   int row = -1;
   for (int r = 0; name != nullptr && r < count; r++) {
@@ -77,6 +80,7 @@ inline HwSelf hw_lookup(const YardLight *map, int count, const char *name, const
     s.x_ft = map[row].x_ft;
     s.y_ft = map[row].y_ft;
     s.path_ft = map[row].path_ft;
+    s.door_ft = hypotf(s.x_ft - door_x, s.y_ft - door_y);
     for (int r = 0; r < count; r++) {
       if (map[r].group != s.group) continue;
       if (r < row) s.k++;
@@ -271,4 +275,332 @@ inline HwColor hw_moon(double T, const HwSelf &b) {
   if (k == 1.0f)
     col = hw_scale(col, 0.85f + 0.15f * sinf(c * 0.5f));
   return hw_finish(col, HW_MOON_FLOOR);
+}
+
+// ===========================================================================
+// Round 2: Heartbeat of the House, Trick-or-Treat Swap, Turning of the Season,
+// Witching Hour, Graveyard Mist and Wind-Blown Candles.
+//
+// Season, Witching Hour and Mist follow the calendar and the local clock, so
+// they take the UNSCALED shared clock (sync_seconds()), like the library's
+// Clock effect: a Speed-scaled clock would land on the wrong date. Anything
+// that multiplies epoch time stays in double, mirrored in
+// tests/halloween_reference.js.
+// ===========================================================================
+
+//                                      r      g      b      ww     cw
+constexpr HwColor HW_BLOOD         = {1.00f, 0.00f, 0.03f, 0.00f, 0.00f};
+constexpr HwColor HW_BLOOD_FLOOR   = {0.17f, 0.00f, 0.005f, 0.00f, 0.00f};  // floor: Heartbeat
+constexpr HwColor HW_TREAT_ORANGE  = {0.60f, 0.10f, 0.00f, 0.10f, 0.00f};   // same luminance as purple,
+constexpr HwColor HW_TREAT_PURPLE  = {0.60f, 0.00f, 1.00f, 0.00f, 0.08f};   // so a swap is a hue change
+constexpr HwColor HW_TREAT_FLOOR   = {0.10f, 0.00f, 0.05f, 0.02f, 0.00f};   // floor: Trick-or-Treat Swap
+constexpr HwColor HW_NIGHT_FLOOR   = {0.00f, 0.00f, 0.08f, 0.00f, 0.10f};   // floor: Witching Hour, Mist
+constexpr HwColor HW_HARVEST_GOLD  = {0.40f, 0.20f, 0.00f, 0.55f, 0.00f};
+constexpr HwColor HW_RUST          = {0.60f, 0.10f, 0.00f, 0.20f, 0.00f};
+constexpr HwColor HW_HALLOW_ORANGE = {0.45f, 0.08f, 0.00f, 0.50f, 0.00f};
+constexpr HwColor HW_HALLOW_VIOLET = {0.50f, 0.00f, 1.00f, 0.00f, 0.10f};
+constexpr HwColor HW_DUSK_AMBER    = {0.35f, 0.10f, 0.00f, 0.50f, 0.05f};
+constexpr HwColor HW_DEEP_VIOLET   = {0.45f, 0.00f, 0.90f, 0.00f, 0.10f};
+constexpr HwColor HW_EERIE_TEAL    = {0.00f, 0.50f, 0.40f, 0.00f, 0.30f};
+constexpr HwColor HW_LATE_RED      = {0.60f, 0.02f, 0.00f, 0.04f, 0.00f};
+constexpr HwColor HW_MIST_SETS[3][2] = {
+    {{0.00f, 0.15f, 0.35f, 0.00f, 0.15f}, {0.05f, 0.05f, 0.05f, 0.25f, 0.30f}},   // teal and bone
+    {{0.02f, 0.30f, 0.08f, 0.00f, 0.12f}, {0.06f, 0.10f, 0.02f, 0.30f, 0.15f}},   // moss and lichen
+    {{0.30f, 0.00f, 0.45f, 0.00f, 0.10f}, {0.06f, 0.04f, 0.06f, 0.20f, 0.30f}},   // dusk violet and ash
+};
+
+// 0 at the west end of the house front, 1 at the east.
+inline float hw_across(const HwSelf &b) { return (b.x_ft + 23.0f) / 65.0f; }
+
+// ---- calendar and sun ----
+
+// Days since 1970-01-01 of a civil date (Howard Hinnant's days_from_civil).
+inline int32_t hw_days_from_civil(int32_t y, int32_t m, int32_t d) {
+  y -= m <= 2;
+  int32_t era = (y >= 0 ? y : y - 399) / 400;
+  int32_t yoe = y - era * 400;
+  int32_t doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+  int32_t doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+  return era * 146097 + doe - 719468;
+}
+
+// The local evening a moment belongs to: an evening keeps its date until noon
+// the next day. night = its day number (seeds that night's dice), hour = local
+// hours from that date's midnight (25.5 = 1:30 am), oct = the October date
+// (1 before October, 31 after). Local time comes from the time component's
+// timezone, via sync_localtime().
+struct HwEvening {
+  int32_t night;
+  double hour;
+  int oct;
+};
+inline HwEvening hw_evening(double T) {
+  struct tm lt;
+  sync_localtime(T, lt);
+  double hour = lt.tm_hour + lt.tm_min / 60.0 + (lt.tm_sec + (T - floor(T))) / 3600.0;
+  if (lt.tm_hour < 12) {
+    hour += 24.0;
+    sync_localtime(floor(T) - 86400.0, lt);
+  }
+  HwEvening e;
+  e.night = hw_days_from_civil(lt.tm_year + 1900, lt.tm_mon + 1, lt.tm_mday);
+  e.oct = lt.tm_mon == 9 ? lt.tm_mday : lt.tm_mon < 9 ? 1 : 31;
+  e.hour = hour;
+  return e;
+}
+
+// Solar elevation in degrees at epoch T, from low-precision almanac formulae
+// (about a minute on sunset). Double throughout.
+inline double hw_sun_elevation(double T, double lat, double lon) {
+  const double R = M_PI / 180.0, n = (T - 946728000.0) / 86400.0;
+  double L = fmod(280.460 + 0.9856474 * n, 360.0), g = fmod(357.528 + 0.9856003 * n, 360.0) * R;
+  double lam = (L + 1.915 * sin(g) + 0.020 * sin(2.0 * g)) * R, eps = (23.439 - 0.0000004 * n) * R;
+  double ra = atan2(cos(eps) * sin(lam), cos(lam)), dec = asin(sin(eps) * sin(lam));
+  double gmst = fmod(18.697374558 + 24.06570982441908 * n, 24.0), ha = ((gmst + lon / 15.0) * 15.0) * R - ra;
+  return asin(sin(lat * R) * sin(dec) + cos(lat * R) * cos(dec) * cos(ha)) / R;
+}
+
+// Local clock hour of sunset (sun at -0.833 deg) on T's local date: a
+// bisection from 15:00 over seven hours, worked out once per date.
+inline double hw_sunset_hour(double T, double lat, double lon) {
+  static int32_t memo_key = INT32_MIN;
+  static double memo = 0.0;
+  struct tm lt;
+  sync_localtime(T, lt);
+  int32_t key = hw_days_from_civil(lt.tm_year + 1900, lt.tm_mon + 1, lt.tm_mday);
+  if (key != memo_key) {
+    struct tm at = lt;
+    at.tm_hour = 15;
+    at.tm_min = 0;
+    at.tm_sec = 0;
+    at.tm_isdst = -1;
+    double lo = (double) mktime(&at), hi = lo + 7.0 * 3600.0;
+    for (int i = 0; i < 30; i++) {
+      double mid = (lo + hi) / 2.0;
+      if (hw_sun_elevation(mid, lat, lon) > -0.833) lo = mid;
+      else hi = mid;
+    }
+    struct tm st;
+    sync_localtime(floor(lo), st);
+    memo = st.tm_hour + st.tm_min / 60.0 + st.tm_sec / 3600.0;
+    memo_key = key;
+  }
+  return memo;
+}
+
+// Colour keyframes along one axis (positions ascending), eased between.
+struct HwKey {
+  double pos;
+  HwColor c;
+};
+inline HwColor hw_interp(const HwKey *k, int n, double s) {
+  if (s <= k[0].pos) return k[0].c;
+  for (int i = 1; i < n; i++)
+    if (s <= k[i].pos) return hw_mix(k[i - 1].c, k[i].c, hw_ease((float) ((s - k[i - 1].pos) / (k[i].pos - k[i - 1].pos))));
+  return k[n - 1].c;
+}
+
+// ---- weather (halloween_weather.yaml) ----
+
+// What the effects see of the weather, in the units Home Assistant reports
+// for a WeatherFlow Tempest in US units: mph, degrees, in/h, degrees F. `on`
+// is true while the weather package is present, the API is connected and the
+// wind reading is valid. Without the package these calm defaults hold, and
+// every effect runs as if the night were still and dry.
+struct HwWeather {
+  bool on;
+  float wind_mph, gust_mph, lull_mph, dir_deg, rain_inh, temp_f, dew_f;
+};
+constexpr HwWeather HW_WX_CALM = {false, 0.0f, 0.0f, 0.0f, 270.0f, 0.0f, 50.0f, 35.0f};
+inline HwWeather g_hw_wx = HW_WX_CALM;
+
+// Raw readings as they arrive from Home Assistant (NaN = unknown).
+struct HwWeatherIn {
+  float wind = NAN, gust = NAN, lull = NAN, dir = NAN, rain = NAN, temp = NAN, dew = NAN;
+};
+inline HwWeatherIn g_hw_wx_in;
+
+// Called once a second by halloween_weather.yaml. A reading that is NaN, or
+// any reading while the API is disconnected, falls back to its calm default;
+// HA only sends a value when it changes, so a reading's age means nothing.
+// Rain, temperature and dew point ease toward the reading over ~10 s, so a
+// value that reaches one bulb a moment before another makes no visible
+// difference; wind is rounded where it is used and latched per cycle by the
+// effects that move with it.
+inline void hw_wx_tick(bool api_connected, float dt) {
+  const HwWeatherIn &in = g_hw_wx_in;
+  auto pick = [&](float v, float calm) { return (!api_connected || std::isnan(v)) ? calm : v; };
+  HwWeather &w = g_hw_wx;
+  w.wind_mph = pick(in.wind, HW_WX_CALM.wind_mph);
+  w.gust_mph = pick(in.gust, HW_WX_CALM.gust_mph);
+  w.lull_mph = pick(in.lull, HW_WX_CALM.lull_mph);
+  w.dir_deg = pick(in.dir, HW_WX_CALM.dir_deg);
+  float k = fminf(1.0f, dt / 10.0f);
+  w.rain_inh += (pick(in.rain, HW_WX_CALM.rain_inh) - w.rain_inh) * k;
+  w.temp_f += (pick(in.temp, HW_WX_CALM.temp_f) - w.temp_f) * k;
+  w.dew_f += (pick(in.dew, HW_WX_CALM.dew_f) - w.dew_f) * k;
+  w.on = api_connected && !std::isnan(in.wind);
+}
+
+// Round half up, the same on every bulb and in the reference.
+inline float hw_q(float v, float step) { return floorf(v / step + 0.5f) * step; }
+inline float hw_wind_avg(float mph) { return fminf(30.0f, hw_q(mph, 1.0f)); }
+struct HwVec {
+  float x, y;
+};
+// The direction the wind blows TOWARD, on the map (x east, y south), from the
+// direction it comes from, rounded to 22.5 degrees.
+inline HwVec hw_wind_to(float dir_deg) {
+  float a = (hw_q(dir_deg, 22.5f) + 180.0f) * (float) M_PI / 180.0f;
+  return {sinf(a), -cosf(a)};
+}
+
+// The weather layer: a cooler cast on cold nights (fully at 35 F), a pale fog
+// within 5 F of the dew point, a sheen and a slow wet shimmer in rain. Slow by
+// construction; wind never changes brightness here.
+inline HwColor hw_wx_layer(HwColor c, double T, const HwSelf &b) {
+  const HwWeather &w = g_hw_wx;
+  float m = fmaxf(fmaxf(fmaxf(c.r, c.g), fmaxf(c.b, c.ww)), c.cw);
+  float cold = clamp01((55.0f - hw_q(w.temp_f, 1.0f)) / 20.0f) * 0.35f;
+  c = hw_mix(c, {c.r * 0.75f, c.g, c.b + 0.10f * m, c.ww * 0.6f, c.cw + 0.25f * c.ww + 0.05f * m}, cold);
+  float fog = clamp01((5.0f - (hw_q(w.temp_f, 1.0f) - hw_q(w.dew_f, 1.0f))) / 5.0f) * 0.45f;
+  float avg = (c.r + c.g + c.b) / 3.0f;
+  c = hw_mix(c, {avg, avg, avg, c.ww + avg * 0.2f, c.cw + avg * 0.2f}, fog);
+  float wet = clamp01(hw_q(w.rain_inh, 0.01f) / 0.3f);
+  if (wet > 0.0f) {
+    c = hw_add(c, {0.0f, 0.0f, 0.03f * wet, 0.0f, 0.06f * wet});
+    c = hw_scale(c, 1.0f + 0.06f * wet * (sync_noise(T + (double) (b.off * 5.0f), 1.3f, b.i + 70) - 0.5f) * 2.0f);
+  }
+  return c;
+}
+
+// ---------------------------------------------------------------------------
+// Heartbeat of the House - a slow red pulse that starts at the front door and
+// reaches the street a moment later, like a pulse in an artery. 40 bpm; the
+// second beat stays under the flash threshold. Floor: a dim red.
+// ---------------------------------------------------------------------------
+inline HwColor hw_heart(double T, const HwSelf &b) {
+  uint32_t slot;
+  float w;
+  sync_slot(T - (double) (b.door_ft / 180.0f), 1.5f, slot, w);
+  float lvl = 0.15f + 0.80f * expf(-6.0f * w) + (w > 0.35f ? 0.25f * expf(-6.0f * (w - 0.35f)) : 0.0f);
+  float amp = 1.0f - 0.35f * fminf(1.0f, b.door_ft / 80.0f);
+  return hw_finish(hw_scale(HW_BLOOD, clamp01(lvl * amp)), HW_BLOOD_FLOOR);
+}
+
+// ---------------------------------------------------------------------------
+// Trick-or-Treat Swap - neighbours alternate orange and purple and trade
+// colours every 8 s with a 2.5 s crossfade. The two colours carry the same
+// luminance, so a swap is a change of hue, not a flash.
+// ---------------------------------------------------------------------------
+inline HwColor hw_swap(double T, const HwSelf &b) {
+  uint32_t slot;
+  float w;
+  sync_slot(T, 8.0f, slot, w);
+  bool parity = ((slot + b.i) & 1u) != 0;
+  const HwColor &from = parity ? HW_TREAT_PURPLE : HW_TREAT_ORANGE, &to = parity ? HW_TREAT_ORANGE : HW_TREAT_PURPLE;
+  float k = w > 5.5f ? hw_ease((w - 5.5f) / 2.5f) : 0.0f;
+  return hw_finish(hw_scale(hw_mix(from, to, k), 0.8f), HW_TREAT_FLOOR);
+}
+
+// ---------------------------------------------------------------------------
+// Turning of the Season - the month is the arc. October 1 is harvest gold and
+// rust; by the 31st it has turned to pumpkin and violet. Each evening that
+// date's two colours roll across the front of the house in a 5-7 minute wave,
+// downwind when the weather is on, a nightly dice roll otherwise.
+// Takes the unscaled clock.
+// ---------------------------------------------------------------------------
+inline HwColor hw_season(double T, const HwSelf &b) {
+  HwEvening e = hw_evening(T);
+  float p = (e.oct - 1) / 30.0f;
+  HwColor c1 = hw_mix(HW_HARVEST_GOLD, HW_HALLOW_ORANGE, p), c2 = hw_mix(HW_RUST, HW_HALLOW_VIOLET, p * p);
+  uint32_t night = (uint32_t) e.night;
+  double dir = g_hw_wx.on ? (hw_wind_to(g_hw_wx.dir_deg).x >= 0.0f ? 1.0 : -1.0) : (sync_random(night, 80) < 0.5f ? 1.0 : -1.0);
+  double period = 300.0 + 120.0 * (double) sync_random(night, 81);
+  double ph = fmod(T / period + dir * (double) hw_across(b) * 0.6, 1.0);
+  if (ph < 0) ph += 1.0;
+  float w = 0.5f - 0.5f * cosf((float) ph * 6.2832f);
+  return hw_finish(hw_scale(hw_mix(c1, c2, hw_ease(w)), 0.85f), HW_EMBER);
+}
+
+// ---------------------------------------------------------------------------
+// Witching Hour - the evening is the arc, from lights-on (an hour before
+// sunset) to 11 pm: amber through daylight and sunset, deep violet an hour
+// after, eerie teal in the middle of the dark, a low red by 11. On each
+// quarter hour a 24 s swell crosses the house from west to east.
+// Takes the unscaled clock and the place (sun_latitude / sun_longitude).
+// ---------------------------------------------------------------------------
+inline HwColor hw_witching(double T, const HwSelf &b, double lat, double lon) {
+  HwEvening e = hw_evening(T);
+  double sh = hw_sunset_hour(T, lat, lon), mid = (sh + 1.25 + 23.0) / 2.0;
+  const HwKey keys[5] = {{sh - 1.0, HW_DUSK_AMBER}, {sh + 0.25, HW_DUSK_AMBER}, {sh + 1.25, HW_DEEP_VIOLET},
+                         {mid, HW_EERIE_TEAL}, {23.0, HW_LATE_RED}};
+  HwColor col = hw_interp(keys, 5, e.hour);
+  float shimmer = 0.88f + 0.12f * sync_noise2(b.x_ft / 30.0 + 500.0 + T * 0.01, b.y_ft / 30.0 + 500.0, 33);
+  double qs = fmod(e.hour * 4.0, 1.0) * 900.0 - (double) hw_across(b) * 12.0;
+  float chime = qs >= 0.0 && qs < 24.0 ? sinf((float) (M_PI * qs / 24.0)) : 0.0f;
+  return hw_finish(hw_scale(col, shimmer * (0.75f + 0.25f * chime)), HW_NIGHT_FLOOR);
+}
+
+// ---------------------------------------------------------------------------
+// Graveyard Mist - one slow 2D mist field drifting across the yard, teal and
+// bone, moss and lichen, or violet and ash. Each night picks its palette,
+// direction and pace. With the weather on it drifts with the real wind
+// instead, the wind latched per 2-minute slot and crossfaded into the next.
+// Takes the unscaled clock.
+// ---------------------------------------------------------------------------
+inline float hw_mist_field(const HwSelf &b, uint32_t slot, double w, float wind_mph, float dir_deg) {
+  double v = (0.5 + (double) hw_wind_avg(wind_mph) * 0.08) / 22.0;
+  HwVec wt = hw_wind_to(dir_deg);
+  return sync_noise2(b.x_ft / 22.0 + 1e4 + (double) sync_random(slot, 73) * 5000.0 - wt.x * v * w,
+                     b.y_ft / 22.0 + 1e4 + (double) sync_random(slot, 74) * 5000.0 - wt.y * v * w, 31);
+}
+inline HwColor hw_mist(double T, const HwSelf &b) {
+  HwEvening e = hw_evening(T);
+  uint32_t night = (uint32_t) e.night;
+  const HwColor *set = HW_MIST_SETS[(int) (sync_random(night, 70) * 3.0f)];
+  float d;
+  if (g_hw_wx.on) {
+    static uint32_t latched_slot = 0xFFFFFFFFu;
+    static float wind = 0.0f, dir = 270.0f;
+    uint32_t slot;
+    float w;
+    sync_slot(T, 120.0f, slot, w);
+    if (slot != latched_slot) {
+      latched_slot = slot;
+      wind = g_hw_wx.wind_mph;
+      dir = g_hw_wx.dir_deg;
+    }
+    d = hw_mist_field(b, slot, w, wind, dir);
+    if (w > 100.0f) d = d + (hw_mist_field(b, slot + 1, w - 120.0, wind, dir) - d) * hw_ease((w - 100.0f) / 20.0f);
+  } else {
+    double a = (double) sync_random(night, 71) * 6.2832, sp = 0.012 + 0.012 * (double) sync_random(night, 72);
+    d = sync_noise2(b.x_ft / 22.0 + 1e7 + fmod(T * sp * cos(a), 1e6), b.y_ft / 22.0 + 1e7 + fmod(T * sp * sin(a), 1e6), 31);
+  }
+  return hw_finish(hw_scale(hw_mix(set[0], set[1], hw_ease(d)), 0.9f), HW_NIGHT_FLOOR);
+}
+
+// ---------------------------------------------------------------------------
+// Wind-Blown Candles - Jack-o'-Lantern Row's flame without its dice gutters:
+// gusts from the real wind roll through the yard from the windward side at
+// 30 ft/s and bend each flame in turn, at most one gust per 5 s slot. Still
+// air, or no weather package: steady flames. Runs through the weather layer.
+// ---------------------------------------------------------------------------
+inline HwColor hw_windcandles(double T, const HwSelf &b) {
+  const HwWeather &wx = g_hw_wx;
+  HwColor base = hw_jack(T, b, true);
+  float lvl = 1.0f, wind = hw_wind_avg(wx.wind_mph);
+  float gusty = clamp01((hw_q(wx.gust_mph, 1.0f) - hw_q(wx.lull_mph, 1.0f)) / 15.0f + wind / 30.0f);
+  uint32_t slot;
+  float w;
+  sync_slot(T, 5.0f, slot, w);
+  float at = 0.5f + sync_random(slot, 130) * 2.0f;
+  if (sync_random(slot, 131) < gusty) {
+    HwVec wt = hw_wind_to(wx.dir_deg);
+    float u = w - at - (b.x_ft * wt.x + b.y_ft * wt.y + 80.0f) / 30.0f;
+    float bend = 0.28f * clamp01(wind / 15.0f + 0.3f);
+    if (u >= 0.0f && u < 0.4f) lvl = 1.0f - bend * hw_ease(u / 0.4f);
+    else if (u >= 0.4f && u < 1.3f) lvl = 1.0f - bend * (1.0f - hw_ease((u - 0.4f) / 0.9f));
+  }
+  return hw_finish(hw_wx_layer(hw_scale(base, lvl), T, b), HW_EMBER);
 }

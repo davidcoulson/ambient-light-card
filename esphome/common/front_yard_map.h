@@ -33,5 +33,10 @@ constexpr YardLight YARD_MAP[YARD_N] = {
     {"D2", YARD_D, 42.0f, 22.0f, 128.0f},
 };
 
+// Where the front door is, for effects that radiate from it (Heartbeat).
+constexpr float YARD_DOOR_X = 37.0f, YARD_DOOR_Y = 22.0f;
+
 // This light, looked up once per effect (each lambda keeps a static copy).
-inline HwSelf hw_me(const char *name, const char *mac) { return hw_lookup(YARD_MAP, YARD_N, name, mac); }
+inline HwSelf hw_me(const char *name, const char *mac) {
+  return hw_lookup(YARD_MAP, YARD_N, name, mac, YARD_DOOR_X, YARD_DOOR_Y);
+}

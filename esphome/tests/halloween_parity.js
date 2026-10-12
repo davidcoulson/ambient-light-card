@@ -3,7 +3,9 @@
 //   ./halloween_test --dump | node halloween_parity.js
 //
 // Reads the C++ frames from stdin and recomputes each one with
-// halloween_reference.js. The bulb works in float and the reference in double,
+// halloween_reference.js ("@storm" frames under the simulated storm). Run
+// with TZ=America/New_York, as run_halloween_tests.sh does: the calendar
+// effects read local time. The bulb works in float and the reference in double,
 // so frames agree to ~1e-4 rather than bit for bit; a sample that lands within
 // a few microseconds of an event edge (a gutter starting, a strike) can fall on
 // the other side of it. Passes when 99.9 % of samples agree within 0.01 on
@@ -15,13 +17,19 @@ const rows = require("fs").readFileSync(0, "utf8").trim().split("\n").slice(1);
 const byName = {};
 ref.SELF.forEach((b) => { byName[b.id] = b; });
 
+// The storm the C++ test simulates for "@storm" frames.
+const CALM = Object.assign({}, ref.WX);
+const STORM = { on: true, windMph: 30, gustMph: 45, lullMph: 5, dirDeg: 225, rainInH: 0.6, tempF: 38, dewF: 37 };
+
 const stats = {};
 for (const line of rows) {
-  const [key, light, t, ...ch] = line.split(",");
+  const [tag, light, t, ...ch] = line.split(",");
+  const [key, variant] = tag.split("@");
+  Object.assign(ref.WX, variant === "storm" ? STORM : CALM);
   const want = ref.FXFN[key](parseFloat(t), byName[light]);
   let diff = 0;
   for (let i = 0; i < 5; i++) diff = Math.max(diff, Math.abs(want[i] - parseFloat(ch[i])));
-  const s = (stats[key] = stats[key] || { n: 0, off: 0, max: 0, worst: "" });
+  const s = (stats[tag] = stats[tag] || { n: 0, off: 0, max: 0, worst: "" });
   s.n++;
   if (diff > 0.01) s.off++;
   if (diff > s.max) { s.max = diff; s.worst = light + " @ " + t; }
