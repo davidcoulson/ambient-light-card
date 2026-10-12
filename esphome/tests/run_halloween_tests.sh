@@ -43,7 +43,10 @@ fi
 "$out/halloween_test"
 
 if command -v node >/dev/null 2>&1; then
-  "$out/halloween_test" --dump | node "$here/halloween_parity.js"
+  # Two steps, not a pipe: sh only reports a pipe's last command, so a crashed
+  # dump would hide behind a passing parity check.
+  "$out/halloween_test" --dump > "$out/dump.csv"
+  node "$here/halloween_parity.js" < "$out/dump.csv"
 else
   echo "node not found: skipping the parity check against halloween_reference.js"
 fi

@@ -494,6 +494,7 @@ static void test_out() {
 static void dump() {
   auto lights = yard();
   printf("effect,light,t,r,g,b,ww,cw\n");
+  long rows = 0;
   // the minute's weather when it has just changed: last minute calm from the west, this one the storm
   HwWeather before = HW_WX_CALM;
   before.on = true;
@@ -520,10 +521,12 @@ static void dump() {
           printf("%s%s,%s,%.4f,%.6f,%.6f,%.6f,%.6f,%.6f\n", fx.key,
                  pass == 1 ? "@storm" : pass == 2 ? "@day" : pass == 3 ? "@turn" : "",
                  YARD_MAP[i].name, t, c.r, c.g, c.b, c.ww, c.cw);
+          rows++;
         }
     }
   hw_wx_set(HW_WX_CALM);
   g_hw_amb = 0.0f;
+  printf("#end,%ld\n", rows);   // the parity check refuses a dump without this line, or with a different count
 }
 
 int main(int argc, char **argv) {

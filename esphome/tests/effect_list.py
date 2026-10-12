@@ -7,7 +7,9 @@ Prints one effect name per line (in the order ESPHome validated them), then a
 summary. --no-halloween fails if the config pulls in any Halloween effect,
 Halloween header or weather sensor - for indoor lights, which must never get
 them. --compare fails unless the effect list matches a saved list exactly.
-Reads only names and include/sensor ids, never other config values.
+Reads only names and include/sensor ids, never other config values. Input
+that isn't a validated device config with a light (empty, or an error from a
+failed `esphome config`) is a failure, never a pass.
 """
 import re
 import sys
@@ -40,6 +42,11 @@ def effect_names(text):
 
 def main(argv):
     text = sys.stdin.read()
+    # Refuse anything that isn't a validated device config, so a failed
+    # `esphome config` upstream can't pass as "no Halloween parts".
+    if not re.search(r"^esphome:", text, re.M) or not re.search(r"^light:", text, re.M):
+        print("FAIL: no validated ESPHome config with a light on stdin (did `esphome config` fail?)")
+        return 2
     names = effect_names(text)
     for n in names:
         print(n)
