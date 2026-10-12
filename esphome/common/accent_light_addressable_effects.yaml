@@ -1014,9 +1014,9 @@ light:
                     if (!p_active[i]) {
                       p_active[i] = true;
                       p_pos[i] = rocket_pos;
-                      p_vel[i] = ((ls_rand(ls) % 200) - 100) * 0.6f;
+                      p_vel[i] = ((int) (ls_rand(ls) % 200) - 100) * 0.6f;
                       p_life[i] = PARTICLE_LIFE;
-                      p_hue[i] = rocket_hue + ((ls_rand(ls) % 200) - 100) / 1000.0f;
+                      p_hue[i] = rocket_hue + ((int) (ls_rand(ls) % 200) - 100) / 1000.0f;
                       spawned++;
                     }
                   }
