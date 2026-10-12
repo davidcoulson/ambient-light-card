@@ -15,7 +15,10 @@
 //     and follows the sun or measured light;
 // and the flash and floor checks also run at lights-on (daylight, for the
 // effects that follow the clock) and in a simulated storm for the effects
-// that read the weather.
+// that read the weather. The room Speed and Intensity get the same checks at
+// steady settings (Speed 2x and the maximum are measured, not enforced), and
+// seven bulbs that hear a live change at different moments must be back in
+// step once all have it.
 // Local time is pinned to US Eastern so the C++ and the reference agree.
 // `--dump` prints frames on a time grid for halloween_parity.js, which checks
 // the C++ against the reference model the preview page runs.
@@ -29,6 +32,7 @@
 
 #include <vector>
 #include <algorithm>
+#include <functional>
 
 // What ESPHome provides to lambdas; the helpers only reach these when the
 // wall clock is not set, which the tests never rely on.
@@ -49,30 +53,34 @@ static int failures = 0;
   } while (0)
 
 typedef HwColor (*EffectFn)(double, const HwSelf &);
+typedef HwColor (*EffectT)(const HwT &, const HwSelf &);
 static HwColor jack_fn(double T, const HwSelf &b) { return hw_jack(T, b); }
+static HwColor jack_t(const HwT &t, const HwSelf &b) { return hw_jack(t, b); }
 // The place the reference model uses (tests/halloween_reference.js SUN): New York City.
 static const double LAT = 40.7, LON = -74.0;
 static HwColor witching_fn(double T, const HwSelf &b) { return hw_witching(T, b, LAT, LON); }
+static HwColor witching_t(const HwT &t, const HwSelf &b) { return hw_witching(t, b, LAT, LON); }
 
 // A simulated storm: 30 mph gusting 45, a downpour, at the dew point.
 static const HwWeather STORM = {true, 30.0f, 45.0f, 5.0f, 225.0f, 0.6f, 38.0f, 37.0f, NAN};
 
 struct Effect {
   const char *key, *name;
-  EffectFn fn;
+  EffectFn fn;      // at Speed 1, Intensity 100 %
+  EffectT tfn;      // with the clocks and depth hw_render() works out
   HwColor floor;
 };
 static const Effect EFFECTS[] = {
-    {"jack", "Jack-o'-Lantern Row", jack_fn, HW_EMBER},
-    {"lightning", "Lightning Over the House", hw_lightning, HW_STORM_FLOOR},
-    {"cauldron", "Witch's Cauldron", hw_cauldron, HW_BREW_FLOOR},
-    {"moon", "Blood Moon", hw_moon, HW_MOON_FLOOR},
-    {"heart", "Heartbeat of the House", hw_heart, HW_BLOOD_FLOOR},
-    {"swap", "Trick-or-Treat Swap", hw_swap, HW_TREAT_FLOOR},
-    {"season", "Turning of the Season", hw_season, HW_EMBER},
-    {"witching", "Witching Hour", witching_fn, HW_NIGHT_FLOOR},
-    {"mist", "Graveyard Mist", hw_mist, HW_NIGHT_FLOOR},
-    {"windcandles", "Wind-Blown Candles", hw_windcandles, HW_EMBER},
+    {"jack", "Jack-o'-Lantern Row", jack_fn, jack_t, HW_EMBER},
+    {"lightning", "Lightning Over the House", hw_lightning, hw_lightning, HW_STORM_FLOOR},
+    {"cauldron", "Witch's Cauldron", hw_cauldron, hw_cauldron, HW_BREW_FLOOR},
+    {"moon", "Blood Moon", hw_moon, hw_moon, HW_MOON_FLOOR},
+    {"heart", "Heartbeat of the House", hw_heart, hw_heart, HW_BLOOD_FLOOR},
+    {"swap", "Trick-or-Treat Swap", hw_swap, hw_swap, HW_TREAT_FLOOR},
+    {"season", "Turning of the Season", hw_season, hw_season, HW_EMBER},
+    {"witching", "Witching Hour", witching_fn, witching_t, HW_NIGHT_FLOOR},
+    {"mist", "Graveyard Mist", hw_mist, hw_mist, HW_NIGHT_FLOOR},
+    {"windcandles", "Wind-Blown Candles", hw_windcandles, hw_windcandles, HW_EMBER},
 };
 static bool reads_weather(const Effect &fx) {
   return !strcmp(fx.key, "windcandles") || !strcmp(fx.key, "mist") || !strcmp(fx.key, "season");
@@ -125,7 +133,9 @@ struct FlashResult {
   double min_lum = 1e9;
   bool floor_ok = true;
 };
-static FlashResult flash_check(const Effect &fx, const std::vector<HwSelf> &lights, double seconds, double dt, double t0) {
+typedef std::function<HwColor(double, const HwSelf &)> FrameFn;
+static FlashResult flash_check(const FrameFn &fn, const HwColor &floor, const std::vector<HwSelf> &lights, double seconds,
+                               double dt, double t0) {
   FlashResult res;
   std::vector<Trans> groups[4];   // S, G, D, and unmapped lights on their own
   long n = (long) (seconds / dt + 0.5);
@@ -136,8 +146,8 @@ static FlashResult flash_check(const Effect &fx, const std::vector<HwSelf> &ligh
     int trend = 0;
     for (long k = 0; k < n; k++) {
       double t = t0 + k * dt;
-      HwColor c = fx.fn(t, b);
-      if (c.r < fx.floor.r || c.g < fx.floor.g || c.b < fx.floor.b || c.ww < fx.floor.ww || c.cw < fx.floor.cw)
+      HwColor c = fn(t, b);
+      if (c.r < floor.r || c.g < floor.g || c.b < floor.b || c.ww < floor.ww || c.cw < floor.cw)
         res.floor_ok = false;
       double lin[3];
       to_linear(c, lin);
@@ -219,7 +229,7 @@ static void test_deterministic() {
 }
 
 static void check_window(const Effect &fx, const std::vector<HwSelf> &lights, double t0, const char *when) {
-  FlashResult r = flash_check(fx, lights, 1800.0, 0.01, t0);
+  FlashResult r = flash_check(fx.fn, fx.floor, lights, 1800.0, 0.01, t0);
   printf("%-26s %-18s %6d %6d %6d %8.3f\n", fx.name, when, r.bulb, r.group, r.red, r.min_lum);
   CHECK(r.floor_ok, "%s (%s): a channel fell under the effect's floor", fx.key, when);
   CHECK(r.min_lum >= 0.03, "%s (%s): luminance %.3f is under the 3 %% floor", fx.key, when, r.min_lum);
@@ -457,6 +467,132 @@ static void test_weather_timeline() {
 }
 
 
+// ---- Speed and Intensity ----
+
+// Set the room helpers the way accent_fx_controls.yaml does (raw 0 - 255, 128 = normal).
+static void room(float speed_raw, float intensity_raw) {
+  fx_set_speed(speed_raw);
+  fx_set_intensity(intensity_raw);
+}
+// An effect as its lambda draws it: with the room's current Speed and Intensity.
+static FrameFn at_room(const Effect &fx) {
+  EffectT f = fx.tfn;
+  return [f](double t, const HwSelf &b) { return f(hw_t_now(t), b); };
+}
+
+static void test_controls_plumbing() {
+  room(128.0f, 128.0f);
+  HwT t = hw_t_now(T0);
+  CHECK(t.A == T0 && t.s == 1.0 && t.d == 1.0f, "normal: the animation clock is the shared clock, full depth");
+  room(NAN, NAN);
+  t = hw_t_now(T0);
+  CHECK(t.A == T0 && t.d == 1.0f, "an unavailable helper counts as 1x and 100 %%");
+  room(64.0f, 64.0f);
+  t = hw_t_now(T0);
+  CHECK(t.A == T0 * 0.5 && t.d == 0.5f, "raw 64: half speed, half depth");
+  room(255.0f, 255.0f);
+  t = hw_t_now(T0);
+  CHECK(fabs(t.s - 3.96) < 0.01 && t.d == HW_DEPTH_MAX, "raw 255: ~4x, depth clamped at %.2f (got %.2f, %.2f)", HW_DEPTH_MAX, t.s, t.d);
+  room(0.0f, 0.0f);
+  t = hw_t_now(T0);
+  CHECK(t.s == 0.25 && t.d == 0.0f, "raw 0: a quarter speed, no movement");
+  room(128.0f, 128.0f);
+  for (const Effect &fx : EFFECTS)   // at normal, hw_render() draws each effect exactly as designed
+    for (int k = 0; k < 500; k++) {
+      double tt = T0 + k * 3.17;
+      HwColor a = fx.fn(tt, yard()[k % YARD_N]), b = fx.tfn(hw_t_now(tt), yard()[k % YARD_N]);
+      if (!same(a, b)) { CHECK(false, "%s differs from its design at normal Speed and Intensity", fx.key); break; }
+    }
+}
+
+// Flash and floor checks at steady settings: Speed 0.25 / 0.5 / 1 x Intensity
+// 25 / 50 / 100 % and at the maximum (clamped at 125 %) must keep the flash
+// rule; the floor must hold at every setting. Above normal Speed
+// the flash rate rises with speed by design - measured and reported at 2x and
+// at the maximum (~3.96x), not enforced.
+static void test_controls_flashes() {
+  auto lights = yard();
+  lights.push_back(hw_me("", "a1b2c3"));
+  const float SP[3] = {0.0f, 64.0f, 128.0f}, IN[3] = {32.0f, 64.0f, 128.0f};
+  printf("%-26s", "speed x / intensity (30 min)");
+  for (float s : SP) for (float i : IN) printf(" %4.2f/%-3.0f", exp2f((s - 128.0f) / 64.0f), i / 1.28f);
+  printf(" max in: .25/.5/1  1/0      | 2x       max      2x storm max storm  min lum\n");
+  for (const Effect &fx : EFFECTS) {
+    hw_wx_set(HW_WX_CALM);
+    printf("%-26s", fx.name);
+    double min_lum = 1e9;
+    auto run = [&](float sr, float ir, bool enforce) {
+      room(sr, ir);
+      FlashResult r = flash_check(at_room(fx), fx.floor, lights, 1800.0, 0.01, T0);
+      printf(" %d/%d/%d%*s", r.bulb, r.group, r.red, 3, "");
+      min_lum = std::min(min_lum, r.min_lum);
+      CHECK(r.floor_ok && r.min_lum >= 0.03, "%s (speed raw %.0f, intensity raw %.0f): floor broken (min luminance %.3f)",
+            fx.key, sr, ir, r.min_lum);
+      if (enforce)
+        CHECK(r.bulb <= 1 && r.group <= 1 && r.red <= 1,
+              "%s (speed raw %.0f, intensity raw %.0f): %d/%d/%d flashes per second (bulb/group/red), target 1", fx.key, sr,
+              ir, r.bulb, r.group, r.red);
+    };
+    for (float s : SP)
+      for (float i : IN) run(s, i, true);
+    for (float s : SP) run(s, 255.0f, true);
+    run(128.0f, 0.0f, true);
+    printf("|");
+    run(192.0f, 128.0f, false);
+    run(255.0f, 128.0f, false);
+    if (reads_weather(fx)) {
+      hw_wx_set(STORM);
+      run(192.0f, 128.0f, false);
+      run(255.0f, 128.0f, false);
+      hw_wx_set(HW_WX_CALM);
+    } else {
+      printf(" %-8s %-8s", "-", "-");
+    }
+    printf(" %.3f\n", min_lum);
+  }
+  room(128.0f, 128.0f);
+}
+
+// A live change reaches seven bulbs 0 - 0.85 s apart and each applies it on
+// arrival. While it is on its way they may disagree; once every bulb has it,
+// they must draw identical frames again.
+static void test_controls_resync() {
+  const int N = 7;
+  const float skew[N] = {0.0f, 0.12f, 0.25f, 0.40f, 0.55f, 0.70f, 0.85f};
+  struct Change { double t; float speed, intensity; };
+  const Change changes[] = {{T0 + 10.3, 192.0f, 128.0f}, {T0 + 40.0, 192.0f, 64.0f}, {T0 + 71.7, 0.0f, 255.0f},
+                            {T0 + 100.0, NAN, NAN}, {T0 + 130.2, 255.0f, 32.0f}};
+  float sp[N], in[N];
+  for (int i = 0; i < N; i++) { sp[i] = 1.0f; in[i] = 1.0f; }
+  auto lights = yard();
+  const HwSelf &s1 = lights[0], &g2 = lights[3], &d1 = lights[5];
+  double during = 0.0, after = 0.0;
+  for (double t = T0; t < T0 + 160.0; t += 0.05) {
+    HwColor ref[5];
+    for (int i = 0; i < N; i++) {
+      g_fx_speed = sp[i];
+      g_fx_intensity = in[i];
+      for (const Change &c : changes)
+        if (c.t + skew[i] <= t && c.t + skew[i] > t - 0.05) room(c.speed, c.intensity);
+      sp[i] = g_fx_speed;
+      in[i] = g_fx_intensity;
+      HwT tt = hw_t_now(t);
+      HwColor f[5] = {hw_jack(tt, g2), hw_lightning(tt, d1), hw_heart(tt, s1), hw_mist(tt, g2), hw_season(tt, d1)};
+      if (i == 0) { memcpy(ref, f, sizeof f); continue; }
+      bool differs = false;
+      for (int k = 0; k < 5; k++) differs = differs || !same(f[k], ref[k]);
+      if (!differs) continue;
+      bool arriving = false;
+      for (const Change &c : changes) arriving = arriving || (t >= c.t && t < c.t + skew[N - 1]);
+      (arriving ? during : after) += 0.05;
+    }
+  }
+  room(128.0f, 128.0f);
+  printf("controls resync: 5 live changes to 7 bulbs; bulb-seconds out of step: %.2f while a change was arriving, %.2f after\n",
+         during, after);
+  CHECK(after == 0.0, "bulbs still disagreed after every bulb had the new Speed and Intensity (%.2f bulb-s)", after);
+  CHECK(during > 0.0, "the bulbs should disagree while a change is on its way");
+}
 
 struct FakeValues {
   float b;
@@ -500,7 +636,8 @@ static void dump() {
   before.on = true;
   before.wind_mph = 6.0f;
   before.dir_deg = 45.0f;
-  for (int pass = 0; pass < 4; pass++)      // 0 calm, 1 storm, 2 daylight lift, 3 the weather turning
+  // 0 calm, 1 storm, 2 daylight lift, 3 the weather turning, 4 Speed 0.5 and Intensity 50 %, 5 Speed 2x
+  for (int pass = 0; pass < 6; pass++)
     for (const Effect &fx : EFFECTS) {
       if ((pass == 1 || pass == 3) && !reads_weather(fx)) continue;
       bool storm = pass == 1;
@@ -517,9 +654,16 @@ static void dump() {
             g_hw_wxs.prev = before;
             g_hw_wxs.minute = m;
           }
-          HwColor c = fx.fn(t, lights[i]);
+          HwColor c;
+          if (pass >= 4) {
+            room(pass == 4 ? 64.0f : 192.0f, pass == 4 ? 64.0f : 128.0f);
+            c = fx.tfn(hw_t_now(t), lights[i]);
+            room(128.0f, 128.0f);
+          } else {
+            c = fx.fn(t, lights[i]);
+          }
           printf("%s%s,%s,%.4f,%.6f,%.6f,%.6f,%.6f,%.6f\n", fx.key,
-                 pass == 1 ? "@storm" : pass == 2 ? "@day" : pass == 3 ? "@turn" : "",
+                 pass == 1 ? "@storm" : pass == 2 ? "@day" : pass == 3 ? "@turn" : pass == 4 ? "@half" : pass == 5 ? "@double" : "",
                  YARD_MAP[i].name, t, c.r, c.g, c.b, c.ww, c.cw);
           rows++;
         }
@@ -542,9 +686,12 @@ int main(int argc, char **argv) {
   test_calendar_and_sun();
   test_weather_plumbing();
   test_weather_timeline();
+  test_controls_plumbing();
+  test_controls_resync();
   test_lift();
   test_floor_and_flashes();
   test_big_group();
+  test_controls_flashes();
   if (failures) {
     printf("%d check(s) failed\n", failures);
     return 1;

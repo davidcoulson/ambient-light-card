@@ -12,12 +12,21 @@ trap 'rm -rf "$out"' EXIT
 ${CXX:-c++} -std=c++17 -O2 -Wall -Wextra -Wno-unused-function -I"$here/../common" \
   "$here/halloween_test.cpp" -o "$out/halloween_test"
 
-# Lockstep: no Halloween effect may run on a Speed-scaled clock (a Speed change
-# lands on each bulb at a different moment and would jump their phases).
-if grep -nE 'hw_seconds|fx_seconds|fx_t\(|fx_ms|fx_millis' "$here/../common/halloween_effects.yaml" "$here/../common/halloween_fx.h"; then
-  echo "FAIL a Halloween effect uses a Speed-scaled clock"; exit 1
+# Lockstep: every effect draws its frame through hw_render() with the unscaled
+# shared clock, so the calendar, the sun and the weather keep to real time and
+# Speed scales only the animation clock, as fx_seconds() does. No Halloween file
+# may use the float-folded or integrating clocks (fx_t, fx_ms, fx_millis): a
+# per-bulb integral drifts apart, and a float of epoch time freezes.
+hw="$here/../common/halloween_effects.yaml $here/../common/halloween_weather.yaml $here/../common/halloween_fx.h"
+if grep -nE 'hw_seconds|fx_t\(|fx_ms|fx_millis' $hw; then
+  echo "FAIL a Halloween effect uses a float-folded or integrating clock"; exit 1
 fi
-echo "lockstep: every Halloween effect runs on the unscaled shared clock"
+lambdas=$(grep -c 'lambda: |-' "$here/../common/halloween_effects.yaml")
+renders=$(grep -c 'hw_render(sync_seconds(),' "$here/../common/halloween_effects.yaml")
+if [ "$lambdas" -ne "$renders" ] || [ "$lambdas" -eq 0 ]; then
+  echo "FAIL $renders of $lambdas Halloween effects draw through hw_render(sync_seconds(), ...)"; exit 1
+fi
+echo "lockstep: all $lambdas Halloween effects draw through hw_render() on the shared clock"
 
 # The helpers guard: halloween_fx.h must compile against unmarked v1.2.x
 # helpers (API level 1) and refuse any other level.

@@ -28,13 +28,18 @@
 # library's light_effects_helpers.h, which accent_light_nonaddressable_effects
 # .yaml or white_effects.yaml already bring in.
 #
-# Every effect keeps a visible floor (a light never goes dark) and stays at or
-# under 1 flash per second per light and per group; halloween_fx.h has the
-# rules and tests/halloween_test.cpp checks them. They ignore the room Speed
-# and Intensity helpers and always run on the unscaled shared clock: a Speed
-# change lands on each bulb at a slightly different moment and would jump
-# neighbours to different phases. Three of them read the local date and hour,
-# so the time component's timezone must be right.
+# Every effect keeps a visible floor (a light never goes dark) and, at normal
+# Speed or slower, stays at or under 1 flash per second per light and per
+# group; halloween_fx.h has the
+# rules and tests/halloween_test.cpp checks them. Three of them read the local
+# date and hour, so the time component's timezone must be right.
+#
+# The room Speed and Intensity helpers (accent_fx_controls.yaml, which
+# athom-light.yaml includes) apply as they do to the library's other effects:
+# Speed scales the animation clock like fx_seconds() (0.25x - ~4x), while the
+# calendar, sunset, quarter-hour swells and weather keep to real time;
+# Intensity scales each effect's movement, never its floor, up to 125 %. Each
+# lambda draws its frame through hw_render() with the unscaled shared clock.
 #
 # halloween_weather.yaml is optional. Without it Wind-Blown Candles burns
 # steady and Season and Mist use their nightly dice instead of the wind.
@@ -72,9 +77,9 @@ light:
           update_interval: 40ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
-            hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
-            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
-                   id(warm_output), id(cold_output), hw_jack(sync_seconds(), me));
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_jack(t, me); }));
 
       # ------------------------------------------------------------------
       # Lightning Over the House - violet night (the floor), one white
@@ -86,9 +91,9 @@ light:
           update_interval: 20ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
-            hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
-            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
-                   id(warm_output), id(cold_output), hw_lightning(sync_seconds(), me));
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_lightning(t, me); }));
 
       # ------------------------------------------------------------------
       # Witch's Cauldron - poison green <-> violet drift per light, a lime
@@ -99,9 +104,9 @@ light:
           update_interval: 50ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
-            hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
-            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
-                   id(warm_output), id(cold_output), hw_cauldron(sync_seconds(), me));
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_cauldron(t, me); }));
 
       # ------------------------------------------------------------------
       # Blood Moon - moon white, then an eclipse sweeps west to east into
@@ -112,9 +117,9 @@ light:
           update_interval: 100ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
-            hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
-            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
-                   id(warm_output), id(cold_output), hw_moon(sync_seconds(), me));
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_moon(t, me); }));
 
       # ------------------------------------------------------------------
       # Heartbeat of the House - a slow red pulse from the front door out
@@ -125,9 +130,9 @@ light:
           update_interval: 20ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
-            hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
-            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
-                   id(warm_output), id(cold_output), hw_heart(sync_seconds(), me));
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_heart(t, me); }));
 
       # ------------------------------------------------------------------
       # Trick-or-Treat Swap - neighbours alternate orange and purple and
@@ -138,9 +143,9 @@ light:
           update_interval: 50ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
-            hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
-            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
-                   id(warm_output), id(cold_output), hw_swap(sync_seconds(), me));
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_swap(t, me); }));
 
       # ------------------------------------------------------------------
       # Turning of the Season - harvest gold on Oct 1 to pumpkin and
@@ -152,9 +157,9 @@ light:
           update_interval: 100ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
-            hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
-            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
-                   id(warm_output), id(cold_output), hw_season(sync_seconds(), me));
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_season(t, me); }));
 
       # ------------------------------------------------------------------
       # Witching Hour - amber at lights-on, violet, teal, red by 11 pm,
@@ -165,10 +170,9 @@ light:
           update_interval: 100ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
-            hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
-            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
-                   id(warm_output), id(cold_output),
-                   hw_witching(sync_seconds(), me, ${sun_latitude}, ${sun_longitude}));
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_witching(t, me, ${sun_latitude}, ${sun_longitude}); }));
 
       # ------------------------------------------------------------------
       # Graveyard Mist - one slow mist across the yard; palette, direction
@@ -179,9 +183,9 @@ light:
           update_interval: 100ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
-            hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
-            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
-                   id(warm_output), id(cold_output), hw_mist(sync_seconds(), me));
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_mist(t, me); }));
 
       # ------------------------------------------------------------------
       # Wind-Blown Candles - pumpkin flames bent by real gusts rolling in
@@ -193,6 +197,6 @@ light:
           update_interval: 40ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
-            hw_frame(sync_seconds(), ${sun_latitude}, ${sun_longitude});   // the daylight lift for this frame
-            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output),
-                   id(warm_output), id(cold_output), hw_windcandles(sync_seconds(), me));
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_windcandles(t, me); }));

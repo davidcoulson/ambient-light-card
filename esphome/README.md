@@ -120,19 +120,25 @@ Two rules hold for all of them, and the host tests check both:
 
 - **A light never goes dark.** Every effect has a floor colour – a dim ember, a violet glow – and
   no channel drops under it, so a light is always at least ~3 % of full warm white.
-- **Minimal flashing.** At most 1 flash per second per light and per group of neighbouring lights,
+- **Minimal flashing.** At normal Speed or slower, at most 1 flash per second per light and per group of neighbouring lights,
   counted the WCAG 2.3.1 way (the limit there is 3). Occasional events – a candle guttering, a
   bubble – take turns within a group so neighbours never fire in the same second.
-- **Lockstep, always.** These effects ignore the room Speed and Intensity helpers and run on the
-  unscaled shared clock: a Speed change reaches each bulb at a slightly different moment, so it
-  would jump neighbours to different phases, and dragging the slider could jump an effect in and
-  out of a flash faster than the limit. Their pace is part of the design.
+- **Speed and Intensity.** The room helpers apply as they do to every other effect here, the
+  moment a value arrives; neighbours disagree only while Home Assistant reaches each bulb, and a
+  change jumps the effect to a new phase once.
+  - **Speed** scales the animation clock as `fx_seconds()` does (0.25×–~4×). Calendar arcs, sunset,
+    the quarter-hour swells and the weather keep to real time. The flash rule holds at normal speed
+    and below; above it the flash rate rises with speed.
+  - **Intensity** scales each effect's movement – the flicker, strikes, bubbles, pulses, swells and
+    gust bends – never its floor colour, so the floor holds at any setting. It is clamped at 125 %,
+    the most at which every effect keeps the flash rule at normal speed.
+  - An unavailable helper counts as normal (1× and 100 %).
 
 Three of them are made for running every evening of a month: *Turning of the Season* moves from
 harvest gold on October 1 to pumpkin and violet on the 31st, *Witching Hour* moves from amber at
 lights-on (an hour before sunset) through violet and teal to red at 11 pm, and *Graveyard Mist*
 picks a new palette, direction and pace each night. They read the local date and hour, so they
-use the unscaled clock and need the time component's timezone to be right; *Witching Hour* also
+need the time component's timezone to be right; *Witching Hour* also
 needs `sun_latitude` / `sun_longitude` for its sunset (the default is New York City).
 
 Opt a light in from its device file, next to its own package. A light that does not include the
@@ -297,14 +303,19 @@ The simplest way to keep the rule is one substitution for the ref, used by both 
 `tests/run_halloween_tests.sh` builds `tests/halloween_test.cpp` against the real headers and
 checks, on every light of the example map: same time and light → same frame; the floor holds;
 flashes stay at or under 1 per second per light and per group – at 8 pm, at lights-on, and in a
-simulated storm for the weather-driven effects; an unmapped light still runs; no effect lambda uses
-a Speed-scaled clock; `hw_out()` scales by brightness like `out_rgb()`; the cap and floors both hold; an
+simulated storm for the weather-driven effects – and at Speed 0.25 / 0.5 / 1× × Intensity 25 / 50 /
+100 % and the 125 % maximum (the floor at every speed; 2× and ~4× are measured and reported); an
+unmapped light still runs; every effect lambda draws through `hw_render()` on the shared clock, and
+none uses a float-folded or integrating clock; `hw_out()` scales by brightness like `out_rgb()`; the cap and floors both hold; an
 evening keeps its date past midnight and sunset lands within two minutes; the weather falls back
 to calm on unknown readings or a lost Home Assistant; seven bulbs fed the same readings with
 different delays, ticking at different moments, show identical frames except around a reboot
-and a reading that straddles the cutoff (and then for no more than two minutes); and the daylight
+and a reading that straddles the cutoff (and then for no more than two minutes); seven bulbs
+that hear a live Speed or Intensity change up to 0.85 s apart draw identical frames again once all
+have it; and the daylight
 lift only raises channels, keeps each in [0, 1], stays in the cap, adds no flashes and follows the
-sun or measured light. Parity covers night, storm, full-lift and weather-turning frames. It also checks the helpers guard: `halloween_fx.h` compiles against unmarked
+sun or measured light. Parity covers night, storm, full-lift and weather-turning frames, frames at Speed 0.5 and Intensity
+50 %, and frames at Speed 2×. It also checks the helpers guard: `halloween_fx.h` compiles against unmarked
 v1.2.x helpers and fails against any other API level.
 
 `tests/effect_list.py` reads `esphome config` output and lists a device's light effects and any

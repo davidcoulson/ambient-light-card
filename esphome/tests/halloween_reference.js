@@ -12,7 +12,10 @@
 //
 // f(T epoch seconds, bulb) -> [r, g, b, ww, cw] PWM levels 0..1, at 100 %
 // brightness. FLOORS (near the end) lists the effects the bulbs build; the
-// rest are designs the preview page shows.
+// rest are designs the preview page shows. The built effects take an optional
+// third argument, the clocks and depth the room Speed and Intensity give
+// (HwT in C++: { A: animation clock, s: speed, d: depth }); roomCtl() works
+// it out from a Speed and an Intensity as hw_t_now() does.
 // ---------------------------------------------------------------------------
 "use strict";
 
@@ -150,26 +153,30 @@ function pumpkinAt(lvl) {
 // 1. Jack-o'-Lantern Row. Gentle two-layer flame (its swing stays under the
 // 10 % flash threshold) plus one slow gutter per bulb every 7 s, taking turns
 // within the group.
-function jackBase(T, b, steady) {
-  var Tj = T + F(b.off * 7);
+// The clocks and depth for a frame (hw_t / HwT): Speed 1, Intensity 100 % unless given.
+function ctlOf(T, c) { return c || { A: T, s: 1, d: 1 }; }
+function jackBase(T, b, steady, c) {
+  c = ctlOf(T, c);
+  var Tj = c.A + F(b.off * 7);
   var slow = sync_noise(Tj, F(0.45), b.i + 1), fast = sync_noise(Tj, F(0.11), b.i + 21);
-  var lvl = 0.66 + 0.10 * (slow - 0.5) + 0.03 * (fast - 0.5);
-  var gt = groupTurn(T, b, 7, 1.6, 50);
+  var lvl = 0.66 + c.d * (0.10 * (slow - 0.5) + 0.03 * (fast - 0.5));
+  var gt = groupTurn(c.A, b, 7, 1.6, 50);
   var len = 0.45 + sync_random(gt.slot, b.i + 60) * 0.35;
   if (!steady && gt.w >= gt.at && gt.w < gt.at + len) {
     var u = gt.w - gt.at, e = Math.min(clamp01(u / 0.25), clamp01((len - u) / 0.30));
-    lvl = lvl + (0.36 - lvl) * ease(e);
+    lvl = lvl + (0.36 - lvl) * ease(e) * c.d;
   }
   if (b.gi === 2) lvl *= 1.1;
   return outBase(pumpkinAt(lvl), EMBER);
 }
-function jack(T, b, steady) { return lift(jackBase(T, b, steady), HW_AMB); }
+function jack(T, b, c) { return lift(jackBase(T, b, false, c), HW_AMB); }
 
 // 6. Lightning Over the House. One strike per 11 s slot, never a flicker
 // burst: a fast rise and a slow fall; about one in three is a soft distant
 // glow. The street bed peaks at 40 %.
-function lightning(T, b) {
-  var t = sync_fold(T), s = sync_slot(T, 11), w = s.w;
+function lightning(T, b, c) {
+  c = ctlOf(T, c);
+  var t = sync_fold(c.A), s = sync_slot(c.A, 11), w = s.w;
   var base = sc(VIOLET, 0.14 * (0.85 + 0.15 * Math.sin(t * 0.3)));
   var at = 0.8 + sync_random(s.slot, 1) * 8, L = 0;
   var distant = sync_random(s.slot, 2) < 0.35;
@@ -180,28 +187,30 @@ function lightning(T, b) {
     L = u < rise ? peak * (u / rise) : u < rise + hold ? peak : peak * Math.exp(-(u - rise - hold) * fall);
   }
   if (b.gi === 0) L *= 0.4;
-  return out(add(base, sc(STRIKE, L)), STORM_FLOOR);
+  return out(add(base, sc(STRIKE, L * c.d)), STORM_FLOOR);
 }
 
 // 7. Witch's Cauldron. Each bulb drifts poison green <-> violet on its own
 // phase; one slow bubble per bulb every 4.2 s, taking turns within the group.
-function cauldron(T, b) {
-  var t = sync_fold(T + F(b.off * 20));
+function cauldron(T, b, c) {
+  c = ctlOf(T, c);
+  var t = sync_fold(c.A + F(b.off * 20));
   var m = 0.5 + 0.5 * Math.sin(t * 0.21 + Math.sin(t * 0.13) * 2);
   var col = sc(mix(POISON, VIO2, m), 0.55);
-  var gt = groupTurn(T, b, 4.2, 1.0, 3), w = gt.w - gt.at;
+  var gt = groupTurn(c.A, b, 4.2, 1.0, 3), w = gt.w - gt.at;
   var env = w < 0 ? 0 : w < 0.4 ? ease(w / 0.4) : Math.exp(-(w - 0.4) * 4);
-  return out(add(col, sc(LIME, env * 0.28)), BREW_FLOOR);
+  return out(add(col, sc(LIME, env * 0.28 * c.d)), BREW_FLOOR);
 }
 
 // 9. Blood Moon. Moon white, then an eclipse shadow sweeps west to east and
 // turns everything copper red; four-minute cycle.
-function moon(T, b) {
-  var c = fmodp(T - F((b.x + 25) / 3), 240), k;
+function moon(T, b, ctl) {
+  ctl = ctlOf(T, ctl);
+  var c = fmodp(ctl.A - F((b.x + 25) / 3), 240), k;
   if (c < 50) k = 0; else if (c < 90) k = ease((c - 50) / 40); else if (c < 170) k = 1;
   else if (c < 210) k = 1 - ease((c - 170) / 40); else k = 0;
   var col = mix(sc(MOONWHITE, 0.75), sc(COPPER, 0.5), k);
-  if (k === 1) col = sc(col, 0.85 + 0.15 * Math.sin(c * 0.5));
+  if (k === 1) col = sc(col, 0.85 + 0.15 * Math.sin(c * 0.5) * ctl.d);
   return out(col, MOON_FLOOR);
 }
 
@@ -251,9 +260,10 @@ function watching(T, b) {
 // 4. Heartbeat of the House (built: hw_heart): a slow red pulse that starts at
 // the door and reaches the street a moment later. 40 bpm; the second beat is
 // kept under the flash threshold.
-function heart(T, b) {
-  var P = 1.5, s = sync_slot(T - b.door / 180, P), w = s.w;   // 40 bpm
-  var lvl = 0.15 + 0.80 * Math.exp(-6 * w) + (w > 0.35 ? 0.25 * Math.exp(-6 * (w - 0.35)) : 0);
+function heart(T, b, c) {
+  c = ctlOf(T, c);
+  var P = 1.5, s = sync_slot(c.A - b.door / 180, P), w = s.w;   // 40 bpm
+  var lvl = 0.15 + c.d * (0.80 * Math.exp(-6 * w) + (w > 0.35 ? 0.25 * Math.exp(-6 * (w - 0.35)) : 0));
   var amp = 1 - 0.35 * Math.min(1, b.door / 80);
   return out(sc(BLOOD, clamp01(lvl * amp)), BLOOD_FLOOR);
 }
@@ -287,7 +297,7 @@ function ghost(T, b) {
 
 var CUES = [];
 function scareAt(T, b, cue) {
-  var r = T - cue, u = jack(T, b, r >= -1.2 && r < 1.0);
+  var r = T - cue, u = lift(jackBase(T, b, r >= -1.2 && r < 1.0), HW_AMB);
   if (r < 0 || r > 7) return u;
   var ember = pumpkinAt(0.2);
   var drained = mix(u, ember, ease(clamp01(r / 0.8)));
@@ -351,11 +361,12 @@ function seance(T, b) {
 // 14. Trick-or-Treat Swap (built: hw_swap): neighbours alternate orange and purple and trade
 // colours every 8 s with a 2.5 s crossfade. The two colours carry the same
 // luminance, so a swap reads as a change of hue, not a flash.
-function swap(T, b) {
-  var s = sync_slot(T, 8), parity = (s.slot + YARD_ORDER[b.i]) % 2;
+function swap(T, b, c) {
+  c = ctlOf(T, c);
+  var s = sync_slot(c.A, 8), parity = (s.slot + YARD_ORDER[b.i]) % 2;
   var from = parity ? TREAT_PURPLE : TREAT_ORANGE, to = parity ? TREAT_ORANGE : TREAT_PURPLE;
   var k = s.w > 8 - 2.5 ? ease((s.w - 5.5) / 2.5) : 0;
-  return out(sc(mix(from, to, k), 0.8), TREAT_FLOOR);
+  return out(sc(mix(from, to, 0.5 + (k - 0.5) * c.d), 0.8), TREAT_FLOOR);
 }
 var YARD_ORDER = [0, 1, 2, 3, 4, 5, 6];
 
@@ -455,7 +466,8 @@ function along(b, w) { var t = windTo(w); return b.x * t.x + b.y * t.y; }
 // The weather layer: a cooler cast on cold nights, a pale fog near the dew
 // point, a sheen and a slow wet shimmer in rain. Slow changes only; wind does
 // not touch brightness here.
-function wxLayer(c, T, b) {
+function wxLayer(c, T, b, ctl) {
+  ctl = ctlOf(T, ctl);
   var W = wxAt(T), m = Math.max(c[0], c[1], c[2], c[3], c[4]);
   var cold = clamp01((55 - q(W.tempF, 1)) / 20) * 0.35;
   c = mix(c, [c[0] * 0.75, c[1], c[2] + 0.10 * m, c[3] * 0.6, c[4] + 0.25 * c[3] + 0.05 * m], cold);
@@ -465,7 +477,7 @@ function wxLayer(c, T, b) {
   var wet = clamp01(q(W.rainInH, 0.01) / 0.3);
   if (wet > 0) {
     c = add(c, [0, 0, 0.03 * wet, 0, 0.06 * wet]);
-    c = sc(c, 1 + 0.06 * wet * (sync_noise(T + F(b.off * 5), F(1.3), b.i + 70) - 0.5) * 2);
+    c = sc(c, 1 + 0.06 * wet * (sync_noise(ctl.A + F(b.off * 5), F(1.3), b.i + 70) - 0.5) * 2);
   }
   return c;
 }
@@ -489,19 +501,21 @@ var MIST_SETS = [
 // rust, Oct 31 pumpkin and violet; each evening that date's two colours roll
 // across the front of the house in a 5-7 minute wave (downwind when the
 // weather is on, a nightly dice roll otherwise).
-function seasonWave(T, period, dir, b) {
-  var ph = fmodp(T / period + dir * across(b) * 0.6, 1);
+function seasonWave(A, period, dir, b) {
+  var ph = fmodp(A / period + dir * across(b) * 0.6, 1);
   return 0.5 - 0.5 * Math.cos(ph * 6.2832);
 }
-function season(T, b) {
+function season(T, b, c) {
+  c = ctlOf(T, c);
   var e = evening(T), p = (e.oct - 1) / 30;
   var c1 = mix(HARVEST_GOLD, HALLOW_ORANGE, p), c2 = mix(RUST, HALLOW_VIOLET, p * p);
   var dice = sync_random(e.night, 80) < 0.5 ? 1 : -1, prev = wxPrev();
   var dir = WX.on ? (windTo(WX).x >= 0 ? 1 : -1) : dice;
   var dirBefore = prev.on ? (windTo(prev).x >= 0 ? 1 : -1) : dice;
   var period = 300 + 120 * sync_random(e.night, 81);
-  var w = seasonWave(T, period, dir, b);
-  if (dirBefore !== dir) { var w0 = seasonWave(T, period, dirBefore, b); w = w0 + (w - w0) * ease(clamp01(wxSince(T) / WX_EASE)); }
+  var w = seasonWave(c.A, period, dir, b);
+  if (dirBefore !== dir) { var w0 = seasonWave(c.A, period, dirBefore, b); w = w0 + (w - w0) * ease(clamp01(wxSince(T) / WX_EASE)); }
+  w = 0.5 + (w - 0.5) * c.d;
   return out(sc(mix(c1, c2, ease(w)), 0.85), EMBER);
 }
 
@@ -509,13 +523,14 @@ function season(T, b) {
 // sunset) to 11 pm: amber through daylight and sunset, deep violet an hour
 // after, eerie teal in the middle of the dark, low red by 11. On each quarter
 // hour a 24 s swell crosses the house from west to east.
-function witching(T, b) {
+function witching(T, b, c) {
+  c = ctlOf(T, c);
   var e = evening(T), sh = sunsetHour(T), mid = (sh + 1.25 + 23) / 2;
   var col = interp([[sh - 1, DUSK_AMBER], [sh + 0.25, DUSK_AMBER], [sh + 1.25, DEEP_VIOLET], [mid, EERIE_TEAL], [23, LATE_RED]], e.hour);
-  var shimmer = 0.88 + 0.12 * sync_noise2(b.x / 30 + 500 + T * 0.01, b.y / 30 + 500, 33);
+  var shimmer = 0.94 + 0.12 * c.d * (sync_noise2(b.x / 30 + 500 + c.A * 0.01, b.y / 30 + 500, 33) - 0.5);
   var qs = fmodp(e.hour * 4, 1) * 900 - across(b) * 12;
   var chime = qs >= 0 && qs < 24 ? Math.sin(Math.PI * qs / 24) : 0;
-  return out(sc(col, shimmer * (0.75 + 0.25 * chime)), NIGHT_FLOOR);
+  return out(sc(col, shimmer * (0.75 + 0.25 * chime * c.d)), NIGHT_FLOOR);
 }
 
 // 17. Graveyard Mist: one slow 2D mist field drifting across the yard. Each
@@ -525,18 +540,20 @@ function mistField(b, slot, w, W) {
   var v = (0.5 + windAvg(W) * 0.08) / 22, wt = windTo(W);
   return sync_noise2(b.x / 22 + 1e4 + sync_random(slot, 73) * 5000 - wt.x * v * w, b.y / 22 + 1e4 + sync_random(slot, 74) * 5000 - wt.y * v * w, 31);
 }
-function mistStill(T, b, night) {
+function mistStill(A, b, night) {
   var a = sync_random(night, 71) * 6.2832, sp = 0.012 + 0.012 * sync_random(night, 72);
-  return sync_noise2(b.x / 22 + 1e7 + (T * sp * Math.cos(a)) % 1e6, b.y / 22 + 1e7 + (T * sp * Math.sin(a)) % 1e6, 31);
+  return sync_noise2(b.x / 22 + 1e7 + (A * sp * Math.cos(a)) % 1e6, b.y / 22 + 1e7 + (A * sp * Math.sin(a)) % 1e6, 31);
 }
-function mist(T, b) {
+function mist(T, b, c) {
+  c = ctlOf(T, c);
   var e = evening(T), set = MIST_SETS[Math.floor(sync_random(e.night, 70) * 3)], prev = wxPrev();
-  var s = sync_slot(T, WX_PERIOD), w = F(s.w);                       // one field per weather minute
-  var d = WX.on ? mistField(b, s.slot, w, WX) : mistStill(T, b, e.night);
+  var s = sync_slot(T, WX_PERIOD), w = F(s.w);                       // one field per weather minute, at the latched Speed
+  var d = WX.on ? mistField(b, s.slot, w * c.s, WX) : mistStill(c.A, b, e.night);
   if (w < 15) {                                                      // crossfade from the previous minute's field
-    var d0 = prev.on ? mistField(b, (s.slot - 1) >>> 0, w + WX_PERIOD, prev) : mistStill(T, b, e.night);
+    var d0 = prev.on ? mistField(b, (s.slot - 1) >>> 0, (w + WX_PERIOD) * c.s, prev) : mistStill(c.A, b, e.night);
     d = d0 + (d - d0) * ease(w / 15);
   }
+  d = 0.5 + (d - 0.5) * c.d;
   return out(sc(mix(set[0], set[1], ease(d)), 0.9), NIGHT_FLOOR);
 }
 
@@ -556,10 +573,11 @@ function gustBend(T, b, back) {
   if (u >= 0.4 && u < 1.3) return bend * (1 - ease((u - 0.4) / 0.9));
   return 0;
 }
-function windcandles(T, b) {
-  var base = jackBase(T, b, true);                                     // lifted once, at the end
-  var bend = Math.max(gustBend(T, b, 0), gustBend(T, b, 1));
-  return out(wxLayer(sc(base, 1 - bend), T, b), EMBER);
+function windcandles(T, b, c) {
+  c = ctlOf(T, c);
+  var base = jackBase(T, b, true, c);                                  // lifted once, at the end
+  var bend = Math.max(gustBend(T, b, 0), gustBend(T, b, 1)) * c.d;    // gusts keep to the real clock
+  return out(wxLayer(sc(base, 1 - bend), T, b, c), EMBER);
 }
 
 // Ambient light for the daylight lift: 0 when the sun is 4 deg or more below
@@ -567,6 +585,14 @@ function windcandles(T, b) {
 // 1 above 400 lx on a log scale.
 function ambientAt(T) { var a = clamp01((sunElevation(T) + 4) / 10); return a * a * (3 - 2 * a); }
 function ambientFromLux(lux) { var a = clamp01((Math.log10(Math.max(lux, 0.01)) - 0.7) / 1.9); return a * a * (3 - 2 * a); }
+
+// ---- Speed and Intensity (hw_t_now) ----
+// The clocks and depth a bulb draws with at the room's Speed (as fx_seconds()
+// scales it) and Intensity (movement depth, clamped at DEPTH_MAX).
+var DEPTH_MAX = 1.25;
+function roomCtl(T, speed, intensity) {
+  return { A: speed === 1 ? T : T * speed, s: speed, d: Math.min(Math.max(intensity, 0), DEPTH_MAX) };
+}
 
 var FXFN = { jack: jack, lightning: lightning, cauldron: cauldron, moon: moon,
   follows: follows, watching: watching, heart: heart, brownout: brownout, ghost: ghost, scare: scare,
@@ -642,5 +668,5 @@ if (typeof module !== "undefined") {
     sync_noise: sync_noise, sync_fold: sync_fold, self: self, WX: WX, SUN: SUN, evening: evening,
     sunElevation: sunElevation, sunsetOn: sunsetOn, sunsetHour: sunsetHour, sync_noise2: sync_noise2,
     lift: lift, ambientAt: ambientAt, ambientFromLux: ambientFromLux, setAmbient: function (a) { HW_AMB = a; },
-    setPrevWeather: function (w) { WXP = w; } };
+    setPrevWeather: function (w) { WXP = w; }, roomCtl: roomCtl };
 }

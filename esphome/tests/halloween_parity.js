@@ -5,7 +5,8 @@
 // Reads the C++ frames from stdin and recomputes each one with
 // halloween_reference.js ("@storm" frames under the simulated storm, "@day"
 // frames with the full daylight lift, "@turn" frames in a minute whose weather
-// has just changed, which exercise the eases and crossfades). Run
+// has just changed, which exercise the eases and crossfades; "@half" frames at
+// Speed 0.5 and Intensity 50 %, "@double" frames at Speed 2). Run
 // with TZ=America/New_York, as run_halloween_tests.sh does: the calendar
 // effects read local time. The bulb works in float and the reference in double,
 // so frames agree to ~1e-4 rather than bit for bit; a sample that lands within
@@ -28,6 +29,8 @@ const CALM = Object.assign({}, ref.WX);
 const STORM = { on: true, windMph: 30, gustMph: 45, lullMph: 5, dirDeg: 225, rainInH: 0.6, tempF: 38, dewF: 37 };
 // "@turn" frames: the weather just changed - last minute a light wind from the northeast, this minute the storm.
 const BEFORE = Object.assign({}, CALM, { on: true, windMph: 6, dirDeg: 45 });
+// "@half" and "@double": the room settings the C++ dump draws with (raw 64/64 and 192/128).
+const ROOM = { half: [0.5, 0.5], double: [2, 1] };
 
 const stats = {};
 let bad = 0;
@@ -41,7 +44,9 @@ for (const line of rows) {
   Object.assign(ref.WX, variant === "storm" || variant === "turn" ? STORM : CALM);
   ref.setPrevWeather(variant === "turn" ? BEFORE : null);
   ref.setAmbient(variant === "day" ? 1 : 0);
-  const want = ref.FXFN[key](parseFloat(t), byName[light]);
+  const T = parseFloat(t);
+  const want = ROOM[variant] ? ref.FXFN[key](T, byName[light], ref.roomCtl(T, ROOM[variant][0], ROOM[variant][1]))
+    : ref.FXFN[key](T, byName[light]);
   let diff = 0;
   for (let i = 0; i < 5; i++) {
     const d = Math.abs(want[i] - parseFloat(ch[i]));
@@ -68,7 +73,7 @@ if (!trailer || Number(trailer.split(",")[1]) !== rows.length) {
 }
 const WEATHER = ["season", "mist", "windcandles"];
 for (const key of Object.keys(ref.FLOORS)) {
-  const tags = [key, key + "@day"].concat(WEATHER.includes(key) ? [key + "@storm", key + "@turn"] : []);
+  const tags = [key, key + "@day", key + "@half", key + "@double"].concat(WEATHER.includes(key) ? [key + "@storm", key + "@turn"] : []);
   for (const tag of tags) {
     if (!stats[tag] || stats[tag].n !== 7 * 4000) { console.log(`FAIL ${tag}: ${stats[tag] ? stats[tag].n : 0} frames, expected ${7 * 4000}`); ok = false; }
   }
