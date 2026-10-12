@@ -238,12 +238,25 @@ inline float fx_brightness_scale(L *light) {
   return scale;
 }
 
+// On an RGBWW light, holds the white channels off; null on an RGB light.
+//
+// out_rgb() only has the three colour outputs, but an RGBWW bulb has two more.
+// When an effect starts, and again whenever the slider moves, ESPHome writes
+// the light's own state to all five - and if the picker was in a white mode,
+// that lights the whites, which nothing then cleared: the RGB effect ran on
+// top of a white glow. white_effects.yaml, which only RGBWW lights include,
+// sets this at boot to zero warm_output and cold_output, so every RGB effect
+// holds them off the way out_white() holds the colour channels off.
+inline void (*g_fx_whites_off)() = nullptr;
+
 template<typename L, typename O>
 inline void out_rgb(L *light, O *ro, O *go, O *bo, float r, float g, float b) {
   float scale = fx_brightness_scale(light);
   ro->set_level(clamp01(r) * scale);
   go->set_level(clamp01(g) * scale);
   bo->set_level(clamp01(b) * scale);
+  if (g_fx_whites_off != nullptr)
+    g_fx_whites_off();
 }
 
 // The same for the white-only effects on RGBWW bulbs: colour channels held

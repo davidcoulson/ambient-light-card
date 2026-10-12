@@ -28,6 +28,11 @@ const INTENSITY_ICONS = {
   weather: ["mdi:weather-sunny", "mdi:weather-partly-cloudy", "mdi:weather-windy", "mdi:weather-lightning"],
 };
 const HIDDEN_EFFECTS = /^(None|Calibrate:.*)$/;
+// For text from the card config or an effect list that goes into markup: the
+// card's name and icon are free text from the dashboard YAML, and must show as
+// text rather than be parsed as HTML.
+const esc = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 const MAX_FAVORITES = 11;   // plus the "more" tile = 4 rows of 3
 // Favourite tiles when the card config names none: one effect from each of
 // these groups (the first the light actually has), up to five.
@@ -372,8 +377,8 @@ class AmbientLightCard extends HTMLElement {
         <canvas width="64" height="84"></canvas>
         <div class="in">
           <div class="hd">
-            <button class="ib" id="ib" aria-label="Turn on or off"><ha-icon icon="${c.icon || "mdi:television-ambient-light"}"></ha-icon></button>
-            <div class="tx"><div class="pri">${c.name || "Ambient lights"}</div><div class="sec" id="sec"></div></div>
+            <button class="ib" id="ib" aria-label="Turn on or off"><ha-icon icon="${esc(c.icon || "mdi:television-ambient-light")}"></ha-icon></button>
+            <div class="tx"><div class="pri">${esc(c.name || "Ambient lights")}</div><div class="sec" id="sec"></div></div>
           </div>
           ${["brightness", "speed", "intensity"].filter((k) => k === "brightness" || c[k]).map((k) => `
             <div class="stp" data-k="${k}" role="slider" aria-label="${k}" aria-valuemin="0" aria-valuemax="3">
@@ -453,7 +458,11 @@ class AmbientLightCard extends HTMLElement {
     // Current value, 0-255 scale for speed/intensity and percent for brightness.
     const st = this._state(k === "brightness" ? this._config.entity : this._config[k]);
     if (!st) return k === "brightness" ? 100 : 128;
-    if (k === "brightness") return st.attributes.brightness ? (st.attributes.brightness / 255) * 100 : 100;
+    if (k === "brightness") {
+      // HA reports null while the light is off: show full. A real 0 is 0 %, not "unset".
+      const b = st.attributes.brightness;
+      return typeof b === "number" ? (b / 255) * 100 : 100;
+    }
     const n = parseFloat(st.state);
     return isNaN(n) ? 128 : n;
   }
@@ -518,7 +527,6 @@ class AmbientLightCard extends HTMLElement {
       : DEFAULT_FAVORITES.map((g) => g.find((e) => all.includes(e))).filter(Boolean).slice(0, 5);
     const key = favs.join("|") + "#" + all.join("|");
     const fav = r.getElementById("fav");
-    const esc = (e) => e.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
     if (key !== this._favKey) {
       this._favKey = key;
       fav.innerHTML = favs.map((e) => `<button class="t" data-fx="${esc(e)}" aria-label="${esc(e)}"><canvas width="36" height="26"></canvas></button>`).join("")
