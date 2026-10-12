@@ -124,12 +124,22 @@ inline HwColor hw_mix(const HwColor &a, const HwColor &c, float t) {
 // full.
 constexpr float HW_CAP = 1.3f;
 
-// Cap, then hold every channel at or above the floor (rule 1), then clamp.
+// Cap, hold every channel at or above the floor (rule 1) without breaking the
+// cap, then clamp.
 inline HwColor hw_finish(const HwColor &c, const HwColor &floor) {
   float s = c.r + c.g + c.b + c.ww + c.cw;
   float k = s > HW_CAP ? HW_CAP / s : 1.0f;
-  return {clamp01(fmaxf(c.r * k, floor.r)), clamp01(fmaxf(c.g * k, floor.g)), clamp01(fmaxf(c.b * k, floor.b)),
-          clamp01(fmaxf(c.ww * k, floor.ww)), clamp01(fmaxf(c.cw * k, floor.cw))};
+  HwColor o = {fmaxf(c.r * k, floor.r), fmaxf(c.g * k, floor.g), fmaxf(c.b * k, floor.b), fmaxf(c.ww * k, floor.ww),
+               fmaxf(c.cw * k, floor.cw)};
+  // Raising channels to the floor can push a capped frame back over the cap;
+  // take the excess out of what sits above the floor, so both hold.
+  float so = o.r + o.g + o.b + o.ww + o.cw, sf = floor.r + floor.g + floor.b + floor.ww + floor.cw;
+  if (so > HW_CAP && so > sf) {
+    float k2 = (HW_CAP - sf) / (so - sf);
+    o = {floor.r + (o.r - floor.r) * k2, floor.g + (o.g - floor.g) * k2, floor.b + (o.b - floor.b) * k2,
+         floor.ww + (o.ww - floor.ww) * k2, floor.cw + (o.cw - floor.cw) * k2};
+  }
+  return {clamp01(o.r), clamp01(o.g), clamp01(o.b), clamp01(o.ww), clamp01(o.cw)};
 }
 
 // Write a frame to the five outputs, scaled by the brightness slider the same

@@ -74,8 +74,12 @@ function add(a, c) { return [a[0] + c[0], a[1] + c[1], a[2] + c[2], a[3] + c[3],
 // floor, so a light never goes dark.
 var CAP = 1.3;
 function out(c, floor) {
-  var s = c[0] + c[1] + c[2] + c[3] + c[4], k = s > CAP ? CAP / s : 1, o = new Array(5);
-  for (var i = 0; i < 5; i++) o[i] = clamp01(Math.max(c[i] * k, floor[i]));
+  var s = c[0] + c[1] + c[2] + c[3] + c[4], k = s > CAP ? CAP / s : 1, o = new Array(5), so = 0, sf = 0, i;
+  for (i = 0; i < 5; i++) { o[i] = Math.max(c[i] * k, floor[i]); so += o[i]; sf += floor[i]; }
+  // raising channels to the floor can push a capped frame back over the cap:
+  // take the excess out of what sits above the floor, so both hold
+  if (so > CAP && so > sf) { var k2 = (CAP - sf) / (so - sf); for (i = 0; i < 5; i++) o[i] = floor[i] + (o[i] - floor[i]) * k2; }
+  for (i = 0; i < 5; i++) o[i] = clamp01(o[i]);
   return o;
 }
 

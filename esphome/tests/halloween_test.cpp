@@ -311,6 +311,10 @@ static void test_out() {
   HwColor capped = hw_finish({1, 1, 1, 1, 1}, HW_EMBER);
   float sum = capped.r + capped.g + capped.b + capped.ww + capped.cw;
   CHECK(sum <= HW_CAP + 1e-5f, "the channel sum is capped at %.2f (got %.3f)", HW_CAP, sum);
+  // a frame at the cap whose floor lifts a dark channel: both the cap and the floor hold
+  HwColor purple = hw_finish({0.48f, 0.0f, 0.8f, 0.0f, 0.064f}, HW_TREAT_FLOOR);
+  float ps = purple.r + purple.g + purple.b + purple.ww + purple.cw;
+  CHECK(ps <= HW_CAP + 1e-5f && purple.ww >= HW_TREAT_FLOOR.ww, "cap %.3f and floor %.3f both hold", ps, purple.ww);
   HwColor dark = hw_finish({0, 0, 0, 0, 0}, HW_EMBER);
   CHECK(same(dark, HW_EMBER), "an all-off frame comes out as the floor");
 }
