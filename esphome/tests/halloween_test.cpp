@@ -287,6 +287,23 @@ static void test_lift() {
   g_hw_amb = 0.0f;
 }
 
+// A custom map with a long driveway: eight lights in one group. Turn-taking
+// must stretch the group's period rather than crowd the events together.
+static void test_big_group() {
+  static const YardLight BIG[8] = {{"B1", YARD_G, 0, 0, 0},  {"B2", YARD_G, 0, 5, 5},   {"B3", YARD_G, 0, 10, 10},
+                                   {"B4", YARD_G, 0, 15, 15}, {"B5", YARD_G, 0, 20, 20}, {"B6", YARD_G, 0, 25, 25},
+                                   {"B7", YARD_G, 0, 30, 30}, {"B8", YARD_G, 0, 35, 35}};
+  std::vector<HwSelf> lights;
+  for (const YardLight &r : BIG) lights.push_back(hw_lookup(BIG, 8, r.name, "000000", 37.0f, 22.0f));
+  CHECK(lights[7].n == 8 && lights[7].k == 7, "eight lights in one group");
+  for (const Effect &fx : EFFECTS) {
+    if (strcmp(fx.key, "jack") && strcmp(fx.key, "cauldron") && strcmp(fx.key, "windcandles")) continue;
+    hw_wx_set(strcmp(fx.key, "windcandles") ? HW_WX_CALM : STORM);
+    check_window(fx, lights, T0, "8-light group");
+  }
+  hw_wx_set(HW_WX_CALM);
+}
+
 static void test_calendar_and_sun() {
   // 00:30 on Oct 16 still belongs to the evening of Oct 15
   HwEvening a = hw_evening(T_LIGHTS_ON), b = hw_evening(T_LIGHTS_ON + 6.75 * 3600);
@@ -524,6 +541,7 @@ int main(int argc, char **argv) {
   test_weather_timeline();
   test_lift();
   test_floor_and_flashes();
+  test_big_group();
   if (failures) {
     printf("%d check(s) failed\n", failures);
     return 1;

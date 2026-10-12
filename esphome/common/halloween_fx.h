@@ -213,11 +213,18 @@ struct HwTurn {
   uint32_t slot;
   float at;         // when this light's event starts, within the slot
 };
+// Each light's window is at least 1.4x the time its event needs; a large
+// group stretches the shared period (each light's events come less often)
+// rather than squeezing the windows together.
 inline HwTurn hw_group_turn(double T, const HwSelf &b, float period, float reserve, uint32_t salt) {
   HwTurn r;
-  double tg = T + (double) (sync_random(b.group, 991) * period);
-  sync_slot(tg, period, r.slot, r.w);
-  float sub = period / (float) b.n;
+  float sub = period / (float) b.n, p = period;
+  if (sub < reserve * 1.4f) {
+    sub = reserve * 1.4f;
+    p = sub * (float) b.n;
+  }
+  double tg = T + (double) (sync_random(b.group, 991) * p);
+  sync_slot(tg, p, r.slot, r.w);
   r.at = (float) b.k * sub + sync_random(r.slot, salt + b.i) * (sub - reserve);
   return r;
 }

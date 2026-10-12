@@ -104,7 +104,9 @@ function out(c, floor) { return lift(outBase(c, floor), HW_AMB); }
 // land in the same second.
 function groupTurn(T, b, period, reserve, salt) {
   period = F(period); reserve = F(reserve);
-  var Tg = T + F(sync_random(b.gi, 991) * period), s = sync_slot(Tg, period), sub = F(period / b.n);
+  var sub = F(period / b.n), p = period;                 // windows at least 1.4x the event; big groups stretch the period
+  if (sub < F(reserve * F(1.4))) { sub = F(reserve * F(1.4)); p = F(sub * b.n); }
+  var Tg = T + F(sync_random(b.gi, 991) * p), s = sync_slot(Tg, p);
   return { w: F(s.w), slot: s.slot, at: b.k * sub + sync_random(s.slot, salt + b.i) * (sub - reserve) };
 }
 
