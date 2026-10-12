@@ -458,7 +458,11 @@ class AmbientLightCard extends HTMLElement {
     // Current value, 0-255 scale for speed/intensity and percent for brightness.
     const st = this._state(k === "brightness" ? this._config.entity : this._config[k]);
     if (!st) return k === "brightness" ? 100 : 128;
-    if (k === "brightness") return st.attributes.brightness ? (st.attributes.brightness / 255) * 100 : 100;
+    if (k === "brightness") {
+      // HA reports null while the light is off: show full. A real 0 is 0 %, not "unset".
+      const b = st.attributes.brightness;
+      return typeof b === "number" ? (b / 255) * 100 : 100;
+    }
     const n = parseFloat(st.state);
     return isNaN(n) ? 128 : n;
   }

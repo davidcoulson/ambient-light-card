@@ -5,7 +5,9 @@
 //
 // Checks:
 //   - the card's name and icon, free text from the dashboard YAML, come out as
-//     text in the markup, not as HTML.
+//     text in the markup, not as HTML;
+//   - the brightness row reads a light at brightness 0 as 0 %, and a light with
+//     no brightness (off) as 100 %.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -71,6 +73,22 @@ const build = (config) => {
   check(plain.includes(`<div class="pri">Ambient lights</div>`), "the default name changed");
   check(plain.includes(`icon="mdi:television-ambient-light"`), "the default icon changed");
   if (!failures) console.log("card: name and icon are shown as text");
+}
+
+// ---- brightness 0 is 0 % ----------------------------------------------------------
+{
+  const before = failures;
+  const level = (attrs) => {
+    const card = build({ entity: "light.den" });
+    card._hass = { states: { "light.den": { state: attrs.brightness == null ? "off" : "on", attributes: attrs } } };
+    return card._level("brightness");
+  };
+  check(level({ brightness: 0 }) === 0, `brightness 0 read as ${level({ brightness: 0 })} %`);
+  check(level({ brightness: 255 }) === 100, "brightness 255 is not 100 %");
+  check(Math.abs(level({ brightness: 128 }) - 50.2) < 0.1, "brightness 128 is not ~50 %");
+  check(level({ brightness: null }) === 100, "a light with no brightness (off) is not shown at 100 %");
+  check(level({}) === 100, "a light without a brightness attribute is not shown at 100 %");
+  if (failures === before) console.log("card: brightness 0 reads as 0 %, no brightness as 100 %");
 }
 
 if (failures) {
