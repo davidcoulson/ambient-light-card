@@ -155,6 +155,16 @@ packages:
       - esphome/common/halloween_weather.yaml        # optional
 ```
 
+**Daylight lift.** Outdoor lights usually come on before dark, when a dim floor or a slow mist
+is invisible. While it is light out, every Halloween effect gets a fixed extra amount of each
+frame's own colour – up to 0.25 on its brightest channel, within the power cap – fading out
+between the sun at +6° and −4°. The amount added doesn't follow the frame's ups and downs, so
+flicker and pulses keep their night-time swing and no flashes are added; floors only rise.
+Ambient light comes from the sun (`sun_latitude` / `sun_longitude`) or, with
+`halloween_weather.yaml`, from measured light (`wx_lux`, `wx_lux2`: none under 5 lx, full above
+400 lx), which ends the day early on an overcast evening. It is one call, `hw_lift()` in
+`hw_finish()`, plus the 10 s interval that sets `g_hw_amb`.
+
 `halloween_weather.yaml` reads a weather station through Home Assistant (the defaults are
 `sensor.tempest_*` names; set your station's entities with the `wx_*` substitutions, in the units
 HA reports in US units: mph, degrees, in/h, °F). Real gusts bend *Wind-Blown Candles* in turn
@@ -178,9 +188,11 @@ other three use the groups.
 checks, on every light of the example map: same time and light → same frame; the floor holds;
 flashes stay at or under 1 per second per light and per group – at 8 pm, at lights-on, and in a
 simulated storm for the weather-driven effects; an unmapped light still runs; Speed slows but never
-speeds up; `hw_out()` scales by brightness like `out_rgb()`; an evening keeps its date past
-midnight and sunset lands within two minutes; and the weather falls back to calm on unknown
-readings or a lost API. With node
+speeds up; `hw_out()` scales by brightness like `out_rgb()`; the cap and floors both hold; an
+evening keeps its date past midnight and sunset lands within two minutes; the weather falls back
+to calm on unknown readings or a lost API; and the daylight lift only raises channels, stays in
+the cap, adds no flashes and follows the sun or measured light. Parity covers night, storm and
+full-lift frames. With node
 installed it then compares the C++ frame by frame against `tests/halloween_reference.js`, the
 same maths in JavaScript that drives the effects' preview page.
 

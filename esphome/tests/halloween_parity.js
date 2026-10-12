@@ -3,7 +3,8 @@
 //   ./halloween_test --dump | node halloween_parity.js
 //
 // Reads the C++ frames from stdin and recomputes each one with
-// halloween_reference.js ("@storm" frames under the simulated storm). Run
+// halloween_reference.js ("@storm" frames under the simulated storm, "@day"
+// frames with the full daylight lift). Run
 // with TZ=America/New_York, as run_halloween_tests.sh does: the calendar
 // effects read local time. The bulb works in float and the reference in double,
 // so frames agree to ~1e-4 rather than bit for bit; a sample that lands within
@@ -26,6 +27,7 @@ for (const line of rows) {
   const [tag, light, t, ...ch] = line.split(",");
   const [key, variant] = tag.split("@");
   Object.assign(ref.WX, variant === "storm" ? STORM : CALM);
+  ref.setAmbient(variant === "day" ? 1 : 0);
   const want = ref.FXFN[key](parseFloat(t), byName[light]);
   let diff = 0;
   for (let i = 0; i < 5; i++) diff = Math.max(diff, Math.abs(want[i] - parseFloat(ch[i])));

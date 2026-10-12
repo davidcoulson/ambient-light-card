@@ -46,8 +46,8 @@ substitutions:
   yard_light: ""
   # The yard map: which light sits where. Point this at your own copy.
   yard_map: front_yard_map.h
-  # Where the house is, for Witching Hour's sunset. Set yours; the default is
-  # New York City.
+  # Where the house is, for Witching Hour's sunset and the daylight lift.
+  # Set yours; the default is New York City.
   sun_latitude: "40.7"
   sun_longitude: "-74.0"
 
@@ -57,6 +57,13 @@ esphome:
   # then next to this file.
     - halloween_fx.h
     - ${yard_map}
+
+# The daylight lift (halloween_fx.h): how light it is outside, every 10 s,
+# from measured light if halloween_weather.yaml has it, else from the sun.
+interval:
+  - interval: 10s
+    then:
+      - lambda: hw_ambient_tick(sync_seconds(), ${sun_latitude}, ${sun_longitude});
 
 light:
   - platform: rgbww

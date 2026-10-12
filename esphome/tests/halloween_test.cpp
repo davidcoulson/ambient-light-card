@@ -12,6 +12,8 @@
 //   - hw_out() applies the brightness slider like out_rgb();
 //   - the calendar, sunset and weather plumbing behave (evening rollover,
 //     calm fallbacks on NaN or a lost API);
+//   - the daylight lift only raises channels, stays inside the power cap,
+//     and follows the sun or measured light;
 // and the flash and floor checks also run at lights-on (daylight, for the
 // effects that follow the clock) and in a simulated storm for the effects
 // that read the weather.
@@ -54,7 +56,7 @@ static const double LAT = 40.7, LON = -74.0;
 static HwColor witching_fn(double T, const HwSelf &b) { return hw_witching(T, b, LAT, LON); }
 
 // A simulated storm: 30 mph gusting 45, a downpour, at the dew point.
-static const HwWeather STORM = {true, 30.0f, 45.0f, 5.0f, 225.0f, 0.6f, 38.0f, 37.0f};
+static const HwWeather STORM = {true, 30.0f, 45.0f, 5.0f, 225.0f, 0.6f, 38.0f, 37.0f, NAN};
 
 struct Effect {
   const char *key, *name;
@@ -239,7 +241,43 @@ static void test_floor_and_flashes() {
       check_window(fx, lights, T0, "Oct 31, storm");
       g_hw_wx = HW_WX_CALM;
     }
+    g_hw_amb = 1.0f;                               // full daylight lift
+    check_window(fx, lights, follows_clock(fx) ? T_LIGHTS_ON : T0, "daylight lift");
+    g_hw_amb = 0.0f;
   }
+}
+
+static void test_lift() {
+  auto lights = yard();
+  for (const Effect &fx : EFFECTS)
+    for (int k = 0; k < 3000; k++) {
+      double t = T0 + k * 0.613;
+      const HwSelf &b = lights[k % YARD_N];
+      g_hw_amb = 0.0f;
+      HwColor night = fx.fn(t, b);
+      g_hw_amb = 1.0f;
+      HwColor day = fx.fn(t, b);
+      g_hw_amb = 0.0f;
+      float sum = day.r + day.g + day.b + day.ww + day.cw;
+      bool ok = day.r >= night.r - 1e-6f && day.g >= night.g - 1e-6f && day.b >= night.b - 1e-6f && day.ww >= night.ww - 1e-6f &&
+                day.cw >= night.cw - 1e-6f && sum <= HW_CAP + 1e-4f;
+      if (!ok) {
+        CHECK(false, "%s: the lift must only raise channels and stay inside the cap (t+%.3f)", fx.key, t - T0);
+        break;
+      }
+    }
+  CHECK(hw_ambient_from_sun(-10.0) == 0.0f && hw_ambient_from_sun(10.0) == 1.0f, "sun ambient: 0 in the dark, 1 in daylight");
+  CHECK(hw_ambient_from_lux(1.0f) == 0.0f && hw_ambient_from_lux(1000.0f) == 1.0f, "lux ambient: 0 at 1 lx, 1 at 1000 lx");
+  g_hw_wx = HW_WX_CALM;
+  hw_ambient_tick(T0, LAT, LON);
+  CHECK(g_hw_amb == 0.0f, "8 pm on Oct 31: no lift");
+  hw_ambient_tick(T_LIGHTS_ON, LAT, LON);
+  CHECK(g_hw_amb > 0.9f, "5:45 pm on Oct 15: full lift (got %.2f)", g_hw_amb);
+  g_hw_wx.lux = 2.0f;
+  hw_ambient_tick(T_LIGHTS_ON, LAT, LON);
+  CHECK(g_hw_amb == 0.0f, "a measured 2 lx (heavy overcast) beats the sun: no lift");
+  g_hw_wx = HW_WX_CALM;
+  g_hw_amb = 0.0f;
 }
 
 static void test_calendar_and_sun() {
@@ -322,20 +360,23 @@ static void test_out() {
 static void dump() {
   auto lights = yard();
   printf("effect,light,t,r,g,b,ww,cw\n");
-  for (int storm = 0; storm < 2; storm++)
+  for (int pass = 0; pass < 3; pass++)      // 0 calm, 1 storm, 2 daylight lift
     for (const Effect &fx : EFFECTS) {
-      if (storm && !reads_weather(fx)) continue;
+      if (pass == 1 && !reads_weather(fx)) continue;
+      bool storm = pass == 1;
       g_hw_wx = storm ? STORM : HW_WX_CALM;
+      g_hw_amb = pass == 2 ? 1.0f : 0.0f;
       double base = follows_clock(fx) ? T_LIGHTS_ON : T0;
       for (int i = 0; i < YARD_N; i++)
         for (int k = 0; k < 4000; k++) {
           double t = base + k * 1.3719;
           HwColor c = fx.fn(t, lights[i]);
-          printf("%s%s,%s,%.4f,%.6f,%.6f,%.6f,%.6f,%.6f\n", fx.key, storm ? "@storm" : "", YARD_MAP[i].name, t, c.r, c.g,
-                 c.b, c.ww, c.cw);
+          printf("%s%s,%s,%.4f,%.6f,%.6f,%.6f,%.6f,%.6f\n", fx.key, pass == 1 ? "@storm" : pass == 2 ? "@day" : "",
+                 YARD_MAP[i].name, t, c.r, c.g, c.b, c.ww, c.cw);
         }
     }
   g_hw_wx = HW_WX_CALM;
+  g_hw_amb = 0.0f;
 }
 
 int main(int argc, char **argv) {
@@ -351,6 +392,7 @@ int main(int argc, char **argv) {
   test_out();
   test_calendar_and_sun();
   test_weather_plumbing();
+  test_lift();
   test_floor_and_flashes();
   if (failures) {
     printf("%d check(s) failed\n", failures);

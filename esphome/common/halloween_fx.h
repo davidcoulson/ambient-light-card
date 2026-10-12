@@ -126,7 +126,7 @@ constexpr float HW_CAP = 1.3f;
 
 // Cap, hold every channel at or above the floor (rule 1) without breaking the
 // cap, then clamp.
-inline HwColor hw_finish(const HwColor &c, const HwColor &floor) {
+inline HwColor hw_finish_base(const HwColor &c, const HwColor &floor) {
   float s = c.r + c.g + c.b + c.ww + c.cw;
   float k = s > HW_CAP ? HW_CAP / s : 1.0f;
   HwColor o = {fmaxf(c.r * k, floor.r), fmaxf(c.g * k, floor.g), fmaxf(c.b * k, floor.b), fmaxf(c.ww * k, floor.ww),
@@ -141,6 +141,31 @@ inline HwColor hw_finish(const HwColor &c, const HwColor &floor) {
   }
   return {clamp01(o.r), clamp01(o.g), clamp01(o.b), clamp01(o.ww), clamp01(o.cw)};
 }
+
+// ---------------------------------------------------------------------------
+// The daylight lift. These lights come on an hour before sunset, when a dim
+// floor or a slow mist is invisible. While it is light out, each frame gets a
+// fixed extra amount of its OWN colour: the brightest channel gains up to
+// HW_LIFT, the hue is kept, and the power cap still holds. Because the amount
+// added does not follow the frame's ups and downs, flicker and pulses keep
+// exactly their night-time swing, so the lift adds no flashes; floors only
+// rise. g_hw_amb (0 dark .. 1 daylight) is set every 10 s by
+// halloween_effects.yaml, from measured light when halloween_weather.yaml has
+// a lux reading, else from the sun's elevation. After dark it is 0 and every
+// effect runs exactly as designed.
+// ---------------------------------------------------------------------------
+constexpr float HW_LIFT = 0.25f;
+inline float g_hw_amb = 0.0f;
+inline HwColor hw_lift(const HwColor &c, float amb) {
+  if (!(amb > 0.0f)) return c;
+  float m = fmaxf(fmaxf(fmaxf(c.r, c.g), fmaxf(c.b, c.ww)), c.cw), s = c.r + c.g + c.b + c.ww + c.cw;
+  if (m <= 0.0f) return c;
+  float L = fminf(amb * HW_LIFT, fmaxf(0.0f, (HW_CAP / s - 1.0f) * m));   // stay inside the power cap
+  return hw_scale(c, 1.0f + L / m);
+}
+
+// Every effect's last step: cap, floor, and the daylight lift.
+inline HwColor hw_finish(const HwColor &c, const HwColor &floor) { return hw_lift(hw_finish_base(c, floor), g_hw_amb); }
 
 // Write a frame to the five outputs, scaled by the brightness slider the same
 // way out_rgb() / out_white() are. Floors therefore hold at any brightness
@@ -200,7 +225,7 @@ inline HwColor hw_pumpkin(float lvl) {
 // door pair burns a little brighter. `steady` suppresses the gutters (for a
 // scene that wants a clean start from it).
 // ---------------------------------------------------------------------------
-inline HwColor hw_jack(double T, const HwSelf &b, bool steady = false) {
+inline HwColor hw_jack_base(double T, const HwSelf &b, bool steady) {
   double tj = T + (double) (b.off * 7.0f);
   float slow = sync_noise(tj, 0.45f, b.i + 1);
   float fast = sync_noise(tj, 0.11f, b.i + 21);
@@ -215,8 +240,9 @@ inline HwColor hw_jack(double T, const HwSelf &b, bool steady = false) {
   }
   if (b.group == YARD_D)
     lvl *= 1.1f;
-  return hw_finish(hw_pumpkin(lvl), HW_EMBER);
+  return hw_finish_base(hw_pumpkin(lvl), HW_EMBER);
 }
+inline HwColor hw_jack(double T, const HwSelf &b, bool steady = false) { return hw_lift(hw_jack_base(T, b, steady), g_hw_amb); }
 
 // ---------------------------------------------------------------------------
 // Lightning Over the House - a violet night, and once per 11 s slot the whole
@@ -420,13 +446,15 @@ inline HwColor hw_interp(const HwKey *k, int n, double s) {
 struct HwWeather {
   bool on;
   float wind_mph, gust_mph, lull_mph, dir_deg, rain_inh, temp_f, dew_f;
+  float lux;   // measured light, NaN = none (the daylight lift then follows the sun)
 };
-constexpr HwWeather HW_WX_CALM = {false, 0.0f, 0.0f, 0.0f, 270.0f, 0.0f, 50.0f, 35.0f};
+constexpr HwWeather HW_WX_CALM = {false, 0.0f, 0.0f, 0.0f, 270.0f, 0.0f, 50.0f, 35.0f, NAN};
 inline HwWeather g_hw_wx = HW_WX_CALM;
 
 // Raw readings as they arrive from Home Assistant (NaN = unknown).
 struct HwWeatherIn {
   float wind = NAN, gust = NAN, lull = NAN, dir = NAN, rain = NAN, temp = NAN, dew = NAN;
+  float lux = NAN, lux2 = NAN;   // two light sensors; the higher wins, so a shaded one can't end the day early
 };
 inline HwWeatherIn g_hw_wx_in;
 
@@ -450,6 +478,8 @@ inline void hw_wx_tick(bool api_connected, float dt) {
   w.temp_f += (pick(in.temp, HW_WX_CALM.temp_f) - w.temp_f) * k;
   w.dew_f += (pick(in.dew, HW_WX_CALM.dew_f) - w.dew_f) * k;
   w.on = api_connected && !std::isnan(in.wind);
+  float lux = std::isnan(in.lux) ? in.lux2 : std::isnan(in.lux2) ? in.lux : fmaxf(in.lux, in.lux2);
+  w.lux = api_connected ? lux : NAN;
 }
 
 // Round half up, the same on every bulb and in the reference.
@@ -598,7 +628,7 @@ inline HwColor hw_mist(double T, const HwSelf &b) {
 // ---------------------------------------------------------------------------
 inline HwColor hw_windcandles(double T, const HwSelf &b) {
   const HwWeather &wx = g_hw_wx;
-  HwColor base = hw_jack(T, b, true);
+  HwColor base = hw_jack_base(T, b, true);   // lifted once, at the end
   float lvl = 1.0f, wind = hw_wind_avg(wx.wind_mph);
   float gusty = clamp01((hw_q(wx.gust_mph, 1.0f) - hw_q(wx.lull_mph, 1.0f)) / 15.0f + wind / 30.0f);
   uint32_t slot;
@@ -614,3 +644,21 @@ inline HwColor hw_windcandles(double T, const HwSelf &b) {
   }
   return hw_finish(hw_wx_layer(hw_scale(base, lvl), T, b), HW_EMBER);
 }
+
+// ---- ambient light for the daylight lift ----
+// 0 when the sun is 4 deg or more below the horizon, 1 when it is 6 deg up.
+inline float hw_ambient_from_sun(double elevation) {
+  float a = clamp01((float) ((elevation + 4.0) / 10.0));
+  return a * a * (3.0f - 2.0f * a);
+}
+// 0 under 5 lx, 1 above 400 lx, on a log scale. Measured light ends the day
+// early on an overcast evening, which the sun's angle can't know.
+inline float hw_ambient_from_lux(float lux) {
+  float a = clamp01((log10f(fmaxf(lux, 0.01f)) - 0.7f) / 1.9f);
+  return a * a * (3.0f - 2.0f * a);
+}
+// Called every 10 s by halloween_effects.yaml.
+inline void hw_ambient_tick(double T, double lat, double lon) {
+  g_hw_amb = std::isnan(g_hw_wx.lux) ? hw_ambient_from_sun(hw_sun_elevation(T, lat, lon)) : hw_ambient_from_lux(g_hw_wx.lux);
+}
+

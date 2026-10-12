@@ -69,11 +69,11 @@ function sc(c, k) { return [c[0] * k, c[1] * k, c[2] * k, c[3] * k, c[4] * k]; }
 function mix(a, c, t) { return [a[0] + (c[0] - a[0]) * t, a[1] + (c[1] - a[1]) * t, a[2] + (c[2] - a[2]) * t, a[3] + (c[3] - a[3]) * t, a[4] + (c[4] - a[4]) * t]; }
 function add(a, c) { return [a[0] + c[0], a[1] + c[1], a[2] + c[2], a[3] + c[3], a[4] + c[4]]; }
 
-// hw_out(): cap the channel sum (the bulb's power budget once the effect
-// bypasses color_interlock), then hold every channel at or above the effect's
-// floor, so a light never goes dark.
+// hw_finish_base(): cap the channel sum (the bulb's power budget once the
+// effect bypasses color_interlock), then hold every channel at or above the
+// effect's floor, so a light never goes dark.
 var CAP = 1.3;
-function out(c, floor) {
+function outBase(c, floor) {
   var s = c[0] + c[1] + c[2] + c[3] + c[4], k = s > CAP ? CAP / s : 1, o = new Array(5), so = 0, sf = 0, i;
   for (i = 0; i < 5; i++) { o[i] = Math.max(c[i] * k, floor[i]); so += o[i]; sf += floor[i]; }
   // raising channels to the floor can push a capped frame back over the cap:
@@ -82,6 +82,20 @@ function out(c, floor) {
   for (i = 0; i < 5; i++) o[i] = clamp01(o[i]);
   return o;
 }
+// hw_lift(): the daylight lift. While it is light out (HW_AMB 0..1), add a
+// fixed amount of the frame's own colour - up to LIFT on its brightest
+// channel, inside the cap. The added amount doesn't follow the frame's ups and
+// downs, so it adds no flashes, and floors only rise.
+var LIFT = 0.25, HW_AMB = 0;
+function lift(c, amb) {
+  if (!(amb > 0)) return c;
+  var m = Math.max(c[0], c[1], c[2], c[3], c[4]), s = c[0] + c[1] + c[2] + c[3] + c[4];
+  if (m <= 0) return c;
+  var L = Math.min(amb * LIFT, Math.max(0, (CAP / s - 1) * m)), k = 1 + L / m;
+  return [c[0] * k, c[1] * k, c[2] * k, c[3] * k, c[4] * k];
+}
+// hw_finish(): every effect's last step.
+function out(c, floor) { return lift(outBase(c, floor), HW_AMB); }
 
 // Turn-taking: a group shares one slot of `period` seconds, split into one
 // window per bulb, so occasional events (gutters, pops) on neighbours never
@@ -132,7 +146,7 @@ function pumpkinAt(lvl) {
 // 1. Jack-o'-Lantern Row. Gentle two-layer flame (its swing stays under the
 // 10 % flash threshold) plus one slow gutter per bulb every 7 s, taking turns
 // within the group.
-function jack(T, b, steady) {
+function jackBase(T, b, steady) {
   var Tj = T + F(b.off * 7);
   var slow = sync_noise(Tj, F(0.45), b.i + 1), fast = sync_noise(Tj, F(0.11), b.i + 21);
   var lvl = 0.66 + 0.10 * (slow - 0.5) + 0.03 * (fast - 0.5);
@@ -143,8 +157,9 @@ function jack(T, b, steady) {
     lvl = lvl + (0.36 - lvl) * ease(e);
   }
   if (b.gi === 2) lvl *= 1.1;
-  return out(pumpkinAt(lvl), EMBER);
+  return outBase(pumpkinAt(lvl), EMBER);
 }
+function jack(T, b, steady) { return lift(jackBase(T, b, steady), HW_AMB); }
 
 // 6. Lightning Over the House. One strike per 11 s slot, never a flicker
 // burst: a fast rise and a slow fall; about one in three is a soft distant
@@ -506,7 +521,7 @@ function mist(T, b) {
 // windward side and bend each flame in turn, at most one per 5 s slot. Calm
 // air (or no weather): steady flames. Runs through the weather layer.
 function windcandles(T, b) {
-  var base = jack(T, b, true), lvl = 1, wind = windAvg();
+  var base = jackBase(T, b, true), lvl = 1, wind = windAvg();      // lifted once, at the end
   var gusty = clamp01((q(WX.gustMph, 1) - q(WX.lullMph, 1)) / 15 + wind / 30);
   var s = sync_slot(T, 5), at = 0.5 + sync_random(s.slot, 130) * 2;
   if (sync_random(s.slot, 131) < gusty) {
@@ -517,6 +532,12 @@ function windcandles(T, b) {
   }
   return out(wxLayer(sc(base, lvl), T, b), EMBER);
 }
+
+// Ambient light for the daylight lift: 0 when the sun is 4 deg or more below
+// the horizon, 1 when it is 6 deg up; or from measured light, 0 under 5 lx and
+// 1 above 400 lx on a log scale.
+function ambientAt(T) { var a = clamp01((sunElevation(T) + 4) / 10); return a * a * (3 - 2 * a); }
+function ambientFromLux(lux) { var a = clamp01((Math.log10(Math.max(lux, 0.01)) - 0.7) / 1.9); return a * a * (3 - 2 * a); }
 
 var FXFN = { jack: jack, lightning: lightning, cauldron: cauldron, moon: moon,
   follows: follows, watching: watching, heart: heart, brownout: brownout, ghost: ghost, scare: scare,
@@ -590,5 +611,6 @@ if (typeof module !== "undefined") {
   module.exports = { YARD: YARD, SELF: SELF, FXFN: FXFN, FLOORS: FLOORS, flashCheck: flashCheck,
     toLinear: toLinear, lumRel: lumRel, sync_hash: sync_hash, sync_random: sync_random,
     sync_noise: sync_noise, sync_fold: sync_fold, self: self, WX: WX, SUN: SUN, evening: evening,
-    sunElevation: sunElevation, sunsetOn: sunsetOn, sunsetHour: sunsetHour, sync_noise2: sync_noise2 };
+    sunElevation: sunElevation, sunsetOn: sunsetOn, sunsetHour: sunsetHour, sync_noise2: sync_noise2,
+    lift: lift, ambientAt: ambientAt, ambientFromLux: ambientFromLux, setAmbient: function (a) { HW_AMB = a; } };
 }

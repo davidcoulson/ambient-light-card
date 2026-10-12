@@ -13,7 +13,8 @@
 # WeatherFlow Tempest's entities with the serial left out; set yours). Units
 # are the ones HA reports in US units: mph, degrees, in/h, degrees F.
 #
-# What it drives: Wind-Blown Candles' gusts (wind, gust, lull, direction),
+# What it drives: the daylight lift (measured light, instead of the sun's
+# angle), Wind-Blown Candles' gusts (wind, gust, lull, direction),
 # which way Turning of the Season rolls and Graveyard Mist drifts (wind
 # direction and speed), and the weather layer on Wind-Blown Candles (rain,
 # temperature, dew point).
@@ -35,6 +36,10 @@ substitutions:
   wx_rain: sensor.tempest_precipitation_intensity
   wx_temp: sensor.tempest_temperature
   wx_dew: sensor.tempest_dew_point
+  # Measured light for the daylight lift; the higher of the two is used. Point
+  # both at the same sensor if you have one.
+  wx_lux: sensor.tempest_illuminance
+  wx_lux2: sensor.tempest_illuminance
 
 sensor:
   - platform: homeassistant
@@ -86,6 +91,20 @@ sensor:
     on_value:
       then:
         - lambda: g_hw_wx_in.dew = x;
+  - platform: homeassistant
+    id: hw_wx_lux
+    entity_id: ${wx_lux}
+    internal: true
+    on_value:
+      then:
+        - lambda: g_hw_wx_in.lux = x;
+  - platform: homeassistant
+    id: hw_wx_lux2
+    entity_id: ${wx_lux2}
+    internal: true
+    on_value:
+      then:
+        - lambda: g_hw_wx_in.lux2 = x;
 
 interval:
   - interval: 1s
