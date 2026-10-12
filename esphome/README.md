@@ -20,6 +20,8 @@ Tested on ESP32-C3 PWM RGB+CW/WW bulbs and addressable rings (Lumary RGBAI, 36 o
 | `fx2d_render.h` | Shared 2D Pacifica and Aurora renderers. |
 | `basement_map.h`, `home_theater_map.h` | **Example** room maps – replace with your own (see below). |
 | `accent_fx_controls.yaml` | Imports the room's Speed and Intensity helpers from Home Assistant. |
+| `halloween_effects.yaml` | Four Halloween effects for a row of outdoor RGBCW bulbs along a front walk (`platform: rgbww`). |
+| `halloween_fx.h`, `front_yard_map.h` | Their maths, and an **example** yard map – replace with your own. |
 | `ntp.yaml` | SNTP setup plus two health sensors: *NTP Sync* and *Last NTP Sync*. |
 
 ## Use it as a remote package (recommended)
@@ -104,6 +106,58 @@ and *Calibrate: north + east* – help you find and check a ring's rotation.
 
 `fire_x` / `fire_y` (default 0.5 / 0.5) set where the fire sits for *2D Hearth* and
 *2D Single Candle*.
+
+## Halloween effects for outdoor bulbs
+
+`halloween_effects.yaml` adds four effects for RGBCW bulbs placed along the route visitors walk
+from the street to the front door: *Jack-o'-Lantern Row*, *Lightning Over the House*,
+*Witch's Cauldron* and *Blood Moon*. They mix the colour and white channels in one frame (pumpkin
+is warm white plus red), so they need an `rgbww` light with all five outputs.
+
+Two rules hold for all of them, and the host tests check both:
+
+- **A light never goes dark.** Every effect has a floor colour – a dim ember, a violet glow – and
+  no channel drops under it, so a light is always at least ~3 % of full warm white.
+- **Minimal flashing.** At most 1 flash per second per light and per group of neighbouring lights,
+  counted the WCAG 2.3.1 way (the limit there is 3). Occasional events – a candle guttering, a
+  bubble – take turns within a group so neighbours never fire in the same second. The room Speed
+  helper can slow these effects but never speed them up, and Intensity is not used.
+
+Opt a light in from its device file, next to its own package. A light that does not include the
+file is unchanged:
+
+```yaml
+substitutions:
+  mac: "a1b2c3"
+  area: "Outdoors"       # one area for the whole set, so they share one Speed helper
+  yard_light: "G2"       # this light's row in the yard map
+
+packages:
+  light: !include common/athom-light.yaml
+  halloween:
+    url: https://github.com/davidcoulson/ambient-light-card
+    ref: <release tag>
+    files:
+      - path: esphome/common/halloween_effects.yaml
+        vars:
+          yard_map: common/my_front_yard_map.h   # your copy of front_yard_map.h
+```
+
+The yard map is a table of `{name, group, x, y, path}` in feet: the group says which part a light
+plays (S – the street bed, G – the driveway wall, D – the front door), x/y place it, and `path` is
+its distance from the street along the walk. A light finds its row by its `yard_light` name rather
+than its MAC, so a bulb can be replaced without editing the map. A light that is not on the map
+still runs every effect, as a lone driveway light. *Blood Moon* uses x for its eclipse sweep; the
+other three use the groups.
+
+### Tests
+
+`tests/run_halloween_tests.sh` builds `tests/halloween_test.cpp` against the real headers and
+checks, on every light of the example map: same time and light → same frame; the floor holds;
+flashes stay at or under 1 per second per light and per group; an unmapped light still runs;
+Speed slows but never speeds up; and `hw_out()` scales by brightness like `out_rgb()`. With node
+installed it then compares the C++ frame by frame against `tests/halloween_reference.js`, the
+same maths in JavaScript that drives the effects' preview page.
 
 ## Keeping lights in step
 
