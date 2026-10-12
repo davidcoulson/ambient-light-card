@@ -1,5 +1,6 @@
 #!/bin/sh
-# Host tests for the effect library. Needs python3 and a C++17 compiler.
+# Host tests for the effect library. Needs python3 and a C++17 compiler; the
+# card test also needs node.
 #
 #   sh esphome/tests/run_effects_tests.sh
 set -e
@@ -31,3 +32,8 @@ if grep -nE '(rand|hash)[a-z0-9_]*\([^()]*\) *% *[0-9]+\) *- *[0-9]' "$common"/*
 fi
 echo "lint: no unsigned draw goes negative by wrapping"
 
+if command -v node >/dev/null 2>&1; then
+  node "$here/../../tests/card_test.js"
+else
+  echo "node not found: skipping the card test"
+fi
