@@ -91,7 +91,7 @@ function lift(c, amb) {
   if (!(amb > 0)) return c;
   var m = Math.max(c[0], c[1], c[2], c[3], c[4]), s = c[0] + c[1] + c[2] + c[3] + c[4];
   if (m <= 0) return c;
-  var L = Math.min(amb * LIFT, Math.max(0, (CAP / s - 1) * m)), k = 1 + L / m;
+  var L = Math.min(amb * LIFT, Math.max(0, Math.min((CAP / s - 1) * m, 1 - m))), k = 1 + L / m;   // inside the cap, no channel over 1
   return [c[0] * k, c[1] * k, c[2] * k, c[3] * k, c[4] * k];
 }
 // hw_finish(): every effect's last step.

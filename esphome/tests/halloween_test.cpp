@@ -259,10 +259,13 @@ static void test_lift() {
       HwColor day = fx.fn(t, b);
       g_hw_amb = 0.0f;
       float sum = day.r + day.g + day.b + day.ww + day.cw;
+      auto unit = [](float v) { return std::isfinite(v) && v >= 0.0f && v <= 1.0f; };
       bool ok = day.r >= night.r - 1e-6f && day.g >= night.g - 1e-6f && day.b >= night.b - 1e-6f && day.ww >= night.ww - 1e-6f &&
-                day.cw >= night.cw - 1e-6f && sum <= HW_CAP + 1e-4f;
+                day.cw >= night.cw - 1e-6f && sum <= HW_CAP + 1e-4f && unit(day.r) && unit(day.g) && unit(day.b) &&
+                unit(day.ww) && unit(day.cw);
       if (!ok) {
-        CHECK(false, "%s: the lift must only raise channels and stay inside the cap (t+%.3f)", fx.key, t - T0);
+        CHECK(false, "%s: the lift must only raise channels, keep each in [0, 1] and stay inside the cap (t+%.3f)", fx.key,
+              t - T0);
         break;
       }
     }

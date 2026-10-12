@@ -182,7 +182,9 @@ inline HwColor hw_lift(const HwColor &c, float amb) {
   if (!(amb > 0.0f)) return c;
   float m = fmaxf(fmaxf(fmaxf(c.r, c.g), fmaxf(c.b, c.ww)), c.cw), s = c.r + c.g + c.b + c.ww + c.cw;
   if (m <= 0.0f) return c;
-  float L = fminf(amb * HW_LIFT, fmaxf(0.0f, (HW_CAP / s - 1.0f) * m));   // stay inside the power cap
+  // stay inside the power cap, and keep the brightest channel at or under full:
+  // an output clamps anything above 1.0, which would clip a pulse and shift its hue
+  float L = fminf(amb * HW_LIFT, fmaxf(0.0f, fminf((HW_CAP / s - 1.0f) * m, 1.0f - m)));
   return hw_scale(c, 1.0f + L / m);
 }
 
