@@ -220,6 +220,13 @@ packages:
         vars:
           wx_wind: sensor.<station>_wind_speed_average
           # ... the other wx_* entities
+
+# No fades on the yard bulbs (see "Transitions" below). Extends the light by id
+# only - no platform: key, which would override the light's own.
+light:
+  - id: !extend accent_light
+    default_transition_length: 0s
+    flash_transition_length: 0s
 ```
 
 ```yaml
@@ -231,6 +238,46 @@ substitutions:
 
 packages:
   - !include common/athom-outdoor.yaml
+```
+
+**Transitions.** ESPHome draws an effect's frame and then, while a light transition is running,
+writes the light's normal state over it – so for the length of a fade (1 s by default) the bulb
+shows its plain colour instead of the effect, and each bulb fades on its own timing. That is
+why the wrapper sets `default_transition_length: 0s` and `flash_transition_length: 0s` for the
+yard bulbs only. The trade-off: switching them on or off, or changing their brightness, is
+instant rather than a fade. Indoor lights keep their fades. Home Assistant can still ask for a
+fade: an automation or service call that passes `transition:` overrides the default and brings
+the problem back for that change. So the automations that drive the yard bulbs must not pass a
+transition:
+
+```yaml
+# Home Assistant: the October evening show - note: no `transition:` anywhere
+automation:
+  - alias: Halloween lights on
+    triggers:
+      - trigger: sun
+        event: sunset
+        offset: "-01:00:00"
+    conditions:
+      - condition: template
+        value_template: "{{ now().month == 10 }}"
+    actions:
+      - action: light.turn_on
+        target:
+          entity_id: light.front_yard          # a group of the yard bulbs
+        data:
+          effect: Witching Hour                 # or any Halloween effect
+  - alias: Halloween lights off
+    triggers:
+      - trigger: time
+        at: "23:00:00"
+    conditions:
+      - condition: template
+        value_template: "{{ now().month == 10 }}"
+    actions:
+      - action: light.turn_off
+        target:
+          entity_id: light.front_yard
 ```
 
 **Pin both packages to the same ref.** `halloween_fx.h` uses `light_effects_helpers.h`, but it
