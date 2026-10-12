@@ -20,6 +20,9 @@ Tested on ESP32-C3 PWM RGB+CW/WW bulbs and addressable rings (Lumary RGBAI, 36 o
 | `fx2d_render.h` | Shared 2D Pacifica and Aurora renderers. |
 | `basement_map.h`, `home_theater_map.h` | **Example** room maps – replace with your own (see below). |
 | `accent_fx_controls.yaml` | Imports the room's Speed and Intensity helpers from Home Assistant. |
+| `halloween_effects.yaml` | Ten Halloween effects for a row of outdoor RGBCW bulbs along a front walk (`platform: rgbww`). |
+| `halloween_weather.yaml` | Optional: live weather from Home Assistant for the Halloween effects. |
+| `halloween_fx.h`, `front_yard_map.h` | Their maths, and an **example** yard map – replace with your own. |
 | `ntp.yaml` | SNTP setup plus two health sensors: *NTP Sync* and *Last NTP Sync*. |
 
 ## Use it as a remote package (recommended)
@@ -104,6 +107,222 @@ and *Calibrate: north + east* – help you find and check a ring's rotation.
 
 `fire_x` / `fire_y` (default 0.5 / 0.5) set where the fire sits for *2D Hearth* and
 *2D Single Candle*.
+
+## Halloween effects for outdoor bulbs
+
+`halloween_effects.yaml` adds ten effects for RGBCW bulbs placed along the route visitors walk
+from the street to the front door: *Jack-o'-Lantern Row*, *Lightning Over the House*,
+*Witch's Cauldron*, *Blood Moon*, *Heartbeat of the House*, *Trick-or-Treat Swap*,
+*Turning of the Season*, *Witching Hour*, *Graveyard Mist* and *Wind-Blown Candles*. They mix the colour and white channels in one frame (pumpkin
+is warm white plus red), so they need an `rgbww` light with all five outputs.
+
+Two rules hold for all of them, and the host tests check both:
+
+- **A light never goes dark.** Every effect has a floor colour – a dim ember, a violet glow – and
+  no channel drops under it, so a light is always at least ~3 % of full warm white.
+- **Minimal flashing.** At normal Speed or slower, at most 1 flash per second per light and per group of neighbouring lights,
+  counted the WCAG 2.3.1 way (the limit there is 3). Occasional events – a candle guttering, a
+  bubble – take turns within a group so neighbours never fire in the same second.
+- **Speed and Intensity.** The room helpers apply as they do to every other effect here, the
+  moment a value arrives; neighbours disagree only while Home Assistant reaches each bulb, and a
+  change jumps the effect to a new phase once.
+  - **Speed** scales the animation clock as `fx_seconds()` does (0.25×–~4×). Calendar arcs, sunset,
+    the quarter-hour swells and the weather keep to real time. The flash rule holds at normal speed
+    and below; above it the flash rate rises with speed.
+  - **Intensity** scales each effect's movement – the flicker, strikes, bubbles, pulses, swells and
+    gust bends – never its floor colour, so the floor holds at any setting. It is clamped at 125 %,
+    the most at which every effect keeps the flash rule at normal speed.
+  - An unavailable helper counts as normal (1× and 100 %).
+
+Three of them are made for running every evening of a month: *Turning of the Season* moves from
+harvest gold on October 1 to pumpkin and violet on the 31st, *Witching Hour* moves from amber at
+lights-on (an hour before sunset) through violet and teal to red at 11 pm, and *Graveyard Mist*
+picks a new palette, direction and pace each night. They read the local date and hour, so they
+need the time component's timezone to be right; *Witching Hour* also
+needs `sun_latitude` / `sun_longitude` for its sunset (the default is New York City).
+
+Opt a light in from its device file, next to its own package. A light that does not include the
+file is unchanged:
+
+```yaml
+substitutions:
+  mac: "a1b2c3"
+  area: "Outdoors"
+  yard_light: "G2"       # this light's row in the yard map
+
+packages:
+  light: !include common/athom-light.yaml
+  halloween:
+    url: https://github.com/davidcoulson/ambient-light-card
+    ref: <release tag>
+    files:
+      - path: esphome/common/halloween_effects.yaml
+        vars:
+          yard_map: common/my_front_yard_map.h   # your copy of front_yard_map.h
+          sun_latitude: "<your latitude>"            # e.g. "40.7"
+          sun_longitude: "<your longitude>"          # e.g. "-74.0"
+      - esphome/common/halloween_weather.yaml        # optional
+```
+
+**Daylight lift.** Outdoor lights usually come on before dark, when a dim floor or a slow mist
+is invisible. While it is light out, every Halloween effect gets a fixed extra amount of each
+frame's own colour – up to 0.25 on its brightest channel, within the power cap – fading out
+between the sun at +6° and −4°. The amount added doesn't follow the frame's ups and downs, so
+flicker and pulses keep their night-time swing and no flashes are added; floors only rise.
+Ambient light comes from the sun (`sun_latitude` / `sun_longitude`) or, with
+`halloween_weather.yaml`, from measured light (`wx_lux`, `wx_lux2`: none under 5 lx, full above
+400 lx), which ends the day early on an overcast evening. It is one call, `hw_lift()` in
+`hw_finish()`, plus `hw_frame()` at the start of each effect, which works the ambient light out
+from that frame's shared-clock time – so neighbouring bulbs always get the same lift.
+
+`halloween_weather.yaml` reads a weather station through Home Assistant (the defaults are
+`sensor.tempest_*` names; set your station's entities with the `wx_*` substitutions, in the units
+HA reports in US units: mph, degrees, in/h, °F). Real gusts bend *Wind-Blown Candles* group by
+group from the windward side; the wind steers which way *Turning of the Season* rolls and
+*Graveyard Mist* drifts; rain, cold and air near the dew point tint the candles.
+
+Readings reach each bulb a moment apart, and a rebooted bulb gets Home Assistant's current state,
+so a reading never takes effect on arrival. Each one is timestamped on the shared clock, and at
+every whole minute each bulb promotes the readings it has held for at least 5 s – so all of them
+switch at the same instant. Slow readings then ease in over 10 s and wind changes crossfade, both
+as functions of the shared clock. Two things can still put one bulb a minute behind: a reading
+arriving across the 5 s cutoff on different bulbs, and a reboot. The tests simulate both and
+check that nothing else does. A reading that is unavailable or unknown, or Home Assistant going
+away (a client subscribed to states, not just any API client such as a log viewer), falls back
+to calm at the next minute, and cached readings are dropped so a reconnect starts fresh. Without the package
+everything still compiles and runs, as on a still, dry night.
+
+The yard map is a table of `{name, group, x, y, path}` in feet: the group says which part a light
+plays (S – the street bed, G – the driveway wall, D – the front door), x/y place it, and `path` is
+its distance from the street along the walk. A light finds its row by its `yard_light` name rather
+than its MAC, so a bulb can be replaced without editing the map. A light that is not on the map
+still runs every effect, as a lone driveway light. *Blood Moon* uses x for its eclipse sweep; the
+other three use the groups.
+
+### Keeping them off every other light
+
+Give the outdoor bulbs their own wrapper next to their family package, and have only their device
+files include it. Indoor lights keep including the plain family package and never see a Halloween
+effect or a weather sensor:
+
+```yaml
+# common/athom-outdoor.yaml - the yard bulbs, and only them
+substitutions:
+  halloween_ref: <the same tag athom-light.yaml pins for ambient-light-card>
+  sun_latitude: "<your latitude>"
+  sun_longitude: "<your longitude>"
+
+packages:
+  light: !include athom-light.yaml
+  halloween:
+    url: https://github.com/davidcoulson/ambient-light-card
+    ref: ${halloween_ref}
+    files:
+      - path: esphome/common/halloween_effects.yaml
+        vars:
+          sun_latitude: ${sun_latitude}
+          sun_longitude: ${sun_longitude}
+      - path: esphome/common/halloween_weather.yaml
+        vars:
+          wx_wind: sensor.<station>_wind_speed_average
+          # ... the other wx_* entities
+
+# No fades on the yard bulbs (see "Transitions" below). Extends the light by id
+# only - no platform: key, which would override the light's own.
+light:
+  - id: !extend accent_light
+    default_transition_length: 0s
+    flash_transition_length: 0s
+```
+
+```yaml
+# a yard bulb's device file
+substitutions:
+  mac: "a1b2c3"
+  area: "Outdoors"
+  yard_light: "G2"
+
+packages:
+  - !include common/athom-outdoor.yaml
+```
+
+**Transitions.** ESPHome draws an effect's frame and then, while a light transition is running,
+writes the light's normal state over it – so for the length of a fade (1 s by default) the bulb
+shows its plain colour instead of the effect, and each bulb fades on its own timing. That is
+why the wrapper sets `default_transition_length: 0s` and `flash_transition_length: 0s` for the
+yard bulbs only. The trade-off: switching them on or off, or changing their brightness, is
+instant rather than a fade. Indoor lights keep their fades. Home Assistant can still ask for a
+fade: an automation or service call that passes `transition:` overrides the default and brings
+the problem back for that change. So the automations that drive the yard bulbs must not pass a
+transition:
+
+```yaml
+# Home Assistant: the October evening show - note: no `transition:` anywhere
+automation:
+  - alias: Halloween lights on
+    triggers:
+      - trigger: sun
+        event: sunset
+        offset: "-01:00:00"
+    conditions:
+      - condition: template
+        value_template: "{{ now().month == 10 }}"
+    actions:
+      - action: light.turn_on
+        target:
+          entity_id: light.front_yard          # a group of the yard bulbs
+        data:
+          effect: Witching Hour                 # or any Halloween effect
+  - alias: Halloween lights off
+    triggers:
+      - trigger: time
+        at: "23:00:00"
+    conditions:
+      - condition: template
+        value_template: "{{ now().month == 10 }}"
+    actions:
+      - action: light.turn_off
+        target:
+          entity_id: light.front_yard
+```
+
+**Pin both packages to the same ref.** `halloween_fx.h` uses `light_effects_helpers.h`, but it
+doesn't bring its own: ESPHome copies every package's includes into one flat `src/` folder, and
+the copy a device gets is the one its light package lists – `athom-light.yaml`'s
+ambient-light-card ref, not the Halloween package's. If two packages listed the same header, the
+last one merged would silently win. So a Halloween package pinned at one ref compiles against
+the helpers of another. To make that safe, `light_effects_helpers.h` now carries
+`LIGHT_EFFECTS_HELPERS_API` (bumped whenever a helper is added, removed or changes its result),
+and `halloween_fx.h` refuses to compile against any other level. That covers both a helper it
+needs that the light's ref doesn't have, and a helper whose behaviour changed under it. The
+v1.2.0–v1.2.2 helpers have no marker and count as level 1, so they work with this release.
+The simplest way to keep the rule is one substitution for the ref, used by both packages.
+
+### Tests
+
+`tests/run_halloween_tests.sh` builds `tests/halloween_test.cpp` against the real headers and
+checks, on every light of the example map: same time and light → same frame; the floor holds;
+flashes stay at or under 1 per second per light and per group – at 8 pm, at lights-on, and in a
+simulated storm for the weather-driven effects – and at Speed 0.25 / 0.5 / 1× × Intensity 25 / 50 /
+100 % and the 125 % maximum (the floor at every speed; 2× and ~4× are measured and reported); an
+unmapped light still runs; every effect lambda draws through `hw_render()` on the shared clock, and
+none uses a float-folded or integrating clock; `hw_out()` scales by brightness like `out_rgb()`; the cap and floors both hold; an
+evening keeps its date past midnight and sunset lands within two minutes; the weather falls back
+to calm on unknown readings or a lost Home Assistant; seven bulbs fed the same readings with
+different delays, ticking at different moments, show identical frames except around a reboot
+and a reading that straddles the cutoff (and then for no more than two minutes); seven bulbs
+that hear a live Speed or Intensity change up to 0.85 s apart draw identical frames again once all
+have it; and the daylight
+lift only raises channels, keeps each in [0, 1], stays in the cap, adds no flashes and follows the
+sun or measured light. Parity covers night, storm, full-lift and weather-turning frames, frames at Speed 0.5 and Intensity
+50 %, and frames at Speed 2×. It also checks the helpers guard: `halloween_fx.h` compiles against unmarked
+v1.2.x helpers and fails against any other API level.
+
+`tests/effect_list.py` reads `esphome config` output and lists a device's light effects and any
+Halloween parts it pulls in. Use it to check that an indoor light is untouched (`--no-halloween`)
+and that its effect list matches a saved one (`--compare`). With node
+installed it then compares the C++ frame by frame against `tests/halloween_reference.js`, the
+same maths in JavaScript that drives the effects' preview page.
 
 ## Keeping lights in step
 

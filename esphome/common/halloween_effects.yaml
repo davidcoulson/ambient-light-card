@@ -1,0 +1,202 @@
+# ---------------------------------------------------------------------------
+# Halloween effects for outdoor RGBCW bulbs - a row of lights along the walk
+# to the front door, rendering one scene from the shared clock.
+#
+# Opt in per device, next to the light's own package. Nothing changes for a
+# light that does not include this file:
+#
+#   substitutions:
+#     mac: "a1b2c3"
+#     area: "Outdoors"
+#     yard_light: "G2"        # this light's row in the yard map
+#
+#   packages:
+#     light: !include common/athom-light.yaml      # or any rgbww accent_light
+#     halloween:
+#       url: https://github.com/davidcoulson/ambient-light-card
+#       ref: <release tag>
+#       files:
+#         - path: esphome/common/halloween_effects.yaml
+#           vars:
+#             yard_map: common/my_front_yard_map.h # your copy; default is the example
+#             sun_latitude: "40.7"                 # your place, for Witching Hour's sunset
+#             sun_longitude: "-74.0"
+#         - esphome/common/halloween_weather.yaml  # optional: live weather from HA
+#
+# Needs a light with `id: accent_light` (platform: rgbww) and outputs
+# red_output, green_output, blue_output, warm_output and cold_output, and the
+# library's light_effects_helpers.h, which accent_light_nonaddressable_effects
+# .yaml or white_effects.yaml already bring in.
+#
+# Every effect keeps a visible floor (a light never goes dark) and, at normal
+# Speed or slower, stays at or under 1 flash per second per light and per
+# group; halloween_fx.h has the
+# rules and tests/halloween_test.cpp checks them. Three of them read the local
+# date and hour, so the time component's timezone must be right.
+#
+# The room Speed and Intensity helpers (accent_fx_controls.yaml, which
+# athom-light.yaml includes) apply as they do to the library's other effects:
+# Speed scales the animation clock like fx_seconds() (0.25x - ~4x), while the
+# calendar, sunset, quarter-hour swells and weather keep to real time;
+# Intensity scales each effect's movement, never its floor, up to 125 %. Each
+# lambda draws its frame through hw_render() with the unscaled shared clock.
+#
+# halloween_weather.yaml is optional. Without it Wind-Blown Candles burns
+# steady and Season and Mist use their nightly dice instead of the wind.
+# ---------------------------------------------------------------------------
+
+substitutions:
+  # This light's row in the yard map. Empty (or unknown): it runs the effects
+  # as a lone driveway light.
+  yard_light: ""
+  # The yard map: which light sits where. Point this at your own copy.
+  yard_map: front_yard_map.h
+  # Where the house is, for Witching Hour's sunset and the daylight lift.
+  # Set yours; the default is New York City.
+  sun_latitude: "40.7"
+  sun_longitude: "-74.0"
+
+esphome:
+  includes:
+  # Named without a directory: ESPHome looks in your config directory first,
+  # then next to this file.
+    - halloween_fx.h
+    - ${yard_map}
+
+light:
+  - platform: rgbww
+    id: !extend accent_light
+    effects:
+      # ------------------------------------------------------------------
+      # Jack-o'-Lantern Row - carved pumpkins. A gentle flame per light
+      # (floor: a dim ember) and one slow gutter every 7 s, taking turns
+      # within the group.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Jack-o'-Lantern Row"
+          update_interval: 40ms
+          lambda: |-
+            static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_jack(t, me); }));
+
+      # ------------------------------------------------------------------
+      # Lightning Over the House - violet night (the floor), one white
+      # strike per 11 s on every light at once; a third of them a soft
+      # distant glow. The street bed peaks at 40 %.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Lightning Over the House"
+          update_interval: 20ms
+          lambda: |-
+            static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_lightning(t, me); }));
+
+      # ------------------------------------------------------------------
+      # Witch's Cauldron - poison green <-> violet drift per light, a lime
+      # bubble every 4.2 s, taking turns within the group.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Witch's Cauldron"
+          update_interval: 50ms
+          lambda: |-
+            static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_cauldron(t, me); }));
+
+      # ------------------------------------------------------------------
+      # Blood Moon - moon white, then an eclipse sweeps west to east into
+      # copper red and clears again; four-minute cycle.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Blood Moon"
+          update_interval: 100ms
+          lambda: |-
+            static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_moon(t, me); }));
+
+      # ------------------------------------------------------------------
+      # Heartbeat of the House - a slow red pulse from the front door out
+      # to the street; 40 bpm, the second beat under the flash threshold.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Heartbeat of the House"
+          update_interval: 20ms
+          lambda: |-
+            static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_heart(t, me); }));
+
+      # ------------------------------------------------------------------
+      # Trick-or-Treat Swap - neighbours alternate orange and purple and
+      # trade every 8 s; equal luminance, so no flash.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Trick-or-Treat Swap"
+          update_interval: 50ms
+          lambda: |-
+            static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_swap(t, me); }));
+
+      # ------------------------------------------------------------------
+      # Turning of the Season - harvest gold on Oct 1 to pumpkin and
+      # violet on the 31st, rolling across the house. Unscaled clock: it
+      # follows the calendar.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Turning of the Season"
+          update_interval: 100ms
+          lambda: |-
+            static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_season(t, me); }));
+
+      # ------------------------------------------------------------------
+      # Witching Hour - amber at lights-on, violet, teal, red by 11 pm,
+      # with a swell each quarter hour. Unscaled clock; needs the place.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Witching Hour"
+          update_interval: 100ms
+          lambda: |-
+            static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_witching(t, me, ${sun_latitude}, ${sun_longitude}); }));
+
+      # ------------------------------------------------------------------
+      # Graveyard Mist - one slow mist across the yard; palette, direction
+      # and pace change nightly, or it drifts with the real wind.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Graveyard Mist"
+          update_interval: 100ms
+          lambda: |-
+            static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_mist(t, me); }));
+
+      # ------------------------------------------------------------------
+      # Wind-Blown Candles - pumpkin flames bent by real gusts rolling in
+      # from the windward side; steady without the weather package.
+      # Unscaled clock: it follows the real wind.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Wind-Blown Candles"
+          update_interval: 40ms
+          lambda: |-
+            static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_windcandles(t, me); }));

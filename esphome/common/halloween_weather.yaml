@@ -1,0 +1,119 @@
+# ---------------------------------------------------------------------------
+# Live weather for the Halloween effects - optional, next to
+# halloween_effects.yaml:
+#
+#   files:
+#     - esphome/common/halloween_effects.yaml
+#     - path: esphome/common/halloween_weather.yaml
+#       vars:
+#         wx_wind: sensor.st_xxxxxxxx_wind_speed_average   # your station's entities
+#         ...
+#
+# Reads a weather station through Home Assistant (the defaults below are a
+# WeatherFlow Tempest's entities with the serial left out; set yours). Units
+# are the ones HA reports in US units: mph, degrees, in/h, degrees F.
+#
+# What it drives: the daylight lift (measured light, instead of the sun's
+# angle), Wind-Blown Candles' gusts (wind, gust, lull, direction),
+# which way Turning of the Season rolls and Graveyard Mist drifts (wind
+# direction and speed), and the weather layer on Wind-Blown Candles (rain,
+# temperature, dew point).
+#
+# Each reading reaches the bulbs a moment apart, so a reading never takes
+# effect on arrival: it is timestamped on the shared clock, and at each whole
+# minute every bulb promotes the readings it has held for 5 s or more, so all
+# of them switch together. Slow readings then ease in over 10 s and wind
+# changes crossfade, as functions of the shared clock (halloween_fx.h,
+# "Weather moves on the shared clock"). A reading that is unavailable or
+# unknown, or Home Assistant going away, falls back to calm at the next
+# minute; nothing keys off a reading's age, because HA only sends a value when
+# it changes.
+# ---------------------------------------------------------------------------
+
+substitutions:
+  wx_wind: sensor.tempest_wind_speed_average
+  wx_gust: sensor.tempest_wind_gust
+  wx_lull: sensor.tempest_wind_lull
+  wx_dir: sensor.tempest_wind_direction_average
+  wx_rain: sensor.tempest_precipitation_intensity
+  wx_temp: sensor.tempest_temperature
+  wx_dew: sensor.tempest_dew_point
+  # Measured light for the daylight lift; the higher of the two is used. Point
+  # both at the same sensor if you have one.
+  wx_lux: sensor.tempest_illuminance
+  wx_lux2: sensor.tempest_illuminance
+
+sensor:
+  - platform: homeassistant
+    id: hw_wx_wind
+    entity_id: ${wx_wind}
+    internal: true
+    on_value:
+      then:
+        - lambda: hw_wx_in(HW_WX_WIND, x, sync_seconds());
+  - platform: homeassistant
+    id: hw_wx_gust
+    entity_id: ${wx_gust}
+    internal: true
+    on_value:
+      then:
+        - lambda: hw_wx_in(HW_WX_GUST, x, sync_seconds());
+  - platform: homeassistant
+    id: hw_wx_lull
+    entity_id: ${wx_lull}
+    internal: true
+    on_value:
+      then:
+        - lambda: hw_wx_in(HW_WX_LULL, x, sync_seconds());
+  - platform: homeassistant
+    id: hw_wx_dir
+    entity_id: ${wx_dir}
+    internal: true
+    on_value:
+      then:
+        - lambda: hw_wx_in(HW_WX_DIR, x, sync_seconds());
+  - platform: homeassistant
+    id: hw_wx_rain
+    entity_id: ${wx_rain}
+    internal: true
+    on_value:
+      then:
+        - lambda: hw_wx_in(HW_WX_RAIN, x, sync_seconds());
+  - platform: homeassistant
+    id: hw_wx_temp
+    entity_id: ${wx_temp}
+    internal: true
+    on_value:
+      then:
+        - lambda: hw_wx_in(HW_WX_TEMP, x, sync_seconds());
+  - platform: homeassistant
+    id: hw_wx_dew
+    entity_id: ${wx_dew}
+    internal: true
+    on_value:
+      then:
+        - lambda: hw_wx_in(HW_WX_DEW, x, sync_seconds());
+  - platform: homeassistant
+    id: hw_wx_lux
+    entity_id: ${wx_lux}
+    internal: true
+    on_value:
+      then:
+        - lambda: hw_wx_in(HW_WX_LUX, x, sync_seconds());
+  - platform: homeassistant
+    id: hw_wx_lux2
+    entity_id: ${wx_lux2}
+    internal: true
+    on_value:
+      then:
+        - lambda: hw_wx_in(HW_WX_LUX2, x, sync_seconds());
+
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          // Home Assistant specifically: a log viewer is an API client too, and
+          // is_connected() counts any client.
+          hw_wx_tick(api::global_api_server != nullptr &&
+                         api::global_api_server->is_connected_with_state_subscription(),
+                     sync_seconds());
