@@ -23,6 +23,7 @@ Tested on ESP32-C3 PWM RGB+CW/WW bulbs and addressable rings (Lumary RGBAI, 36 o
 | `halloween_effects.yaml` | Ten Halloween effects for a row of outdoor RGBCW bulbs along a front walk (`platform: rgbww`). |
 | `halloween_weather.yaml` | Optional: live weather from Home Assistant for the Halloween effects. |
 | `halloween_fx.h`, `front_yard_map.h` | Their maths, and an **example** yard map – replace with your own. |
+| `halloween_2d_effects.yaml`, `halloween_2d.h` | Ten Halloween effects across a mapped room of RGB lights, alongside the 2D effects. |
 | `ntp.yaml` | SNTP setup plus two health sensors: *NTP Sync* and *Last NTP Sync*. |
 
 ## Use it as a remote package (recommended)
@@ -107,6 +108,34 @@ and *Calibrate: north + east* – help you find and check a ring's rotation.
 
 `fire_x` / `fire_y` (default 0.5 / 0.5) set where the fire sits for *2D Hearth* and
 *2D Single Candle*.
+
+## Halloween effects for a mapped room
+
+`halloween_2d_effects.yaml` adds ten Halloween effects for the lights of a mapped room (the same
+`accent_light`, `platform: rgb`, and room map as the 2D effects): *2D Lightning Storm*,
+*2D Pumpkin Patch*, *2D Witch's Cauldron*, *2D Ghosts*, *2D Blood Moon*, *2D Heartbeat*,
+*2D Graveyard Mist*, *2D Trick-or-Treat*, *2D Bats at Dusk* and *2D Witching Vortex*. Seven take
+their themes from the outdoor set; strikes, surges, draughts and shadows land somewhere in the room
+and move across it. Include it next to `accent_light_2d_effects.yaml`, from the same ref and with
+the same `room_map`:
+
+```yaml
+packages:
+  fx2d:
+    url: https://github.com/davidcoulson/ambient-light-card
+    ref: <release tag>
+    files:
+      - path: esphome/common/accent_light_2d_effects.yaml
+        vars: {room_map: common/my_room_map.h}
+      - path: esphome/common/halloween_2d_effects.yaml
+        vars: {room_map: common/my_room_map.h}
+```
+
+The outdoor rules hold here too and the host tests check them on the example basement map: a
+floor of at least ~3 % of full warm white, and at most 1 flash per second on any light and in the
+room's average light. A ghost or a bat brightens one light as it dims the next; that is counted
+per light, not as the room flashing. Room Speed and Intensity apply as outdoors. Unlike
+`halloween_effects.yaml` these are RGB only, with no power cap and no daylight lift.
 
 ## Halloween effects for outdoor bulbs
 

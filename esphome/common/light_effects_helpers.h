@@ -388,7 +388,7 @@ inline float g_fx_speed = 1.0f;
 inline float g_fx_intensity = 1.0f;
 
 inline float fx_raw_clamp(float v) {
-  if (isnan(v))
+  if (std::isnan(v))
     return 128.0f;
   return v < 0.0f ? 0.0f : (v > 255.0f ? 255.0f : v);
 }

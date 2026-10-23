@@ -40,6 +40,8 @@ static uint32_t millis() { return 0; }
 static uint32_t micros() { return 0; }
 
 #include "front_yard_map.h"
+#include "basement_map.h"
+#include "halloween_2d.h"
 
 static int failures = 0;
 #define CHECK(cond, ...)                                    \
@@ -673,6 +675,118 @@ static void dump() {
   printf("#end,%ld\n", rows);   // the parity check refuses a dump without this line, or with a different count
 }
 
+// ---------------------------------------------------------------------------
+// The 2D room effects (halloween_2d.h) on the example basement map: same
+// frame for the same time, the floor, at most 1 flash per second on any
+// light and in the room's average light, at Intensity 100 % and at the
+// maximum. Neighbourhoods (lights within 0.25 room of each other) are
+// measured and printed, not enforced: a moving ghost brightens one light as
+// it dims the next, which is motion, not the room flashing.
+// ---------------------------------------------------------------------------
+struct Effect2D {
+  const char *key, *name;
+  HwColor (*fn)(const HwT &, const HzSelf &);
+  HwColor floor;
+};
+static const Effect2D EFFECTS_2D[] = {
+    {"lightning2d", "2D Lightning Storm", hz_lightning, HZ_STORM_FLOOR},
+    {"pumpkins2d", "2D Pumpkin Patch", hz_pumpkins, HZ_EMBER},
+    {"cauldron2d", "2D Witch's Cauldron", hz_cauldron, HZ_BREW_FLOOR},
+    {"ghosts2d", "2D Ghosts", hz_ghosts, HZ_NIGHT_FLOOR},
+    {"moon2d", "2D Blood Moon", hz_moon, HZ_MOON_FLOOR},
+    {"heart2d", "2D Heartbeat", hz_heart, HZ_BLOOD_FLOOR},
+    {"mist2d", "2D Graveyard Mist", hz_mist, HZ_NIGHT_FLOOR},
+    {"swap2d", "2D Trick-or-Treat", hz_swap, HZ_TREAT_FLOOR},
+    {"bats2d", "2D Bats at Dusk", hz_bats, HZ_DUSK_FLOOR},
+    {"vortex2d", "2D Witching Vortex", hz_vortex, HZ_NIGHT_FLOOR},
+};
+
+static std::vector<HzSelf> basement() {
+  std::vector<HzSelf> v;
+  for (int i = 0; i < ROOM_N; i++)
+    v.push_back(hz_at(ROOM_MAP[i].x, ROOM_MAP[i].y * ROOM_ASPECT, ROOM_ASPECT, i, ROOM_MAP[i].mac));
+  return v;
+}
+
+// One luminance signal's transitions, counted as flash_check() counts a bulb's.
+struct LumTrace {
+  bool have = false, ext_red = false;
+  double ext = 0;
+  int trend = 0;
+  std::vector<Trans> tr;
+  void add(double t, double y, bool r) {
+    if (!have) { ext = y; ext_red = r; have = true; return; }
+    if (trend == 1 && y > ext) { ext = y; ext_red = r; }
+    else if (trend == -1 && y < ext) { ext = y; ext_red = r; }
+    bool up = y - ext >= 0.1, down = ext - y >= 0.1;
+    if ((trend <= 0 && up) || (trend >= 0 && down)) {
+      tr.push_back({t, up ? 1 : -1, r || ext_red});
+      trend = up ? 1 : -1;
+      ext = y;
+      ext_red = r;
+    }
+  }
+};
+// A group's merged transitions, a run of same-direction changes as one sweep.
+static int group_flashes(std::vector<Trans> g) {
+  std::sort(g.begin(), g.end(), [](const Trans &a, const Trans &b) { return a.t < b.t; });
+  std::vector<Trans> o;
+  for (auto &x : g) {
+    if (!o.empty() && o.back().d == x.d && x.t - o.back().t < 1.0) continue;
+    o.push_back(x);
+  }
+  return max_in(o, false) / 2;
+}
+
+static void test_room_2d() {
+  auto lights = basement();
+  lights.push_back(hz_at(0.3f, 0.2f, ROOM_ASPECT, -1, "a1b2c3"));   // and an unmapped light
+  const size_t n = lights.size();
+  printf("%-22s %6s %6s %6s %6s %8s\n", "2D effect (30 min)", "depth", "bulb/s", "room/s", "nbhd/s", "min lum");
+  for (const Effect2D &fx : EFFECTS_2D) {
+    for (float depth : {1.0f, HW_DEPTH_MAX}) {
+      std::vector<LumTrace> bulb(n);
+      LumTrace room;
+      bool floor_ok = true, same_ok = true;
+      double min_lum = 1e9;
+      const double dt = 0.01;
+      for (long k = 0; k < (long) (1800.0 / dt); k++) {
+        double t = T0 + k * dt;
+        HwT tt = {t, t, 1.0, depth};
+        double mean[3] = {0, 0, 0};
+        for (size_t i = 0; i < n; i++) {
+          HwColor c = fx.fn(tt, lights[i]);
+          if (k % 997 == 0 && !same(c, fx.fn(tt, lights[i]))) same_ok = false;
+          if (c.r < fx.floor.r || c.g < fx.floor.g || c.b < fx.floor.b || c.ww != 0.0f || c.cw != 0.0f) floor_ok = false;
+          double lin[3];
+          to_linear(c, lin);
+          double y = lum_rel(lin);
+          min_lum = std::min(min_lum, y);
+          bulb[i].add(t, y, sat_red(lin));
+          for (int j = 0; j < 3; j++) mean[j] += lin[j] / n;
+        }
+        room.add(t, lum_rel(mean), sat_red(mean));
+      }
+      int worst_bulb = 0, worst_nbhd = 0;
+      for (size_t i = 0; i < n; i++) {
+        worst_bulb = std::max({worst_bulb, max_in(bulb[i].tr, false) / 2, max_in(bulb[i].tr, true) / 2});
+        std::vector<Trans> g;
+        for (size_t j = 0; j < n; j++)
+          if (hypotf(lights[i].x - lights[j].x, lights[i].y - lights[j].y) <= 0.25f)
+            g.insert(g.end(), bulb[j].tr.begin(), bulb[j].tr.end());
+        worst_nbhd = std::max(worst_nbhd, group_flashes(g));
+      }
+      int room_f = std::max(max_in(room.tr, false) / 2, max_in(room.tr, true) / 2);
+      printf("%-22s %6.2f %6d %6d %6d %8.3f\n", fx.name, depth, worst_bulb, room_f, worst_nbhd, min_lum);
+      CHECK(same_ok, "%s: the same time and light gave different frames", fx.key);
+      CHECK(floor_ok, "%s (depth %.2f): a channel fell under the floor, or a white channel lit", fx.key, depth);
+      CHECK(min_lum >= 0.03, "%s (depth %.2f): luminance %.3f is under the 3 %% floor", fx.key, depth, min_lum);
+      CHECK(worst_bulb <= 1 && room_f <= 1, "%s (depth %.2f): %d/%d flashes per second (bulb/room), target 1", fx.key,
+            depth, worst_bulb, room_f);
+    }
+  }
+}
+
 int main(int argc, char **argv) {
   setenv("TZ", "EST5EDT,M3.2.0,M11.1.0", 1);   // US Eastern, as halloween_parity.js runs
   tzset();
@@ -692,6 +806,7 @@ int main(int argc, char **argv) {
   test_floor_and_flashes();
   test_big_group();
   test_controls_flashes();
+  test_room_2d();
   if (failures) {
     printf("%d check(s) failed\n", failures);
     return 1;

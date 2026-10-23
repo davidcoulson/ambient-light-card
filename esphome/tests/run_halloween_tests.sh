@@ -27,6 +27,16 @@ if [ "$lambdas" -ne "$renders" ] || [ "$lambdas" -eq 0 ]; then
   echo "FAIL $renders of $lambdas Halloween effects draw through hw_render(sync_seconds(), ...)"; exit 1
 fi
 echo "lockstep: all $lambdas Halloween effects draw through hw_render() on the shared clock"
+hz="$here/../common/halloween_2d_effects.yaml"
+if grep -nE 'hw_seconds|fx_t\(|fx_ms|fx_millis' $hz "$here/../common/halloween_2d.h"; then
+  echo "FAIL a 2D Halloween effect uses a float-folded or integrating clock"; exit 1
+fi
+lambdas=$(grep -c 'lambda: |-' $hz)
+renders=$(grep -c 'hz_render(' $hz)
+if [ "$lambdas" -ne "$renders" ] || [ "$lambdas" -eq 0 ]; then
+  echo "FAIL $renders of $lambdas 2D Halloween effects draw through hz_render()"; exit 1
+fi
+echo "lockstep: all $lambdas 2D Halloween effects draw through hz_render() on the shared clock"
 
 # The helpers guard: halloween_fx.h must compile against unmarked v1.2.x
 # helpers (API level 1) and refuse any other level.
