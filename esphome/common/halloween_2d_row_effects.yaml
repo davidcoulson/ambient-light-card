@@ -1,0 +1,150 @@
+# ---------------------------------------------------------------------------
+# The wall-row subset of halloween_2d_effects.yaml, for a handful of lights in
+# one row (e.g. two wall sconces): the same effects, minus the two that need a
+# real 2D spread of lights - Bats at Dusk (its sky is a gradient in y and its
+# bats shade lights by heading) and Witching Vortex (spiral arms about the
+# centre: with every light at one height it can only flip between left and
+# right). run_halloween_tests.sh checks every effect here is identical to its
+# twin in halloween_2d_effects.yaml; edit that file, then copy the change here.
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Halloween effects for a mapped room of RGB lights - the 2D counterpart of
+# halloween_effects.yaml (which is for a row of outdoor RGBCW bulbs).
+#
+# Include it ALONGSIDE accent_light_2d_effects.yaml, from the same ref, on the
+# lights in the mapped room: it uses the same room map (each light finds its
+# place by its `mac` substitution) and the same accent_light (platform: rgb)
+# with red_output / green_output / blue_output.
+#
+#   packages:
+#     fx2d:
+#       url: https://github.com/davidcoulson/ambient-light-card
+#       ref: <release tag>
+#       files:
+#         - path: esphome/common/accent_light_2d_effects.yaml
+#           vars: {room_map: common/my_room_map.h}
+#         - path: esphome/common/halloween_2d_effects.yaml
+#           vars: {room_map: common/my_room_map.h}
+#
+# Every effect keeps a visible floor and stays at or under 1 flash per second
+# on any light and in the room's average light; halloween_2d.h has the rules
+# and tests/halloween_test.cpp checks them. Room Speed and Intensity apply as
+# they do to the outdoor Halloween effects. Graveyard Mist picks its colours
+# by the local date, so the time component's timezone must be right.
+# ---------------------------------------------------------------------------
+
+substitutions:
+  room_map: basement_map.h
+
+esphome:
+  includes:
+  # The room map first: the lambdas below look the light up in it.
+    - ${room_map}
+    - halloween_fx.h
+    - halloween_2d.h
+
+light:
+  - platform: rgb
+    id: !extend accent_light
+    effects:
+      # Violet cloud drifting over the room; once per 11 s a strike lands
+      # somewhere and rolls out from there, then falls slowly.
+      - lambda:
+          name: "2D Lightning Storm"
+          update_interval: 25ms
+          lambda: |-
+            static const HzSelf me = [] {
+              float x, y;
+              light_xy("${mac}", x, y);
+              return hz_at(x, y, ROOM_ASPECT, room_self("${mac}"), "${mac}");
+            }();
+            HwColor c = hz_render([](const HwT &t) { return hz_lightning(t, me); });
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);
+      # A flickering pumpkin at every light; every 12 s a draught crosses
+      # the room and each flame ducks as it passes.
+      - lambda:
+          name: "2D Pumpkin Patch"
+          update_interval: 40ms
+          lambda: |-
+            static const HzSelf me = [] {
+              float x, y;
+              light_xy("${mac}", x, y);
+              return hz_at(x, y, ROOM_ASPECT, room_self("${mac}"), "${mac}");
+            }();
+            HwColor c = hz_render([](const HwT &t) { return hz_pumpkins(t, me); });
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);
+      # Green and violet brew swirling about a pot at the room's centre;
+      # every 4.2 s a lime surge spreads out from it.
+      - lambda:
+          name: "2D Witch's Cauldron"
+          update_interval: 40ms
+          lambda: |-
+            static const HzSelf me = [] {
+              float x, y;
+              light_xy("${mac}", x, y);
+              return hz_at(x, y, ROOM_ASPECT, room_self("${mac}"), "${mac}");
+            }();
+            HwColor c = hz_render([](const HwT &t) { return hz_cauldron(t, me); });
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);
+      # Three pale ghosts drifting about a dim violet room.
+      - lambda:
+          name: "2D Ghosts"
+          update_interval: 40ms
+          lambda: |-
+            static const HzSelf me = [] {
+              float x, y;
+              light_xy("${mac}", x, y);
+              return hz_at(x, y, ROOM_ASPECT, room_self("${mac}"), "${mac}");
+            }();
+            HwColor c = hz_render([](const HwT &t) { return hz_ghosts(t, me); });
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);
+      # Moonlight; the eclipse shadow crosses from the west wall, turns the
+      # room copper red, holds and clears. A four-minute cycle.
+      - lambda:
+          name: "2D Blood Moon"
+          update_interval: 100ms
+          lambda: |-
+            static const HzSelf me = [] {
+              float x, y;
+              light_xy("${mac}", x, y);
+              return hz_at(x, y, ROOM_ASPECT, room_self("${mac}"), "${mac}");
+            }();
+            HwColor c = hz_render([](const HwT &t) { return hz_moon(t, me); });
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);
+      # A lub-dub every 1.5 s, spreading out from the room's centre.
+      - lambda:
+          name: "2D Heartbeat"
+          update_interval: 25ms
+          lambda: |-
+            static const HzSelf me = [] {
+              float x, y;
+              light_xy("${mac}", x, y);
+              return hz_at(x, y, ROOM_ASPECT, room_self("${mac}"), "${mac}");
+            }();
+            HwColor c = hz_render([](const HwT &t) { return hz_heart(t, me); });
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);
+      # Two banks of fog drifting across the room, in the night's colours.
+      - lambda:
+          name: "2D Graveyard Mist"
+          update_interval: 100ms
+          lambda: |-
+            static const HzSelf me = [] {
+              float x, y;
+              light_xy("${mac}", x, y);
+              return hz_at(x, y, ROOM_ASPECT, room_self("${mac}"), "${mac}");
+            }();
+            HwColor c = hz_render([](const HwT &t) { return hz_mist(t, me); });
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);
+      # All orange or all purple; every 8 s the other sweeps in from a new
+      # direction.
+      - lambda:
+          name: "2D Trick-or-Treat"
+          update_interval: 50ms
+          lambda: |-
+            static const HzSelf me = [] {
+              float x, y;
+              light_xy("${mac}", x, y);
+              return hz_at(x, y, ROOM_ASPECT, room_self("${mac}"), "${mac}");
+            }();
+            HwColor c = hz_render([](const HwT &t) { return hz_swap(t, me); });
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);

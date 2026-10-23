@@ -24,6 +24,7 @@ Tested on ESP32-C3 PWM RGB+CW/WW bulbs and addressable rings (Lumary RGBAI, 36 o
 | `halloween_weather.yaml` | Optional: live weather from Home Assistant for the Halloween effects. |
 | `halloween_fx.h`, `front_yard_map.h` | Their maths, and an **example** yard map – replace with your own. |
 | `halloween_2d_effects.yaml`, `halloween_2d.h` | Ten Halloween effects across a mapped room of RGB lights, alongside the 2D effects. |
+| `halloween_2d_row_effects.yaml` | The same, minus Bats at Dusk and Witching Vortex, for a few lights in one row (wall sconces). Use it instead of the full file. |
 | `ntp.yaml` | SNTP setup plus two health sensors: *NTP Sync* and *Last NTP Sync*. |
 
 ## Use it as a remote package (recommended)

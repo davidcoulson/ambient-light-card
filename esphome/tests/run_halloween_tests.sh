@@ -37,6 +37,19 @@ if [ "$lambdas" -ne "$renders" ] || [ "$lambdas" -eq 0 ]; then
   echo "FAIL $renders of $lambdas 2D Halloween effects draw through hz_render()"; exit 1
 fi
 echo "lockstep: all $lambdas 2D Halloween effects draw through hz_render() on the shared clock"
+# The wall-row subset is a copy: every effect in it must match its twin.
+row="$here/../common/halloween_2d_row_effects.yaml"
+python3 - "$hz" "$row" <<'PY' || { echo "FAIL halloween_2d_row_effects.yaml has drifted from halloween_2d_effects.yaml"; exit 1; }
+import re, sys
+def blocks(p):
+    t = open(p).read()
+    parts = re.split(r'(?m)^(?=      - lambda:)', t)[1:]
+    return {re.search(r'name: "([^"]+)"', b).group(1): re.sub(r'(?m)^      #.*\n', '', b).rstrip() for b in parts}
+full, row = blocks(sys.argv[1]), blocks(sys.argv[2])
+bad = [n for n in row if full.get(n) != row[n]]
+if bad or not row: sys.exit(print("differ:", bad))
+PY
+echo "lockstep: the wall-row effects match the full set"
 
 # The helpers guard: halloween_fx.h must compile against unmarked v1.2.x
 # helpers (API level 1) and refuse any other level.
