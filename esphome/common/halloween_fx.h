@@ -889,7 +889,12 @@ inline void hw_frame(double T, double lat, double lon) { g_hw_amb = hw_ambient_a
 // at which every effect still keeps the flash rule at 1x: at 150 % the
 // lanterns' gutters reach 2 per second.
 // ---------------------------------------------------------------------------
-constexpr float HW_DEPTH_MAX = 1.25f;
+// A build may raise it with -DHW_DEPTH_CAP=<x> (e.g. a room that wants stronger
+// effects and accepts the faster flashes the paragraph above describes).
+#ifndef HW_DEPTH_CAP
+#define HW_DEPTH_CAP 1.25f
+#endif
+constexpr float HW_DEPTH_MAX = HW_DEPTH_CAP;
 
 // The clocks and depth for a frame at shared-clock time T.
 inline HwT hw_t_now(double T) {
