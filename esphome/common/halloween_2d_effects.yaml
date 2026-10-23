@@ -165,3 +165,27 @@ light:
             }();
             HwColor c = hz_render([](const HwT &t) { return hz_vortex(t, me); });
             out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);
+      # Every light its own candle, each on its own flicker.
+      - lambda:
+          name: "2D Candlelight"
+          update_interval: 40ms
+          lambda: |-
+            static const HzSelf me = [] {
+              float x, y;
+              light_xy("${mac}", x, y);
+              return hz_at(x, y, ROOM_ASPECT, room_self("${mac}"), "${mac}");
+            }();
+            HwColor c = hz_render([](const HwT &t) { return hz_candles(t, me); });
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);
+      # The candles, quieter, with a slow swell travelling the row and back.
+      - lambda:
+          name: "2D Candle Chase"
+          update_interval: 40ms
+          lambda: |-
+            static const HzSelf me = [] {
+              float x, y;
+              light_xy("${mac}", x, y);
+              return hz_at(x, y, ROOM_ASPECT, room_self("${mac}"), "${mac}");
+            }();
+            HwColor c = hz_render([](const HwT &t) { return hz_chase(t, me); });
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);

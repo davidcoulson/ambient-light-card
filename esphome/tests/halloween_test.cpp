@@ -699,6 +699,8 @@ static const Effect2D EFFECTS_2D[] = {
     {"swap2d", "2D Trick-or-Treat", hz_swap, HZ_TREAT_FLOOR},
     {"bats2d", "2D Bats at Dusk", hz_bats, HZ_DUSK_FLOOR},
     {"vortex2d", "2D Witching Vortex", hz_vortex, HZ_NIGHT_FLOOR},
+    {"candles2d", "2D Candlelight", hz_candles, HZ_CANDLE_FLOOR},
+    {"chase2d", "2D Candle Chase", hz_chase, HZ_CANDLE_FLOOR},
 };
 
 static std::vector<HzSelf> basement() {

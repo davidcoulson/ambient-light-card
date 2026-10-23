@@ -88,6 +88,8 @@ constexpr HwColor HZ_DUSK_AMBER   = {0.90f, 0.28f, 0.00f, 0, 0};
 constexpr HwColor HZ_DUSK_VIOLET  = {0.30f, 0.02f, 0.55f, 0, 0};
 constexpr HwColor HZ_DUSK_FLOOR   = {0.12f, 0.02f, 0.15f, 0, 0};
 constexpr HwColor HZ_VORTEX_GREEN = {0.10f, 0.60f, 0.08f, 0, 0};
+constexpr HwColor HZ_CANDLE       = {1.00f, 0.38f, 0.04f, 0, 0};
+constexpr HwColor HZ_CANDLE_FLOOR = {0.22f, 0.07f, 0.01f, 0, 0};   // floor: Candlelight, Candle Chase
 constexpr HwColor HZ_MIST_SETS[3][2] = {
     {{0.00f, 0.35f, 0.45f, 0, 0}, {0.45f, 0.42f, 0.35f, 0, 0}},   // teal and bone
     {{0.05f, 0.45f, 0.10f, 0, 0}, {0.35f, 0.35f, 0.10f, 0, 0}},   // moss and lichen
@@ -216,6 +218,37 @@ inline HwColor hz_heart(const HwT &t, const HzSelf &s) {
   float lvl = 0.15f + t.d * (0.80f * expf(-6.0f * w) + (w > 0.35f ? 0.25f * expf(-6.0f * (w - 0.35f)) : 0.0f));
   float amp = 1.0f - 0.45f * fminf(1.0f, dd / 0.56f);
   return hz_finish(hw_scale(HZ_BLOOD, clamp01(lvl * amp)), HZ_BLOOD_FLOOR);
+}
+
+// ---------------------------------------------------------------------------
+// Candlelight - every light is a candle on its own flicker: a slow sway and a
+// quicker tremble, scattered per light so no two flames agree. Meant for a few
+// lights (wall sconces). Intensity scales the flicker.
+// ---------------------------------------------------------------------------
+inline float hz_candle_lvl(const HwT &t, const HzSelf &s, float k) {
+  double tj = t.A + (double) (s.off * 9.0f);
+  float slow = sync_noise(tj, 0.55f, s.i + 61), fast = sync_noise(tj, 1.6f, s.i + 71);
+  return 0.62f + t.d * k * (0.20f * (slow - 0.5f) + 0.07f * (fast - 0.5f));
+}
+inline HwColor hz_candles(const HwT &t, const HzSelf &s) {
+  return hz_finish(hw_scale(HZ_CANDLE, clamp01(hz_candle_lvl(t, s, 1.0f))), HZ_CANDLE_FLOOR);
+}
+
+// ---------------------------------------------------------------------------
+// Candle Chase - the candles again, quieter, and every 8 s a slow swell of
+// light travels the length of the row, left to right, then right to left on
+// the next pass: each flame brightens as it arrives and settles as it leaves.
+// Intensity scales the flicker and the swell.
+// ---------------------------------------------------------------------------
+inline HwColor hz_chase(const HwT &t, const HzSelf &s) {
+  uint32_t slot;
+  float w;
+  sync_slot(t.A, 8.0f, slot, w);
+  float p = -0.25f + 1.5f * (w / 8.0f);              // swell position, off the left edge to off the right
+  if (slot & 1u) p = 1.0f - p;
+  float dx = s.x - p;
+  float lvl = hz_candle_lvl(t, s, 0.6f) + 0.30f * t.d * expf(-dx * dx / 0.03f);
+  return hz_finish(hw_scale(HZ_CANDLE, clamp01(lvl)), HZ_CANDLE_FLOOR);
 }
 
 // ---------------------------------------------------------------------------
