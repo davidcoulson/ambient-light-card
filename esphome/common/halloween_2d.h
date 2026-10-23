@@ -227,8 +227,8 @@ inline HwColor hz_heart(const HwT &t, const HzSelf &s) {
 // ---------------------------------------------------------------------------
 inline float hz_candle_lvl(const HwT &t, const HzSelf &s, float k) {
   double tj = t.A + (double) (s.off * 9.0f);
-  float slow = sync_noise(tj, 0.55f, s.i + 61), fast = sync_noise(tj, 1.6f, s.i + 71);
-  return 0.55f + t.d * k * (0.80f * (slow - 0.5f) + 0.30f * (fast - 0.5f));
+  float slow = sync_noise(tj, 1.1f, s.i + 61), fast = sync_noise(tj, 3.5f, s.i + 71);
+  return 0.50f + t.d * k * (1.30f * (slow - 0.5f) + 0.60f * (fast - 0.5f));
 }
 inline HwColor hz_candles(const HwT &t, const HzSelf &s) {
   return hz_finish(hw_scale(HZ_CANDLE, clamp01(hz_candle_lvl(t, s, 1.0f))), HZ_CANDLE_FLOOR);
