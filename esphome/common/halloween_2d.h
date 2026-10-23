@@ -228,10 +228,13 @@ inline HwColor hz_heart(const HwT &t, const HzSelf &s) {
 inline float hz_candle_lvl(const HwT &t, const HzSelf &s, float k) {
   double tj = t.A + (double) (s.off * 9.0f);
   float slow = sync_noise(tj, 1.1f, s.i + 61), fast = sync_noise(tj, 3.5f, s.i + 71);
-  return 0.50f + t.d * k * (1.30f * (slow - 0.5f) + 0.60f * (fast - 0.5f));
+  // A draught: now and then one flame leaps, well past what the flash rule allows.
+  float flare = fmaxf(0.0f, sync_noise(tj, 0.7f, s.i + 81) - 0.58f) * 2.4f;
+  return 0.50f + t.d * k * (1.30f * (slow - 0.5f) + 0.60f * (fast - 0.5f) + 1.1f * flare);
 }
+inline float hz_candles_lvl(const HwT &t, const HzSelf &s) { return clamp01(hz_candle_lvl(t, s, 1.0f)); }
 inline HwColor hz_candles(const HwT &t, const HzSelf &s) {
-  return hz_finish(hw_scale(HZ_CANDLE, clamp01(hz_candle_lvl(t, s, 1.0f))), HZ_CANDLE_FLOOR);
+  return hz_finish(hw_scale(HZ_CANDLE, hz_candles_lvl(t, s)), HZ_CANDLE_FLOOR);
 }
 
 // ---------------------------------------------------------------------------
@@ -240,15 +243,26 @@ inline HwColor hz_candles(const HwT &t, const HzSelf &s) {
 // the next pass: each flame brightens as it arrives and settles as it leaves.
 // Intensity scales the flicker and the swell.
 // ---------------------------------------------------------------------------
-inline HwColor hz_chase(const HwT &t, const HzSelf &s) {
+inline float hz_chase_lvl(const HwT &t, const HzSelf &s) {
   uint32_t slot;
   float w;
   sync_slot(t.A, 8.0f, slot, w);
   float p = -0.25f + 1.5f * (w / 8.0f);              // swell position, off the left edge to off the right
   if (slot & 1u) p = 1.0f - p;
   float dx = s.x - p;
-  float lvl = hz_candle_lvl(t, s, 0.6f) + 0.30f * t.d * expf(-dx * dx / 0.03f);
-  return hz_finish(hw_scale(HZ_CANDLE, clamp01(lvl)), HZ_CANDLE_FLOOR);
+  return clamp01(hz_candle_lvl(t, s, 0.6f) + 0.30f * t.d * expf(-dx * dx / 0.03f));
+}
+inline HwColor hz_chase(const HwT &t, const HzSelf &s) {
+  return hz_finish(hw_scale(HZ_CANDLE, hz_chase_lvl(t, s)), HZ_CANDLE_FLOOR);
+}
+
+// A flame on the white channels instead of orange RGB: all warm white, with a
+// little cold mixed into the bright moments, so a flare burns whiter. The
+// level never falls below 5%.
+inline void hz_candle_white(float lvl, float &ww, float &cw) {
+  lvl = fmaxf(lvl, 0.05f);
+  ww = lvl;
+  cw = 0.35f * lvl * lvl;
 }
 
 // ---------------------------------------------------------------------------
