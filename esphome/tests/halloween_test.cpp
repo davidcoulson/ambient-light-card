@@ -701,6 +701,13 @@ static const Effect2D EFFECTS_2D[] = {
     {"vortex2d", "2D Witching Vortex", hz_vortex, HZ_NIGHT_FLOOR},
     {"candles2d", "2D Candlelight", hz_candles, HZ_CANDLE_FLOOR},
     {"chase2d", "2D Candle Chase", hz_chase, HZ_CANDLE_FLOOR},
+    {"search2d", "2D Searchlight", hz_search, HZ_BEAM_FLOOR},
+    {"haunt2d", "2D Haunting", hz_haunt, HZ_NIGHT_FLOOR},
+    {"fog2d", "2D Rolling Fog", hz_fog, HZ_FOG_FLOOR},
+    {"bolt2d", "2D Travelling Bolt", hz_bolt, HZ_STORM_FLOOR},
+    {"possessed2d", "2D Possessed Room", hz_possessed, HZ_POSSESS_FLOOR},
+    {"vines2d", "2D Creeping Vines", hz_vines, HZ_MOSS_FLOOR},
+    {"wisps2d", "2D Will-o'-the-Wisps", hz_wisps, HZ_BOG_FLOOR},
 };
 
 static std::vector<HzSelf> basement() {

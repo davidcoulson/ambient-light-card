@@ -193,3 +193,91 @@ light:
             hz_candle_white(hz_render([](const HwT &t) { return HwColor{hz_chase_lvl(t, me), 0, 0, 0, 0}; }).r, ww, cw);
             out_white(id(accent_light), id(red_output), id(green_output), id(blue_output),
                       id(warm_output), id(cold_output), ww, cw);
+      # Two cold searchlight beams sweeping the room from beyond the south wall.
+      - lambda:
+          name: "2D Searchlight"
+          update_interval: 40ms
+          lambda: |-
+            static const HzSelf me = [] {
+              float x, y;
+              light_xy("${mac}", x, y);
+              return hz_at(x, y, ROOM_ASPECT, room_self("${mac}"), "${mac}");
+            }();
+            HwColor c = hz_render([](const HwT &t) { return hz_search(t, me); });
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);
+      # A ghost appears somewhere every 9 s and a ring of cold light spreads out from it.
+      - lambda:
+          name: "2D Haunting"
+          update_interval: 40ms
+          lambda: |-
+            static const HzSelf me = [] {
+              float x, y;
+              light_xy("${mac}", x, y);
+              return hz_at(x, y, ROOM_ASPECT, room_self("${mac}"), "${mac}");
+            }();
+            HwColor c = hz_render([](const HwT &t) { return hz_haunt(t, me); });
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);
+      # A bank of green-white fog rolls in from a new direction every 20 s and
+      # drains out the far side.
+      - lambda:
+          name: "2D Rolling Fog"
+          update_interval: 50ms
+          lambda: |-
+            static const HzSelf me = [] {
+              float x, y;
+              light_xy("${mac}", x, y);
+              return hz_at(x, y, ROOM_ASPECT, room_self("${mac}"), "${mac}");
+            }();
+            HwColor c = hz_render([](const HwT &t) { return hz_fog(t, me); });
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);
+      # Every 9 s a bolt zigzags across the room light by light, a violet
+      # afterglow behind it.
+      - lambda:
+          name: "2D Travelling Bolt"
+          update_interval: 25ms
+          lambda: |-
+            static const HzSelf me = [] {
+              float x, y;
+              light_xy("${mac}", x, y);
+              return hz_at(x, y, ROOM_ASPECT, room_self("${mac}"), "${mac}");
+            }();
+            HwColor c = hz_render([](const HwT &t) { return hz_bolt(t, me); });
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);
+      # The whole room one colour, green then violet then blood red, with a
+      # shudder every 15 s as it lurches to the next.
+      - lambda:
+          name: "2D Possessed Room"
+          update_interval: 40ms
+          lambda: |-
+            static const HzSelf me = [] {
+              float x, y;
+              light_xy("${mac}", x, y);
+              return hz_at(x, y, ROOM_ASPECT, room_self("${mac}"), "${mac}");
+            }();
+            HwColor c = hz_render([](const HwT &t) { return hz_possessed(t, me); });
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);
+      # Vines of poison green grow out from a corner across the room, then
+      # wither back. A 24 s breath.
+      - lambda:
+          name: "2D Creeping Vines"
+          update_interval: 50ms
+          lambda: |-
+            static const HzSelf me = [] {
+              float x, y;
+              light_xy("${mac}", x, y);
+              return hz_at(x, y, ROOM_ASPECT, room_self("${mac}"), "${mac}");
+            }();
+            HwColor c = hz_render([](const HwT &t) { return hz_vines(t, me); });
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);
+      # Three wisps of blue-green light hover, pulse and dart about a dark bog.
+      - lambda:
+          name: "2D Will-o'-the-Wisps"
+          update_interval: 40ms
+          lambda: |-
+            static const HzSelf me = [] {
+              float x, y;
+              light_xy("${mac}", x, y);
+              return hz_at(x, y, ROOM_ASPECT, room_self("${mac}"), "${mac}");
+            }();
+            HwColor c = hz_render([](const HwT &t) { return hz_wisps(t, me); });
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);

@@ -23,7 +23,7 @@ Tested on ESP32-C3 PWM RGB+CW/WW bulbs and addressable rings (Lumary RGBAI, 36 o
 | `halloween_effects.yaml` | Ten Halloween effects for a row of outdoor RGBCW bulbs along a front walk (`platform: rgbww`). |
 | `halloween_weather.yaml` | Optional: live weather from Home Assistant for the Halloween effects. |
 | `halloween_fx.h`, `front_yard_map.h` | Their maths, and an **example** yard map – replace with your own. |
-| `halloween_2d_effects.yaml`, `halloween_2d.h` | Ten Halloween effects across a mapped room of RGB lights, alongside the 2D effects. |
+| `halloween_2d_effects.yaml`, `halloween_2d.h` | Nineteen Halloween effects across a mapped room of RGB lights, alongside the 2D effects. |
 | `halloween_2d_row_effects.yaml` | The same, minus Bats at Dusk and Witching Vortex, for a few lights in one row (wall sconces). Use it instead of the full file. |
 | `ntp.yaml` | SNTP setup plus two health sensors: *NTP Sync* and *Last NTP Sync*. |
 
@@ -112,12 +112,16 @@ and *Calibrate: north + east* – help you find and check a ring's rotation.
 
 ## Halloween effects for a mapped room
 
-`halloween_2d_effects.yaml` adds ten Halloween effects for the lights of a mapped room (the same
-`accent_light`, `platform: rgb`, and room map as the 2D effects): *2D Lightning Storm*,
+`halloween_2d_effects.yaml` adds nineteen Halloween effects for the lights of a mapped room (the
+same `accent_light`, `platform: rgb`, and room map as the 2D effects): *2D Lightning Storm*,
 *2D Pumpkin Patch*, *2D Witch's Cauldron*, *2D Ghosts*, *2D Blood Moon*, *2D Heartbeat*,
-*2D Graveyard Mist*, *2D Trick-or-Treat*, *2D Bats at Dusk* and *2D Witching Vortex*. Seven take
-their themes from the outdoor set; strikes, surges, draughts and shadows land somewhere in the room
-and move across it. Include it next to `accent_light_2d_effects.yaml`, from the same ref and with
+*2D Graveyard Mist*, *2D Trick-or-Treat*, *2D Bats at Dusk*, *2D Witching Vortex*,
+*2D Candlelight*, *2D Candle Chase*, *2D Searchlight*, *2D Haunting*, *2D Rolling Fog*,
+*2D Travelling Bolt*, *2D Possessed Room*, *2D Creeping Vines* and *2D Will-o'-the-Wisps*. Seven
+take their themes from the outdoor set; strikes, surges, draughts and shadows land somewhere in the
+room and move across it. The rest are for a large room: beams sweep it, fog and bolts cross it,
+rings spread and vines grow through it, and the whole room changes colour.
+Include it next to `accent_light_2d_effects.yaml`, from the same ref and with
 the same `room_map`:
 
 ```yaml

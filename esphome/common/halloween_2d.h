@@ -90,6 +90,21 @@ constexpr HwColor HZ_DUSK_FLOOR   = {0.12f, 0.02f, 0.15f, 0, 0};
 constexpr HwColor HZ_VORTEX_GREEN = {0.10f, 0.60f, 0.08f, 0, 0};
 constexpr HwColor HZ_CANDLE       = {1.00f, 0.38f, 0.04f, 0, 0};
 constexpr HwColor HZ_CANDLE_FLOOR = {0.22f, 0.07f, 0.01f, 0, 0};   // floor: Candlelight, Candle Chase
+constexpr HwColor HZ_BEAM         = {0.80f, 0.88f, 1.00f, 0, 0};
+constexpr HwColor HZ_BEAM_FLOOR   = {0.06f, 0.07f, 0.20f, 0, 0};   // floor: Searchlight
+constexpr HwColor HZ_HAUNT_RING   = {0.45f, 0.95f, 0.85f, 0, 0};
+constexpr HwColor HZ_FOG_DARK     = {0.10f, 0.30f, 0.12f, 0, 0};
+constexpr HwColor HZ_FOG_LIGHT    = {0.60f, 0.85f, 0.60f, 0, 0};
+constexpr HwColor HZ_FOG_FLOOR    = {0.06f, 0.09f, 0.12f, 0, 0};   // floor: Rolling Fog
+constexpr HwColor HZ_AFTERGLOW    = {0.70f, 0.40f, 1.00f, 0, 0};
+constexpr HwColor HZ_POSSESSED[3] = {{0.08f, 0.30f, 0.06f, 0, 0}, {0.60f, 0.00f, 1.00f, 0, 0}, {1.00f, 0.00f, 0.05f, 0, 0}};   // near-equal luminance
+constexpr HwColor HZ_SHUDDER      = {0.60f, 0.60f, 0.70f, 0, 0};
+constexpr HwColor HZ_POSSESS_FLOOR= {0.08f, 0.04f, 0.10f, 0, 0};   // floor: Possessed Room
+constexpr HwColor HZ_VINE         = {0.12f, 0.55f, 0.08f, 0, 0};
+constexpr HwColor HZ_VINE_TIP     = {0.60f, 1.00f, 0.30f, 0, 0};
+constexpr HwColor HZ_MOSS_FLOOR   = {0.04f, 0.10f, 0.05f, 0, 0};   // floor: Creeping Vines
+constexpr HwColor HZ_WISP         = {0.30f, 0.90f, 0.80f, 0, 0};
+constexpr HwColor HZ_BOG_FLOOR    = {0.04f, 0.05f, 0.16f, 0, 0};   // floor: Will-o'-the-Wisps
 constexpr HwColor HZ_MIST_SETS[3][2] = {
     {{0.00f, 0.35f, 0.45f, 0, 0}, {0.45f, 0.42f, 0.35f, 0, 0}},   // teal and bone
     {{0.05f, 0.45f, 0.10f, 0, 0}, {0.35f, 0.35f, 0.10f, 0, 0}},   // moss and lichen
@@ -329,4 +344,138 @@ inline HwColor hz_vortex(const HwT &t, const HzSelf &s) {
   float m = 0.5f + 0.5f * t.d * sinf(2.0f * atan2f(dy, dx) + 9.0f * r - rot);
   HwColor col = hw_scale(hw_mix(HZ_VIOLET, HZ_VORTEX_GREEN, clamp01(m)), 0.45f + 0.35f * expf(-r * r / 0.03f));
   return hz_finish(col, HZ_NIGHT_FLOOR);
+}
+
+// ---------------------------------------------------------------------------
+// Searchlight - two cold beams from beyond the south wall sweep the room on
+// their own slow swings, and a light brightens as a beam passes over it.
+// Intensity scales the beams.
+// ---------------------------------------------------------------------------
+inline HwColor hz_search(const HwT &t, const HzSelf &s) {
+  float ang = atan2f(s.x - 0.5f, -(s.y - (s.h + 0.25f)));   // from straight north, as seen from the source
+  float a1 = 0.9f * sinf((float) fmod(t.A, 14.0 * 6.2831853) * (6.2831853f / 14.0f));
+  float a2 = 0.9f * sinf((float) fmod(t.A, 19.0 * 6.2831853) * (6.2831853f / 19.0f) + 2.0f);
+  float d1 = ang - a1, d2 = ang - a2;
+  float beam = fmaxf(expf(-d1 * d1 / 0.06f), 0.8f * expf(-d2 * d2 / 0.06f));
+  HwColor base = hw_scale(HZ_BEAM_FLOOR, 1.5f);
+  return hz_finish(hw_add(base, hw_scale(HZ_BEAM, 0.7f * beam * t.d)), HZ_BEAM_FLOOR);
+}
+
+// ---------------------------------------------------------------------------
+// Haunting - a dim violet room; every 9 s a ghost appears somewhere in it with
+// a pale glow, and a ring of cold light spreads out from that spot across the
+// room, thinning as it goes. Intensity scales the glow and the ring.
+// ---------------------------------------------------------------------------
+inline HwColor hz_haunt(const HwT &t, const HzSelf &s) {
+  uint32_t slot;
+  float w;
+  sync_slot(t.A, 9.0f, slot, w);
+  float dd = hz_dist(s, 0.1f + 0.8f * sync_random(slot, 120), (0.1f + 0.8f * sync_random(slot, 121)) * s.h);
+  float r = 0.28f * w, e = dd - r;
+  float ring = expf(-e * e / 0.02f) * expf(-r * 1.2f);   // sigma 0.1
+  float core = expf(-dd * dd / 0.02f) * expf(-w * 1.0f);
+  HwColor c = hw_scale(HZ_VIOLET, 0.20f);
+  c = hw_add(c, hw_scale(HZ_GHOST, 0.6f * core * t.d));
+  return hz_finish(hw_add(c, hw_scale(HZ_HAUNT_RING, 0.55f * ring * t.d)), HZ_NIGHT_FLOOR);
+}
+
+
+// ---------------------------------------------------------------------------
+// Rolling Fog - every 20 s a bank of green-white fog rolls in from a new
+// direction: a dense bright front leads, a thinner body follows, and it
+// drains out the far side before the next bank. Intensity scales the fog.
+// ---------------------------------------------------------------------------
+inline HwColor hz_fog(const HwT &t, const HzSelf &s) {
+  uint32_t slot;
+  float w;
+  sync_slot(t.A, 20.0f, slot, w);
+  float f = -0.8f + w * 0.13f - hz_along(s, sync_random(slot, 140) * 6.2831853f);   // front, past this light when > 0
+  float front = expf(-f * f / 0.012f);
+  float body = clamp01(f / 0.35f) * (1.0f - clamp01((f - 0.9f) / 0.3f));
+  float d = clamp01(0.35f * body + 0.75f * front) * t.d;
+  HwColor fog = hw_scale(hw_mix(HZ_FOG_DARK, HZ_FOG_LIGHT, d), 0.2f + 0.8f * d);
+  return hz_finish(hw_add(hw_scale(HZ_FOG_FLOOR, 1.5f), fog), HZ_FOG_FLOOR);
+}
+
+// ---------------------------------------------------------------------------
+// Travelling Bolt - the storm cloud again, and every 9 s a bolt enters at
+// one wall and zigzags across the room like a fuse burning, each light
+// flaring cold white as it arrives and dimming to a violet afterglow behind
+// it. A new path each time. Intensity scales the bolt.
+// ---------------------------------------------------------------------------
+inline HwColor hz_bolt(const HwT &t, const HzSelf &s) {
+  float cloud = sync_noise2(s.x * 2.5 + t.A * 0.04 + 60.0, s.y * 2.5 + 60.0, 82);
+  HwColor base = hw_scale(HZ_VIOLET, 0.25f + 0.10f * cloud);
+
+  uint32_t slot;
+  float w;
+  sync_slot(t.A, 9.0f, slot, w);
+  float th = sync_random(slot, 150) * 6.2831853f;
+  float a = hz_along(s, th), side = hz_along(s, th + 1.5707963f);
+  float zig = 0.12f * sinf(a * 25.0f + (float) (slot % 97));
+  float near = expf(-(side - zig) * (side - zig) / 0.012f);
+  float u = w - 2.0f - (a + 0.6f);   // crosses the room in about 1.2 s
+  float L = u < 0.0f ? 0.0f : u < 0.08f ? u / 0.08f : expf(-(u - 0.08f) * 3.0f);
+  float glow = u < 0.0f ? 0.0f : 0.4f * expf(-u * 0.6f);
+  HwColor c = hw_add(base, hw_scale(HZ_STRIKE, 0.9f * L * near * t.d));
+  return hz_finish(hw_add(c, hw_scale(HZ_AFTERGLOW, glow * near * t.d)), HZ_STORM_FLOOR);
+}
+
+// ---------------------------------------------------------------------------
+// Possessed Room - the whole room one colour, breathing slowly: sickly green,
+// then bruise violet, then blood red, each about as bright as the last. Every
+// 15 s the room shudders - a quick shimmer runs across it as the hue lurches
+// to the next. Intensity scales the shudder.
+// ---------------------------------------------------------------------------
+inline HwColor hz_possessed(const HwT &t, const HzSelf &s) {
+  uint32_t slot;
+  float w;
+  sync_slot(t.A, 15.0f, slot, w);
+  const HwColor &from = HZ_POSSESSED[slot % 3], &to = HZ_POSSESSED[(slot + 1) % 3];
+  float u = w - 12.0f - (hz_along(s, (float) (slot % 7)) + 0.6f) * 1.5f;
+  float k = hw_ease(clamp01(u / 0.6f));
+  float sh = expf(-(u - 0.3f) * (u - 0.3f) / 0.02f);
+  float br = 0.55f + 0.10f * sinf((float) fmod(t.A, 12.566370614359172) * 0.5f + s.x * 3.0f);
+  HwColor c = hw_scale(hw_mix(from, to, 0.5f + (k - 0.5f) * t.d), br);
+  return hz_finish(hw_add(c, hw_scale(HZ_SHUDDER, 0.35f * sh * t.d)), HZ_POSSESS_FLOOR);
+}
+
+// ---------------------------------------------------------------------------
+// Creeping Vines - a moss-dark room. Vines of poison green grow out from a
+// corner along a winding path, a lime tip leading, until they reach the far
+// wall; then they wither back the way they came. A 24 s breath, from a new
+// corner each time. Intensity scales the green.
+// ---------------------------------------------------------------------------
+inline HwColor hz_vines(const HwT &t, const HzSelf &s) {
+  uint32_t slot;
+  float w;
+  sync_slot(t.A, 24.0f, slot, w);
+  float cx = sync_random(slot, 160) < 0.5f ? 0.0f : 1.0f, cy = sync_random(slot, 161) < 0.5f ? 0.0f : s.h;
+  float dd = hz_dist(s, cx, cy) + 0.08f * sinf(s.x * 9.0f + s.y * 13.0f + (float) (slot % 61));
+  float reach = (w < 12.0f ? w : 24.0f - w) * (1.3f / 12.0f);
+  float g = clamp01((reach - dd) / 0.12f), tip = expf(-(reach - dd) * (reach - dd) / 0.01f);
+  HwColor c = hw_add(hw_scale(HZ_MOSS_FLOOR, 1.5f), hw_scale(HZ_VINE, 0.8f * g * t.d));
+  return hz_finish(hw_add(c, hw_scale(HZ_VINE_TIP, 0.5f * tip * t.d)), HZ_MOSS_FLOOR);
+}
+
+// ---------------------------------------------------------------------------
+// Will-o'-the-Wisps - a black-blue bog with three wisps of blue-green light
+// in it. Each hovers somewhere, pulsing gently, then darts to a new spot;
+// they take turns, a second apart, so no light sees two passes in a second.
+// Intensity scales the wisps.
+// ---------------------------------------------------------------------------
+inline HwColor hz_wisps(const HwT &t, const HzSelf &s) {
+  float g = 0.0f;
+  for (int k = 0; k < 3; k++) {
+    uint32_t slot;
+    float w;
+    sync_slot(t.A + 2.5 * k, 7.5f, slot, w);
+    float ax = 0.05f + 0.9f * sync_random(slot, 170 + 2 * k), ay = (0.05f + 0.9f * sync_random(slot, 171 + 2 * k)) * s.h;
+    float bx = 0.05f + 0.9f * sync_random(slot + 1, 170 + 2 * k), by = (0.05f + 0.9f * sync_random(slot + 1, 171 + 2 * k)) * s.h;
+    float m = hw_ease(clamp01((w - 6.0f) / 1.5f));   // the dart, in the last 1.5 s of the hover
+    float dd = hz_dist(s, ax + (bx - ax) * m, ay + (by - ay) * m);
+    float pulse = 0.88f + 0.12f * sinf(w * 1.2f + (float) k);
+    g = fmaxf(g, pulse * expf(-dd * dd / 0.02f));
+  }
+  return hz_finish(hw_add(hw_scale(HZ_BOG_FLOOR, 1.3f), hw_scale(HZ_WISP, 0.8f * g * t.d)), HZ_BOG_FLOOR);
 }
