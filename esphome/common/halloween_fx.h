@@ -208,28 +208,15 @@ inline HwColor hw_finish(const HwColor &c, const HwColor &floor) { return hw_lif
 template<typename L, typename O>
 inline void hw_out(L *light, O *ro, O *go, O *bo, O *wo, O *co, const HwColor &c) {
   float scale = fx_brightness_scale(light);
-  ro->set_level(c.r * scale);
-  go->set_level(c.g * scale);
-  bo->set_level(c.b * scale);
-  wo->set_level(c.ww * scale);
-  co->set_level(c.cw * scale);
-#if defined(USE_ESP32) || defined(USE_ESP8266)
-  // Starting an effect makes the light write its base colour once, right after
-  // the first frame, and the next frame is a whole update_interval away: a
-  // flash of the base colour. Draw the first frame of a run again on the next
-  // loop pass, after that write. A gap over 500 ms means a new run.
-  static uint32_t last = 0;
-  uint32_t now = millis();
-  if (now - last > 500)
-    App.scheduler.set_timeout(light, "hw_first", 0, [=]() {
-      ro->set_level(c.r * scale);
-      go->set_level(c.g * scale);
-      bo->set_level(c.b * scale);
-      wo->set_level(c.ww * scale);
-      co->set_level(c.cw * scale);
-    });
-  last = now;
-#endif
+  auto draw = [=]() {
+    ro->set_level(c.r * scale);
+    go->set_level(c.g * scale);
+    bo->set_level(c.b * scale);
+    wo->set_level(c.ww * scale);
+    co->set_level(c.cw * scale);
+  };
+  draw();
+  fx_redraw_first(light, draw);
 }
 
 // Turn-taking within a group. The group shares one slot of `period` seconds,

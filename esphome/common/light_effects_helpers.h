@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <sys/time.h>
 #include <ctime>
+#include <functional>
 
 // API level of these helpers, for headers that use them from ANOTHER package
 // (halloween_fx.h). ESPHome copies every package's includes into one flat
@@ -249,14 +250,37 @@ inline float fx_brightness_scale(L *light) {
 // holds them off the way out_white() holds the colour channels off.
 inline void (*g_fx_whites_off)() = nullptr;
 
+// Starting an effect makes the light write its base colour once, right after
+// the effect's first frame, and the next frame is a whole update_interval
+// away: a flash of the base colour. The out_*() writers pass each frame here;
+// the first frame of a run (a gap over 500 ms since the last) is drawn again on
+// the next loop pass, after that write. One clock per call site.
+template<typename L, typename F>
+inline void fx_redraw_first(L *light, F &&draw) {
+#if defined(USE_ESP32) || defined(USE_ESP8266)
+  static uint32_t last = 0;
+  uint32_t now = millis();
+  if (now - last > 500)
+    App.scheduler.set_timeout(light, "fx_first", 0, std::function<void()>(draw));
+  last = now;
+#else
+  (void) light;
+  (void) draw;
+#endif
+}
+
 template<typename L, typename O>
 inline void out_rgb(L *light, O *ro, O *go, O *bo, float r, float g, float b) {
   float scale = fx_brightness_scale(light);
-  ro->set_level(clamp01(r) * scale);
-  go->set_level(clamp01(g) * scale);
-  bo->set_level(clamp01(b) * scale);
-  if (g_fx_whites_off != nullptr)
-    g_fx_whites_off();
+  auto draw = [=]() {
+    ro->set_level(clamp01(r) * scale);
+    go->set_level(clamp01(g) * scale);
+    bo->set_level(clamp01(b) * scale);
+    if (g_fx_whites_off != nullptr)
+      g_fx_whites_off();
+  };
+  draw();
+  fx_redraw_first(light, draw);
 }
 
 // The same for the white-only effects on RGBWW bulbs: colour channels held
@@ -264,11 +288,15 @@ inline void out_rgb(L *light, O *ro, O *go, O *bo, float r, float g, float b) {
 template<typename L, typename O>
 inline void out_white(L *light, O *ro, O *go, O *bo, O *wo, O *co, float ww, float cw) {
   float scale = fx_brightness_scale(light);
-  ro->set_level(0.0f);
-  go->set_level(0.0f);
-  bo->set_level(0.0f);
-  wo->set_level(clamp01(ww) * scale);
-  co->set_level(clamp01(cw) * scale);
+  auto draw = [=]() {
+    ro->set_level(0.0f);
+    go->set_level(0.0f);
+    bo->set_level(0.0f);
+    wo->set_level(clamp01(ww) * scale);
+    co->set_level(clamp01(cw) * scale);
+  };
+  draw();
+  fx_redraw_first(light, draw);
 }
 
 // Square a value. powf(x, 2.0f) is the slowest call in libm and this chip has
