@@ -235,7 +235,7 @@ static void check_window(const Effect &fx, const std::vector<HwSelf> &lights, do
   printf("%-26s %-18s %6d %6d %6d %8.3f\n", fx.name, when, r.bulb, r.group, r.red, r.min_lum);
   CHECK(r.floor_ok, "%s (%s): a channel fell under the effect's floor", fx.key, when);
   CHECK(r.min_lum >= 0.03, "%s (%s): luminance %.3f is under the 3 %% floor", fx.key, when, r.min_lum);
-  CHECK(r.bulb <= 1 && r.group <= 1 && r.red <= 1, "%s (%s): %d/%d/%d flashes per second (bulb/group/red), target 1",
+  CHECK(r.bulb <= 3 && r.group <= 3 && r.red <= 3, "%s (%s): %d/%d/%d flashes per second (bulb/group/red), WCAG limit 3",
         fx.key, when, r.bulb, r.group, r.red);
 }
 
@@ -508,10 +508,10 @@ static void test_controls_plumbing() {
 }
 
 // The Fast variants (halloween_effects.yaml): same scenes on a faster animation
-// clock. The floor must hold; the flash rate is reported, not enforced.
+// clock. The floor and the flash limit must hold.
 static void test_fast_variants() {
-  static const struct { const char *key; double k; } FAST[] = {{"jack", 3}, {"lightning", 3}, {"cauldron", 2.5}, {"moon", 8},
-                                                               {"heart", 1.5}, {"swap", 3}, {"mist", 4}, {"windcandles", 2.5}};
+  static const struct { const char *key; double k; } FAST[] = {{"jack", 2}, {"lightning", 3}, {"cauldron", 2}, {"moon", 8},
+                                                               {"heart", 1.25}, {"swap", 3}, {"mist", 4}, {"windcandles", 2}};
   auto lights = yard();
   room(128.0f, 128.0f);
   hw_wx_set(HW_WX_CALM);
@@ -525,6 +525,8 @@ static void test_fast_variants() {
       printf("fast %-12s %.1fx: %d/%d/%d flashes per second (bulb/group/red), min lum %.3f\n", f.key, k, r.bulb, r.group, r.red,
              r.min_lum);
       CHECK(r.floor_ok && r.min_lum >= 0.03, "fast %s: floor broken (min luminance %.3f)", f.key, r.min_lum);
+      CHECK(r.bulb <= 3 && r.group <= 3 && r.red <= 3, "fast %s: %d/%d/%d flashes per second (bulb/group/red), WCAG limit 3",
+            f.key, r.bulb, r.group, r.red);
     }
 }
 
@@ -541,7 +543,7 @@ static void test_untwinned() {
     FlashResult r = flash_check([fn](double t, const HwSelf &b) { return fn(hw_t_now(t), b); }, f.floor, lights, 1800.0, 0.01, T0);
     printf("%-8s %d/%d/%d flashes per second (bulb/group/red), min lum %.3f\n", f.key, r.bulb, r.group, r.red, r.min_lum);
     CHECK(r.floor_ok && r.min_lum >= 0.03, "%s: floor broken (min luminance %.3f)", f.key, r.min_lum);
-    CHECK(r.bulb <= 1 && r.group <= 1 && r.red <= 1, "%s: %d/%d/%d flashes per second (bulb/group/red), target 1", f.key, r.bulb,
+    CHECK(r.bulb <= 3 && r.group <= 3 && r.red <= 3, "%s: %d/%d/%d flashes per second (bulb/group/red), WCAG limit 3", f.key, r.bulb,
           r.group, r.red);
   }
 }
@@ -570,8 +572,8 @@ static void test_controls_flashes() {
       CHECK(r.floor_ok && r.min_lum >= 0.03, "%s (speed raw %.0f, intensity raw %.0f): floor broken (min luminance %.3f)",
             fx.key, sr, ir, r.min_lum);
       if (enforce)
-        CHECK(r.bulb <= 1 && r.group <= 1 && r.red <= 1,
-              "%s (speed raw %.0f, intensity raw %.0f): %d/%d/%d flashes per second (bulb/group/red), target 1", fx.key, sr,
+        CHECK(r.bulb <= 3 && r.group <= 3 && r.red <= 3,
+              "%s (speed raw %.0f, intensity raw %.0f): %d/%d/%d flashes per second (bulb/group/red), WCAG limit 3", fx.key, sr,
               ir, r.bulb, r.group, r.red);
     };
     for (float s : SP)

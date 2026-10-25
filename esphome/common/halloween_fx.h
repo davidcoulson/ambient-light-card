@@ -15,15 +15,16 @@
 //   1. A light never goes dark. Each effect has a floor colour (HW_EMBER and
 //      friends below) and no channel ever drops under it, so a light is always
 //      at least ~3 % of full warm white. People walk past these at night.
-//   2. Minimal flashing. At most 1 flash per second per bulb and per group of
-//      neighbouring bulbs, counted the WCAG 2.3.1 way (a flash is a pair of
-//      opposing changes of >= 10 % luminance). The 2.3.1 limit is 3; these
-//      aim far below it, preferring slow swells, fades and drifts.
+//   2. Under the flash threshold. At most 3 flashes per second per bulb and
+//      per group of neighbouring bulbs, counted the WCAG 2.3.1 way (a flash is
+//      a pair of opposing changes of >= 10 % luminance), which is 2.3.1's
+//      general flash limit. The effects are lively - quick flames, re-strikes,
+//      a beating heart - but never a strobe.
 //
 // The room Speed and Intensity helpers apply, as they do to the library's
 // other effects (see "Speed and Intensity" near the end). Each effect takes an
 // HwT: the shared clock T for the calendar, the sun, the weather and the
-// quarter-hour chimes, and the animation clock A (T at the room's Speed) for
+// five-minute swells, and the animation clock A (T at the room's Speed) for
 // everything that moves. Intensity scales an effect's movement - the flicker,
 // strikes, bubbles, pulses and swells - never its floor.
 //
@@ -96,7 +97,7 @@ struct HwSelf {
 // The clocks and the room controls an effect frame is drawn with (hw_render()
 // fills it in from the room's Speed and Intensity).
 struct HwT {
-  double T;   // the shared clock: calendar, sunset, weather, quarter-hour chimes
+  double T;   // the shared clock: calendar, sunset, weather, five-minute swells
   double A;   // the animation clock: T at the room's Speed
   double s;   // that Speed
   float d;    // movement depth from the room's Intensity, 0 - HW_DEPTH_MAX
@@ -268,25 +269,24 @@ inline HwColor hw_pumpkin(float lvl) {
 }
 
 // ---------------------------------------------------------------------------
-// Jack-o'-Lantern Row - a row of carved pumpkins. A gentle two-layer flame,
-// scattered per light, whose swing stays under the 10 % flash threshold; once
-// every 7 s each light gutters, slowly, taking turns within its group. The
-// door pair burns a little brighter. `steady` suppresses the gutters (for a
-// scene that wants a clean start from it). Intensity scales the flame's swing
-// and the gutters' depth.
+// Jack-o'-Lantern Row - a row of carved pumpkins. A lively two-layer flame,
+// scattered per light; every 4 - 6 s each light gutters low, taking turns
+// within its group. The door pair burns a little brighter. `steady`
+// suppresses the gutters (for a scene that wants a clean start from it).
+// Intensity scales the flame's swing and the gutters' depth.
 // ---------------------------------------------------------------------------
 inline HwColor hw_jack_base(const HwT &t, const HwSelf &b, bool steady) {
   double tj = t.A + (double) (b.off * 7.0f);
-  float slow = sync_noise(tj, 0.45f, b.i + 1);
-  float fast = sync_noise(tj, 0.11f, b.i + 21);
-  float lvl = 0.66f + t.d * (0.10f * (slow - 0.5f) + 0.03f * (fast - 0.5f));
+  float slow = sync_noise(tj, 0.30f, b.i + 1);
+  float fast = sync_noise(tj, 0.07f, b.i + 21);
+  float lvl = 0.66f + t.d * (0.14f * (slow - 0.5f) + 0.05f * (fast - 0.5f));
 
-  HwTurn gt = hw_group_turn(t.A, b, 7.0f, 1.6f, 50);
-  float len = 0.45f + sync_random(gt.slot, b.i + 60) * 0.35f;
+  HwTurn gt = hw_group_turn(t.A, b, 4.0f, 1.2f, 50);
+  float len = 0.40f + sync_random(gt.slot, b.i + 60) * 0.30f;
   if (!steady && gt.w >= gt.at && gt.w < gt.at + len) {
     float u = gt.w - gt.at;
-    float e = fminf(clamp01(u / 0.25f), clamp01((len - u) / 0.30f));
-    lvl = lvl + (0.36f - lvl) * hw_ease(e) * t.d;
+    float e = fminf(clamp01(u / 0.12f), clamp01((len - u) / 0.25f));
+    lvl = lvl + (0.26f - lvl) * hw_ease(e) * t.d;
   }
   if (b.group == YARD_D)
     lvl *= 1.1f;
@@ -297,9 +297,9 @@ inline HwColor hw_jack(double T, const HwSelf &b, bool steady = false) { return 
 
 // ---------------------------------------------------------------------------
 // Pumpkin Patch - a heap of carved pumpkins with candles in them, lit like a
-// bonfire: brighter and whiter at the core than the Row, a slow swell every
-// few seconds that every pumpkin breathes together, quicker shimmer per light
-// on top, and every 4 - 5 s one candle licks up, taking turns within the group.
+// bonfire: brighter and whiter at the core than the Row, a swell every couple
+// of seconds that every pumpkin breathes together, a busy shimmer per light
+// on top, and every 2 - 3 s one candle licks up, taking turns within the group.
 // Intensity scales the swell, the shimmer and the licks.
 // ---------------------------------------------------------------------------
 constexpr HwColor HW_BONFIRE = {0.50f, 0.30f, 0.00f, 0.70f, 0.12f};
@@ -309,92 +309,100 @@ inline HwColor hw_bonfire(float lvl) {
 }
 inline HwColor hw_patch(const HwT &t, const HwSelf &b) {
   double tp = t.A + (double) (b.off * 11.0f);
-  float swell = sync_noise(t.A, 4.0f, 7);   // shared: the whole patch breathes as one fire
-  float mid = sync_noise(tp, 0.30f, b.i + 201);
-  float fast = sync_noise(tp, 0.08f, b.i + 221);
-  float lvl = 0.70f + t.d * (0.12f * (swell - 0.5f) + 0.04f * (mid - 0.5f) + 0.02f * (fast - 0.5f));
+  float swell = sync_noise(t.A, 2.5f, 7);   // shared: the whole patch breathes as one fire
+  float mid = sync_noise(tp, 0.22f, b.i + 201);
+  float fast = sync_noise(tp, 0.06f, b.i + 221);
+  float lvl = 0.68f + t.d * (0.18f * (swell - 0.5f) + 0.09f * (mid - 0.5f) + 0.04f * (fast - 0.5f));
 
-  HwTurn gt = hw_group_turn(t.A, b, 4.0f, 1.2f, 190);
+  HwTurn gt = hw_group_turn(t.A, b, 2.5f, 0.8f, 190);
   if (gt.w >= gt.at && gt.w < gt.at + 0.35f) {
     float u = gt.w - gt.at;
-    float e = fminf(clamp01(u / 0.15f), clamp01((0.35f - u) / 0.3f));
-    lvl = lvl + (0.95f - lvl) * 0.6f * hw_ease(e) * t.d;
+    float e = fminf(clamp01(u / 0.12f), clamp01((0.35f - u) / 0.23f));
+    lvl = lvl + (0.98f - lvl) * 0.8f * hw_ease(e) * t.d;
   }
   return hw_finish(hw_bonfire(clamp01(lvl)), HW_EMBER);
 }
 inline HwColor hw_patch(double T, const HwSelf &b) { return hw_patch(hw_t(T), b); }
 
 // ---------------------------------------------------------------------------
-// Lightning Over the House - a violet night, and once per 11 s slot the whole
-// house lights white at the same instant. One strike, never a flicker burst:
-// a fast rise, a short hold and a slow fall from the cold-white channel.
-// About one strike in three is a soft distant glow. The street bed peaks at
-// 40 % so drivers never get a full flash at the kerb. Intensity scales the
-// strikes.
+// Lightning Over the House - a violet night, and once per 7 s slot the whole
+// house lights white at the same instant: a fast rise, a short hold and a
+// quick fall from the cold-white channel, half the time with a re-strike a
+// fifth of a second behind, and a violet afterglow hanging in the sky for a
+// second. About one strike in three is a soft distant glow. The street bed
+// peaks at 60 %. Intensity scales the strikes.
 // ---------------------------------------------------------------------------
 inline HwColor hw_lightning(const HwT &tt, const HwSelf &b) {
   float t = sync_fold(tt.A);
   uint32_t slot;
   float w;
-  sync_slot(tt.A, 11.0f, slot, w);
+  sync_slot(tt.A, 7.0f, slot, w);
 
   HwColor base = hw_scale(HW_VIOLET, 0.14f * (0.85f + 0.15f * sinf(t * 0.3f)));
-  float at = 0.8f + sync_random(slot, 1) * 8.0f;
-  bool distant = sync_random(slot, 2) < 0.35f;
-  float peak = distant ? 0.35f : 0.75f + 0.25f * sync_random(slot, 30);
-  float rise = distant ? 0.25f : 0.06f;
-  float hold = distant ? 0.10f : 0.05f;
-  float fall = distant ? 2.5f : 4.0f;
+  float at = 0.6f + sync_random(slot, 1) * 4.5f;
+  bool distant = sync_random(slot, 2) < 0.30f;
+  float peak = distant ? 0.45f : 0.80f + 0.20f * sync_random(slot, 30);
+  int strokes = distant ? 1 : 1 + (int) (sync_random(slot, 31) * 2.0f);
+  float rise = distant ? 0.20f : 0.04f;
+  float hold = distant ? 0.10f : 0.04f;
+  float fall = distant ? 2.5f : 5.0f;
 
   float L = 0.0f;
-  if (w >= at) {
-    float u = w - at;
-    L = u < rise ? peak * (u / rise) : u < rise + hold ? peak : peak * expf(-(u - rise - hold) * fall);
+  for (int k = 0; k < strokes; k++) {
+    float u = w - at - (float) k * 0.22f;
+    if (u < 0.0f) continue;
+    float pk = k == 0 ? peak : peak * 0.85f;
+    L = fmaxf(L, u < rise ? pk * (u / rise) : u < rise + hold ? pk : pk * expf(-(u - rise - hold) * fall));
   }
+  float glow = distant || w < at ? 0.0f : 0.5f * expf(-(w - at) * 1.5f);
   if (b.group == YARD_S)
-    L *= 0.4f;
-  return hw_finish(hw_add(base, hw_scale(HW_STRIKE, L * tt.d)), HW_STORM_FLOOR);
+    L *= 0.6f;
+  return hw_finish(hw_add(hw_add(base, hw_scale(HW_VIOLET, glow * tt.d)), hw_scale(HW_STRIKE, L * tt.d)), HW_STORM_FLOOR);
 }
 inline HwColor hw_lightning(double T, const HwSelf &b) { return hw_lightning(hw_t(T), b); }
 
 // ---------------------------------------------------------------------------
-// Witch's Cauldron - every light bubbles between poison green and violet on
-// its own slow phase; once every 4.2 s each light lifts with a lime bubble,
-// taking turns within its group. Intensity scales the bubbles.
+// Witch's Cauldron - every light churns between poison green and violet on
+// its own phase, with a rolling boil in its brightness; every 2 - 3 s each
+// light lifts with a lime bubble, taking turns within its group. Intensity
+// scales the boil and the bubbles.
 // ---------------------------------------------------------------------------
 inline HwColor hw_cauldron(const HwT &tt, const HwSelf &b) {
-  float t = sync_fold(tt.A + (double) (b.off * 20.0f));
-  float m = 0.5f + 0.5f * sinf(t * 0.21f + sinf(t * 0.13f) * 2.0f);
-  HwColor col = hw_scale(hw_mix(HW_POISON, HW_BREW_VIOLET, m), 0.55f);
+  double tc = tt.A + (double) (b.off * 20.0f);
+  float t = sync_fold(tc);
+  float m = 0.5f + 0.5f * sinf(t * 0.6f + sinf(t * 0.35f) * 2.0f);
+  float boil = 1.0f + 0.25f * tt.d * (sync_noise(tc, 0.25f, b.i + 41) - 0.5f) * 2.0f;
+  HwColor col = hw_scale(hw_mix(HW_POISON, HW_BREW_VIOLET, m), 0.55f * boil);
 
-  HwTurn gt = hw_group_turn(tt.A, b, 4.2f, 1.0f, 3);
+  HwTurn gt = hw_group_turn(tt.A, b, 2.0f, 0.8f, 3);
   float w = gt.w - gt.at;
-  float env = w < 0.0f ? 0.0f : w < 0.4f ? hw_ease(w / 0.4f) : expf(-(w - 0.4f) * 4.0f);
-  return hw_finish(hw_add(col, hw_scale(HW_LIME, env * 0.28f * tt.d)), HW_BREW_FLOOR);
+  float env = w < 0.0f ? 0.0f : w < 0.2f ? hw_ease(w / 0.2f) : expf(-(w - 0.2f) * 5.0f);
+  return hw_finish(hw_add(col, hw_scale(HW_LIME, env * 0.45f * tt.d)), HW_BREW_FLOOR);
 }
 inline HwColor hw_cauldron(double T, const HwSelf &b) { return hw_cauldron(hw_t(T), b); }
 
 // ---------------------------------------------------------------------------
 // Blood Moon - moon white; then an eclipse shadow sweeps across from the west
 // (the street side) and turns everything copper red, holds, and clears. A
-// four-minute cycle; the shadow reaches the door about 20 s after the street.
-// Intensity scales the slow pulse while the moon is red.
+// 90 s cycle; the shadow reaches the door about 20 s after the street. The
+// red moon throbs; clouds shimmer across the white one. Intensity scales the
+// throb and the clouds.
 // ---------------------------------------------------------------------------
 inline HwColor hw_moon(const HwT &t, const HwSelf &b) {
-  double cd = fmod(t.A - (double) ((b.x_ft + 25.0f) / 3.0f), 240.0);
+  double cd = fmod(t.A - (double) ((b.x_ft + 25.0f) / 3.0f), 90.0);
   if (cd < 0)
-    cd += 240.0;
+    cd += 90.0;
   float c = (float) cd, k;
-  if (c < 50.0f) k = 0.0f;
-  else if (c < 90.0f) k = hw_ease((c - 50.0f) / 40.0f);
-  else if (c < 170.0f) k = 1.0f;
-  else if (c < 210.0f) k = 1.0f - hw_ease((c - 170.0f) / 40.0f);
+  if (c < 15.0f) k = 0.0f;
+  else if (c < 30.0f) k = hw_ease((c - 15.0f) / 15.0f);
+  else if (c < 60.0f) k = 1.0f;
+  else if (c < 75.0f) k = 1.0f - hw_ease((c - 60.0f) / 15.0f);
   else k = 0.0f;
 
-  HwColor col = hw_mix(hw_scale(HW_MOON_WHITE, 0.75f), hw_scale(HW_COPPER, 0.5f), k);
-  if (k == 1.0f)
-    col = hw_scale(col, 0.85f + 0.15f * sinf(c * 0.5f) * t.d);
-  return hw_finish(col, HW_MOON_FLOOR);
+  HwColor col = hw_mix(hw_scale(HW_MOON_WHITE, 0.75f), hw_scale(HW_COPPER, 0.55f), k);
+  float throb = 1.0f + 0.25f * t.d * k * sinf(c * 2.0f);
+  float cloud = 1.0f - 0.20f * t.d * (1.0f - k) * sync_noise(t.A + (double) (b.off * 9.0f), 0.8f, b.i + 91);
+  return hw_finish(hw_scale(col, throb * cloud), HW_MOON_FLOOR);
 }
 inline HwColor hw_moon(double T, const HwSelf &b) { return hw_moon(hw_t(T), b); }
 
@@ -697,45 +705,48 @@ inline HwColor hw_wx_layer(HwColor c, const HwT &t, const HwSelf &b) {
 }
 
 // ---------------------------------------------------------------------------
-// Heartbeat of the House - a slow red pulse that starts at the front door and
-// reaches the street a moment later, like a pulse in an artery. 40 bpm; the
-// second beat stays under the flash threshold. Floor: a dim red. Intensity
-// scales the beat.
+// Heartbeat of the House - a red lub-dub that starts at the front door and
+// reaches the street a moment later, like a pulse in an artery. 60 bpm, both
+// beats showing: two flashes a second, a third of a second apart. Floor: a
+// dim red. Intensity scales the beat.
 // ---------------------------------------------------------------------------
 inline HwColor hw_heart(const HwT &t, const HwSelf &b) {
   uint32_t slot;
   float w;
-  sync_slot(t.A - (double) (b.door_ft / 180.0f), 1.5f, slot, w);
-  float lvl = 0.15f + t.d * (0.80f * expf(-6.0f * w) + (w > 0.35f ? 0.25f * expf(-6.0f * (w - 0.35f)) : 0.0f));
-  float amp = 1.0f - 0.35f * fminf(1.0f, b.door_ft / 80.0f);
+  sync_slot(t.A - (double) (b.door_ft / 90.0f), 1.0f, slot, w);
+  float lvl = 0.12f + t.d * (0.85f * expf(-7.0f * w) + (w > 0.30f ? 0.45f * expf(-7.0f * (w - 0.30f)) : 0.0f));
+  float amp = 1.0f - 0.30f * fminf(1.0f, b.door_ft / 80.0f);
   return hw_finish(hw_scale(HW_BLOOD, clamp01(lvl * amp)), HW_BLOOD_FLOOR);
 }
 inline HwColor hw_heart(double T, const HwSelf &b) { return hw_heart(hw_t(T), b); }
 
 // ---------------------------------------------------------------------------
 // Trick-or-Treat Swap - neighbours alternate orange and purple and trade
-// colours every 8 s with a 2.5 s crossfade. The two colours carry the same
-// luminance, so a swap is a change of hue, not a flash. Intensity draws the
-// two colours toward each other.
+// colours every 3 s with a 0.8 s crossfade that pops brighter as it passes
+// through. The two colours carry the same luminance, so the swap itself is a
+// change of hue; the pop is the one flash. Intensity draws the two colours
+// toward each other and scales the pop.
 // ---------------------------------------------------------------------------
 inline HwColor hw_swap(const HwT &t, const HwSelf &b) {
   uint32_t slot;
   float w;
-  sync_slot(t.A, 8.0f, slot, w);
+  sync_slot(t.A, 3.0f, slot, w);
   bool parity = ((slot + b.i) & 1u) != 0;
   const HwColor &from = parity ? HW_TREAT_PURPLE : HW_TREAT_ORANGE, &to = parity ? HW_TREAT_ORANGE : HW_TREAT_PURPLE;
-  float k = w > 5.5f ? hw_ease((w - 5.5f) / 2.5f) : 0.0f;
-  return hw_finish(hw_scale(hw_mix(from, to, 0.5f + (k - 0.5f) * t.d), 0.8f), HW_TREAT_FLOOR);
+  float k = w > 2.2f ? hw_ease((w - 2.2f) / 0.8f) : 0.0f;
+  float pop = 4.0f * k * (1.0f - k);
+  return hw_finish(hw_scale(hw_mix(from, to, 0.5f + (k - 0.5f) * t.d), 0.75f + 0.25f * pop * t.d), HW_TREAT_FLOOR);
 }
 inline HwColor hw_swap(double T, const HwSelf &b) { return hw_swap(hw_t(T), b); }
 
 // ---------------------------------------------------------------------------
 // Turning of the Season - the month is the arc. October 1 is harvest gold and
 // rust; by the 31st it has turned to pumpkin and violet. Each evening that
-// date's two colours roll across the front of the house in a 5-7 minute wave,
-// downwind when the weather is on, a nightly dice roll otherwise. The date
-// and the wind come from t.T; the wave moves on t.A. Intensity scales how far
-// the wave swings between the two colours.
+// date's two colours roll across the front of the house in a 40 - 60 s wave,
+// downwind when the weather is on, a nightly dice roll otherwise, with a
+// leaf-flutter shimmer on every light. The date and the wind come from t.T;
+// the wave and the flutter move on t.A. Intensity scales how far the wave
+// swings between the two colours and the flutter.
 // ---------------------------------------------------------------------------
 inline float hw_season_wave(double A, double period, double dir, const HwSelf &b) {
   double ph = fmod(A / period + dir * (double) hw_across(b) * 0.6, 1.0);
@@ -752,25 +763,26 @@ inline HwColor hw_season(const HwT &t, const HwSelf &b) {
   const HwWeather now = hw_wx_at(T), &before = hw_wx_prev(T);
   double dir = now.on ? (hw_wind_to(now.dir_deg).x >= 0.0f ? 1.0 : -1.0) : dice;
   double dir_before = before.on ? (hw_wind_to(before.dir_deg).x >= 0.0f ? 1.0 : -1.0) : dice;
-  double period = 300.0 + 120.0 * (double) sync_random(night, 81);
+  double period = 40.0 + 20.0 * (double) sync_random(night, 81);
   float w = hw_season_wave(t.A, period, dir, b);
   if (dir_before != dir) {   // the wind turned this minute: crossfade the wave's direction over HW_WX_EASE
     float k = hw_ease(clamp01((float) (hw_wx_since(T) / HW_WX_EASE)));
     w = hw_season_wave(t.A, period, dir_before, b) + (w - hw_season_wave(t.A, period, dir_before, b)) * k;
   }
   w = 0.5f + (w - 0.5f) * t.d;
-  return hw_finish(hw_scale(hw_mix(c1, c2, hw_ease(w)), 0.85f), HW_EMBER);
+  float flutter = 1.0f + 0.12f * t.d * (sync_noise(t.A + (double) (b.off * 7.0f), 0.35f, b.i + 83) - 0.5f) * 2.0f;
+  return hw_finish(hw_scale(hw_mix(c1, c2, hw_ease(w)), 0.85f * flutter), HW_EMBER);
 }
 inline HwColor hw_season(double T, const HwSelf &b) { return hw_season(hw_t(T), b); }
 
 // ---------------------------------------------------------------------------
 // Witching Hour - the evening is the arc, from lights-on (an hour before
 // sunset) to 11 pm: amber through daylight and sunset, deep violet an hour
-// after, eerie teal in the middle of the dark, a low red by 11. On each
-// quarter hour a 24 s swell crosses the house from west to east. The arc and
-// the swells keep to the real clock (t.T) and the place (sun_latitude /
-// sun_longitude); only the shimmer moves on t.A. Intensity scales the shimmer
-// and the swells.
+// after, eerie teal in the middle of the dark, a low red by 11. Every five
+// minutes a 12 s swell crosses the house from west to east; a restless
+// shimmer plays over every light. The arc and the swells keep to the real
+// clock (t.T) and the place (sun_latitude / sun_longitude); only the shimmer
+// moves on t.A. Intensity scales the shimmer and the swells.
 // ---------------------------------------------------------------------------
 inline HwColor hw_witching(const HwT &t, const HwSelf &b, double lat, double lon) {
   const double T = t.T;
@@ -779,17 +791,17 @@ inline HwColor hw_witching(const HwT &t, const HwSelf &b, double lat, double lon
   const HwKey keys[5] = {{sh - 1.0, HW_DUSK_AMBER}, {sh + 0.25, HW_DUSK_AMBER}, {sh + 1.25, HW_DEEP_VIOLET},
                          {mid, HW_EERIE_TEAL}, {23.0, HW_LATE_RED}};
   HwColor col = hw_interp(keys, 5, e.hour);
-  float shimmer = 0.94f + 0.12f * t.d * (sync_noise2(b.x_ft / 30.0 + 500.0 + t.A * 0.01, b.y_ft / 30.0 + 500.0, 33) - 0.5f);
-  double qs = fmod(e.hour * 4.0, 1.0) * 900.0 - (double) hw_across(b) * 12.0;
-  float chime = qs >= 0.0 && qs < 24.0 ? sinf((float) (M_PI * qs / 24.0)) : 0.0f;
-  return hw_finish(hw_scale(col, shimmer * (0.75f + 0.25f * chime * t.d)), HW_NIGHT_FLOOR);
+  float shimmer = 0.88f + 0.24f * t.d * (sync_noise2(b.x_ft / 30.0 + 500.0 + t.A * 0.06, b.y_ft / 30.0 + 500.0, 33) - 0.5f);
+  double qs = fmod(e.hour * 12.0, 1.0) * 300.0 - (double) hw_across(b) * 6.0;
+  float chime = qs >= 0.0 && qs < 12.0 ? sinf((float) (M_PI * qs / 12.0)) : 0.0f;
+  return hw_finish(hw_scale(col, shimmer * (0.70f + 0.30f * chime * t.d)), HW_NIGHT_FLOOR);
 }
 inline HwColor hw_witching(double T, const HwSelf &b, double lat, double lon) { return hw_witching(hw_t(T), b, lat, lon); }
 
 // ---------------------------------------------------------------------------
-// Graveyard Mist - one slow 2D mist field drifting across the yard, teal and
-// bone, moss and lichen, or violet and ash. Each night picks its palette,
-// direction and pace. With the weather on it drifts with the real wind: one
+// Graveyard Mist - one 2D mist field blowing across the yard, teal and
+// bone, moss and lichen, or violet and ash, in high contrast. Each night picks
+// its palette, direction and pace. With the weather on it drifts with the real wind: one
 // field per weather minute, moving with that minute's wind, crossfaded from
 // the previous minute's over the first 15 s - no state of its own, so a bulb
 // that starts the effect mid-minute shows the same mist as its neighbours.
@@ -797,14 +809,14 @@ inline HwColor hw_witching(double T, const HwSelf &b, double lat, double lon) { 
 // Intensity scales the mist's contrast.
 // ---------------------------------------------------------------------------
 inline float hw_mist_field(const HwSelf &b, uint32_t slot, double w, float wind_mph, float dir_deg) {
-  double v = (0.5 + (double) hw_wind_avg(wind_mph) * 0.08) / 22.0;
+  double v = (2.0 + (double) hw_wind_avg(wind_mph) * 0.15) / 16.0;
   HwVec wt = hw_wind_to(dir_deg);
-  return sync_noise2(b.x_ft / 22.0 + 1e4 + (double) sync_random(slot, 73) * 5000.0 - wt.x * v * w,
-                     b.y_ft / 22.0 + 1e4 + (double) sync_random(slot, 74) * 5000.0 - wt.y * v * w, 31);
+  return sync_noise2(b.x_ft / 16.0 + 1e4 + (double) sync_random(slot, 73) * 5000.0 - wt.x * v * w,
+                     b.y_ft / 16.0 + 1e4 + (double) sync_random(slot, 74) * 5000.0 - wt.y * v * w, 31);
 }
 inline float hw_mist_still(double A, const HwSelf &b, uint32_t night) {
-  double a = (double) sync_random(night, 71) * 6.2832, sp = 0.012 + 0.012 * (double) sync_random(night, 72);
-  return sync_noise2(b.x_ft / 22.0 + 1e7 + fmod(A * sp * cos(a), 1e6), b.y_ft / 22.0 + 1e7 + fmod(A * sp * sin(a), 1e6), 31);
+  double a = (double) sync_random(night, 71) * 6.2832, sp = 0.06 + 0.04 * (double) sync_random(night, 72);
+  return sync_noise2(b.x_ft / 16.0 + 1e7 + fmod(A * sp * cos(a), 1e6), b.y_ft / 16.0 + 1e7 + fmod(A * sp * sin(a), 1e6), 31);
 }
 inline HwColor hw_mist(const HwT &t, const HwSelf &b) {
   const double T = t.T;
@@ -821,7 +833,7 @@ inline HwColor hw_mist(const HwT &t, const HwSelf &b) {
                          : hw_mist_still(t.A, b, night);
     d = d0 + (d - d0) * hw_ease(w / 15.0f);
   }
-  d = 0.5f + (d - 0.5f) * t.d;
+  d = clamp01(0.5f + (d - 0.5f) * 1.6f * t.d);
   return hw_finish(hw_scale(hw_mix(set[0], set[1], hw_ease(d)), 0.9f), HW_NIGHT_FLOOR);
 }
 inline HwColor hw_mist(double T, const HwSelf &b) { return hw_mist(hw_t(T), b); }
@@ -829,14 +841,14 @@ inline HwColor hw_mist(double T, const HwSelf &b) { return hw_mist(hw_t(T), b); 
 // ---------------------------------------------------------------------------
 // Wind-Blown Candles - Jack-o'-Lantern Row's flame without its dice gutters:
 // gusts from the real wind roll through the yard from the windward side at
-// 30 ft/s and bend each group of flames in turn, at most one gust per 5 s
-// slot. Still
-// air, or no weather package: steady flames. Runs through the weather layer.
+// 45 ft/s and bend each group of flames in turn, at most one gust per 5 s
+// slot. Still air, or no weather package: a draught catches the flames in one
+// slot in four. Runs through the weather layer.
 // The gusts follow the real wind, so they keep to the shared clock t.T (5 s
 // slots line up with the weather minutes); the flames move on t.A. Intensity
 // scales the flames' swing and how far gusts bend them.
 // ---------------------------------------------------------------------------
-// How far a gust bends this light's flame at T (0..0.28): from the current
+// How far a gust bends this light's flame at T (0..0.45): from the current
 // 5 s slot (back = 0) or the one before (back = 1). Uses the weather that held
 // when that slot began - so a gust that started before the minute turned
 // finishes as it began - with the slot's start worked out in double from its
@@ -847,16 +859,16 @@ inline float hw_gust_bend(double T, const HwSelf &b, int back) {
   float w = (float) (T - slot_start);
   const HwWeather wx = slot_start < (double) g_hw_wxs.minute * HW_WX_PERIOD ? hw_wx_prev(T) : hw_wx_at(T);
   float wind = hw_wind_avg(wx.wind_mph);
-  float gusty = clamp01((hw_q(wx.gust_mph, 1.0f) - hw_q(wx.lull_mph, 1.0f)) / 15.0f + wind / 30.0f);
+  float gusty = clamp01(0.25f + (hw_q(wx.gust_mph, 1.0f) - hw_q(wx.lull_mph, 1.0f)) / 15.0f + wind / 30.0f);
   if (!(sync_random(slot, 131) < gusty)) return 0.0f;
   HwVec wt = hw_wind_to(wx.dir_deg);
   float at = 0.5f + sync_random(slot, 130) * 2.0f;
   // the front reaches a whole group at once (its centre), so neighbours bend
   // together rather than a few tenths apart - which would add up to flashes
-  float u = w - at - (b.gx_ft * wt.x + b.gy_ft * wt.y + 80.0f) / 30.0f;
-  float bend = 0.28f * clamp01(wind / 15.0f + 0.3f);
-  if (u >= 0.0f && u < 0.4f) return bend * hw_ease(u / 0.4f);
-  if (u >= 0.4f && u < 1.3f) return bend * (1.0f - hw_ease((u - 0.4f) / 0.9f));
+  float u = w - at - (b.gx_ft * wt.x + b.gy_ft * wt.y + 80.0f) / 45.0f;
+  float bend = 0.45f * clamp01(wind / 15.0f + 0.4f);
+  if (u >= 0.0f && u < 0.25f) return bend * hw_ease(u / 0.25f);
+  if (u >= 0.25f && u < 0.95f) return bend * (1.0f - hw_ease((u - 0.25f) / 0.7f));
   return 0.0f;
 }
 inline HwColor hw_windcandles(const HwT &t, const HwSelf &b) {
@@ -909,31 +921,31 @@ inline void hw_frame(double T, double lat, double lon) { g_hw_amb = hw_ambient_a
 
 
 // ---------------------------------------------------------------------------
-// Spooky Island - a cartoon haunted funfair at night. Indigo sky breathing
-// slowly; a teal fog bank rolls west to east every 30 s; every 9 s one light
-// glows amber like a lit window (taking turns within the group); every 31 s
-// one light buzzes red like a neon sign. Intensity scales the fog, windows
-// and sign, never the night.
+// Spooky Island - a cartoon haunted funfair at night. Indigo sky breathing; a
+// teal fog bank rolls west to east every 15 s; every 5 - 8 s one light flares
+// amber like a window lit by a passing lantern (taking turns within the
+// group); every 12 s one light buzzes red like a neon sign. Intensity scales
+// the fog, windows and sign, never the night.
 // ---------------------------------------------------------------------------
 inline HwColor hw_spooky(const HwT &tt, const HwSelf &b) {
   float t = sync_fold(tt.A + (double) (b.off * 20.0f));
-  HwColor col = hw_scale(HW_DEEP_VIOLET, 0.30f + 0.12f * (0.5f + 0.5f * sinf(t * 0.17f)));
+  HwColor col = hw_scale(HW_DEEP_VIOLET, 0.30f + 0.15f * (0.5f + 0.5f * sinf(t * 0.5f)));
 
-  double cd = fmod(tt.A - (double) (b.x_ft / 4.0f), 30.0);
+  double cd = fmod(tt.A - (double) (b.x_ft / 6.0f), 15.0);
   if (cd < 0)
-    cd += 30.0;
-  float f = sinf((float) cd * (3.14159265f / 30.0f));
-  col = hw_add(col, hw_scale(HW_EERIE_TEAL, 0.30f * f * f * tt.d));
+    cd += 15.0;
+  float f = sinf((float) cd * (3.14159265f / 15.0f));
+  col = hw_add(col, hw_scale(HW_EERIE_TEAL, 0.45f * f * f * tt.d));
 
-  HwTurn wt = hw_group_turn(tt.A, b, 9.0f, 3.0f, 7);
+  HwTurn wt = hw_group_turn(tt.A, b, 5.0f, 2.0f, 7);
   float w = wt.w - wt.at;
-  float lit = w < 0.0f ? 0.0f : w < 0.6f ? hw_ease(w / 0.6f) : w < 2.4f ? 1.0f : w < 3.0f ? 1.0f - hw_ease((w - 2.4f) / 0.6f) : 0.0f;
-  col = hw_add(col, hw_scale(HW_DUSK_AMBER, lit * (0.9f + 0.1f * sinf(w * 23.0f)) * 0.45f * tt.d));
+  float lit = w < 0.0f ? 0.0f : w < 0.3f ? hw_ease(w / 0.3f) : w < 1.5f ? 1.0f : w < 2.0f ? 1.0f - hw_ease((w - 1.5f) / 0.5f) : 0.0f;
+  col = hw_add(col, hw_scale(HW_DUSK_AMBER, lit * (0.9f + 0.1f * sinf(w * 23.0f)) * 0.55f * tt.d));
 
-  HwTurn nt = hw_group_turn(tt.A, b, 31.0f, 2.0f, 11);
+  HwTurn nt = hw_group_turn(tt.A, b, 12.0f, 1.6f, 11);
   float n = nt.w - nt.at;
-  float sign = n < 0.0f ? 0.0f : n < 0.3f ? hw_ease(n / 0.3f) : n < 1.2f ? 1.0f : n < 1.8f ? 1.0f - hw_ease((n - 1.2f) / 0.6f) : 0.0f;
-  return hw_finish(hw_add(col, hw_scale(HW_BLOOD, sign * 0.5f * tt.d)), HW_NIGHT_FLOOR);
+  float sign = n < 0.0f ? 0.0f : n < 0.15f ? hw_ease(n / 0.15f) : n < 1.0f ? 1.0f : n < 1.5f ? 1.0f - hw_ease((n - 1.0f) / 0.5f) : 0.0f;
+  return hw_finish(hw_add(col, hw_scale(HW_BLOOD, sign * (0.85f + 0.15f * sinf(n * 25.0f)) * 0.6f * tt.d)), HW_NIGHT_FLOOR);
 }
 inline HwColor hw_spooky(double T, const HwSelf &b) { return hw_spooky(hw_t(T), b); }
 
@@ -946,13 +958,13 @@ inline HwColor hw_spooky(double T, const HwSelf &b) { return hw_spooky(hw_t(T), 
 // Speed scales the animation clock exactly as fx_seconds() does: 0.25x - ~4x.
 // Neighbours disagree only for the moment it takes Home Assistant to reach
 // each bulb, and a change makes the effect jump to a new phase once, as indoor
-// effects do. The flash rule (1 per second) is checked at 1x and below; above
-// 1x an effect's flash rate rises with its speed, by the owner's choice.
+// effects do. The flash limit (3 per second) is checked at 1x and below and on
+// the Fast variants; above 1x an effect's flash rate rises with its speed, by
+// the owner's choice.
 //
 // Intensity scales each effect's movement, never its floor colour, so the
-// floor holds at any setting. It is clamped at HW_DEPTH_MAX (125 %), the most
-// at which every effect still keeps the flash rule at 1x: at 150 % the
-// lanterns' gutters reach 2 per second.
+// floor holds at any setting. It is clamped at HW_DEPTH_MAX (125 %), at which
+// every effect still keeps under the flash limit at 1x.
 // ---------------------------------------------------------------------------
 // A build may raise it with -DHW_DEPTH_CAP=<x> (e.g. a room that wants stronger
 // effects and accepts the faster flashes the paragraph above describes).

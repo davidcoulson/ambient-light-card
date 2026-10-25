@@ -150,68 +150,75 @@ function pumpkinAt(lvl) {
 
 // ======================= BUILT =======================
 
-// 1. Jack-o'-Lantern Row. Gentle two-layer flame (its swing stays under the
-// 10 % flash threshold) plus one slow gutter per bulb every 7 s, taking turns
-// within the group.
+// 1. Jack-o'-Lantern Row. Lively two-layer flame plus one gutter per bulb
+// every 4 - 6 s, taking turns within the group.
 // The clocks and depth for a frame (hw_t / HwT): Speed 1, Intensity 100 % unless given.
 function ctlOf(T, c) { return c || { A: T, s: 1, d: 1 }; }
 function jackBase(T, b, steady, c) {
   c = ctlOf(T, c);
   var Tj = c.A + F(b.off * 7);
-  var slow = sync_noise(Tj, F(0.45), b.i + 1), fast = sync_noise(Tj, F(0.11), b.i + 21);
-  var lvl = 0.66 + c.d * (0.10 * (slow - 0.5) + 0.03 * (fast - 0.5));
-  var gt = groupTurn(c.A, b, 7, 1.6, 50);
-  var len = 0.45 + sync_random(gt.slot, b.i + 60) * 0.35;
+  var slow = sync_noise(Tj, F(0.30), b.i + 1), fast = sync_noise(Tj, F(0.07), b.i + 21);
+  var lvl = 0.66 + c.d * (0.14 * (slow - 0.5) + 0.05 * (fast - 0.5));
+  var gt = groupTurn(c.A, b, 4.0, 1.2, 50);
+  var len = 0.40 + sync_random(gt.slot, b.i + 60) * 0.30;
   if (!steady && gt.w >= gt.at && gt.w < gt.at + len) {
-    var u = gt.w - gt.at, e = Math.min(clamp01(u / 0.25), clamp01((len - u) / 0.30));
-    lvl = lvl + (0.36 - lvl) * ease(e) * c.d;
+    var u = gt.w - gt.at, e = Math.min(clamp01(u / 0.12), clamp01((len - u) / 0.25));
+    lvl = lvl + (0.26 - lvl) * ease(e) * c.d;
   }
   if (b.gi === 2) lvl *= 1.1;
   return outBase(pumpkinAt(lvl), EMBER);
 }
 function jack(T, b, c) { return lift(jackBase(T, b, false, c), HW_AMB); }
 
-// 6. Lightning Over the House. One strike per 11 s slot, never a flicker
-// burst: a fast rise and a slow fall; about one in three is a soft distant
-// glow. The street bed peaks at 40 %.
+// 6. Lightning Over the House. One strike per 7 s slot: a fast rise and a
+// quick fall, half the time with a re-strike 0.22 s behind and a violet
+// afterglow; about one in three is a soft distant glow. The street bed peaks
+// at 60 %.
 function lightning(T, b, c) {
   c = ctlOf(T, c);
-  var t = sync_fold(c.A), s = sync_slot(c.A, 11), w = s.w;
+  var t = sync_fold(c.A), s = sync_slot(c.A, 7), w = s.w;
   var base = sc(VIOLET, 0.14 * (0.85 + 0.15 * Math.sin(t * 0.3)));
-  var at = 0.8 + sync_random(s.slot, 1) * 8, L = 0;
-  var distant = sync_random(s.slot, 2) < 0.35;
-  var peak = distant ? 0.35 : 0.75 + 0.25 * sync_random(s.slot, 30);
-  var rise = distant ? 0.25 : 0.06, hold = distant ? 0.10 : 0.05, fall = distant ? 2.5 : 4.0;
-  if (w >= at) {
-    var u = w - at;
-    L = u < rise ? peak * (u / rise) : u < rise + hold ? peak : peak * Math.exp(-(u - rise - hold) * fall);
+  var at = 0.6 + sync_random(s.slot, 1) * 4.5, L = 0;
+  var distant = sync_random(s.slot, 2) < 0.30;
+  var peak = distant ? 0.45 : 0.80 + 0.20 * sync_random(s.slot, 30);
+  var strokes = distant ? 1 : 1 + Math.floor(sync_random(s.slot, 31) * 2);
+  var rise = distant ? 0.20 : 0.04, hold = distant ? 0.10 : 0.04, fall = distant ? 2.5 : 5.0;
+  for (var k = 0; k < strokes; k++) {
+    var u = w - at - k * 0.22;
+    if (u < 0) continue;
+    var pk = k === 0 ? peak : peak * 0.85;
+    L = Math.max(L, u < rise ? pk * (u / rise) : u < rise + hold ? pk : pk * Math.exp(-(u - rise - hold) * fall));
   }
-  if (b.gi === 0) L *= 0.4;
-  return out(add(base, sc(STRIKE, L * c.d)), STORM_FLOOR);
+  var glow = distant || w < at ? 0 : 0.5 * Math.exp(-(w - at) * 1.5);
+  if (b.gi === 0) L *= 0.6;
+  return out(add(add(base, sc(VIOLET, glow * c.d)), sc(STRIKE, L * c.d)), STORM_FLOOR);
 }
 
-// 7. Witch's Cauldron. Each bulb drifts poison green <-> violet on its own
-// phase; one slow bubble per bulb every 4.2 s, taking turns within the group.
+// 7. Witch's Cauldron. Each bulb churns poison green <-> violet on its own
+// phase with a rolling boil; one bubble per bulb every 2 - 3 s, taking turns
+// within the group.
 function cauldron(T, b, c) {
   c = ctlOf(T, c);
-  var t = sync_fold(c.A + F(b.off * 20));
-  var m = 0.5 + 0.5 * Math.sin(t * 0.21 + Math.sin(t * 0.13) * 2);
-  var col = sc(mix(POISON, VIO2, m), 0.55);
-  var gt = groupTurn(c.A, b, 4.2, 1.0, 3), w = gt.w - gt.at;
-  var env = w < 0 ? 0 : w < 0.4 ? ease(w / 0.4) : Math.exp(-(w - 0.4) * 4);
-  return out(add(col, sc(LIME, env * 0.28 * c.d)), BREW_FLOOR);
+  var tc = c.A + F(b.off * 20), t = sync_fold(tc);
+  var m = 0.5 + 0.5 * Math.sin(t * 0.6 + Math.sin(t * 0.35) * 2);
+  var boil = 1 + 0.25 * c.d * (sync_noise(tc, F(0.25), b.i + 41) - 0.5) * 2;
+  var col = sc(mix(POISON, VIO2, m), 0.55 * boil);
+  var gt = groupTurn(c.A, b, 2.0, 0.8, 3), w = gt.w - gt.at;
+  var env = w < 0 ? 0 : w < 0.2 ? ease(w / 0.2) : Math.exp(-(w - 0.2) * 5);
+  return out(add(col, sc(LIME, env * 0.45 * c.d)), BREW_FLOOR);
 }
 
-// 9. Blood Moon. Moon white, then an eclipse shadow sweeps west to east and
-// turns everything copper red; four-minute cycle.
+// 9. Blood Moon. Moon white under shimmering cloud, then an eclipse shadow
+// sweeps west to east and turns everything a throbbing copper red; 90 s cycle.
 function moon(T, b, ctl) {
   ctl = ctlOf(T, ctl);
-  var c = fmodp(ctl.A - F((b.x + 25) / 3), 240), k;
-  if (c < 50) k = 0; else if (c < 90) k = ease((c - 50) / 40); else if (c < 170) k = 1;
-  else if (c < 210) k = 1 - ease((c - 170) / 40); else k = 0;
-  var col = mix(sc(MOONWHITE, 0.75), sc(COPPER, 0.5), k);
-  if (k === 1) col = sc(col, 0.85 + 0.15 * Math.sin(c * 0.5) * ctl.d);
-  return out(col, MOON_FLOOR);
+  var c = fmodp(ctl.A - F((b.x + 25) / 3), 90), k;
+  if (c < 15) k = 0; else if (c < 30) k = ease((c - 15) / 15); else if (c < 60) k = 1;
+  else if (c < 75) k = 1 - ease((c - 60) / 15); else k = 0;
+  var col = mix(sc(MOONWHITE, 0.75), sc(COPPER, 0.55), k);
+  var throb = 1 + 0.25 * ctl.d * k * Math.sin(Math.fround(c) * 2);
+  var cloud = 1 - 0.20 * ctl.d * (1 - k) * sync_noise(ctl.A + F(b.off * 9), F(0.8), b.i + 91);
+  return out(sc(col, throb * cloud), MOON_FLOOR);
 }
 
 // ======================= DESIGNED (preview only) =======================
@@ -257,14 +264,13 @@ function watching(T, b) {
   return out(sc(col, lid), EYE_FLOOR);
 }
 
-// 4. Heartbeat of the House (built: hw_heart): a slow red pulse that starts at
-// the door and reaches the street a moment later. 40 bpm; the second beat is
-// kept under the flash threshold.
+// 4. Heartbeat of the House (built: hw_heart): a red lub-dub that starts at
+// the door and reaches the street a moment later. 60 bpm, both beats showing.
 function heart(T, b, c) {
   c = ctlOf(T, c);
-  var P = 1.5, s = sync_slot(c.A - b.door / 180, P), w = s.w;   // 40 bpm
-  var lvl = 0.15 + c.d * (0.80 * Math.exp(-6 * w) + (w > 0.35 ? 0.25 * Math.exp(-6 * (w - 0.35)) : 0));
-  var amp = 1 - 0.35 * Math.min(1, b.door / 80);
+  var P = 1.0, s = sync_slot(c.A - b.door / 90, P), w = s.w;   // 60 bpm
+  var lvl = 0.12 + c.d * (0.85 * Math.exp(-7 * w) + (w > 0.30 ? 0.45 * Math.exp(-7 * (w - 0.30)) : 0));
+  var amp = 1 - 0.30 * Math.min(1, b.door / 80);
   return out(sc(BLOOD, clamp01(lvl * amp)), BLOOD_FLOOR);
 }
 
@@ -359,14 +365,15 @@ function seance(T, b) {
 }
 
 // 14. Trick-or-Treat Swap (built: hw_swap): neighbours alternate orange and purple and trade
-// colours every 8 s with a 2.5 s crossfade. The two colours carry the same
-// luminance, so a swap reads as a change of hue, not a flash.
+// colours every 3 s with a 0.8 s crossfade that pops brighter as it passes
+// through. The two colours carry the same luminance, so the swap itself is a
+// change of hue; the pop is the one flash.
 function swap(T, b, c) {
   c = ctlOf(T, c);
-  var s = sync_slot(c.A, 8), parity = (s.slot + YARD_ORDER[b.i]) % 2;
+  var s = sync_slot(c.A, 3), parity = (s.slot + YARD_ORDER[b.i]) % 2;
   var from = parity ? TREAT_PURPLE : TREAT_ORANGE, to = parity ? TREAT_ORANGE : TREAT_PURPLE;
-  var k = s.w > 8 - 2.5 ? ease((s.w - 5.5) / 2.5) : 0;
-  return out(sc(mix(from, to, 0.5 + (k - 0.5) * c.d), 0.8), TREAT_FLOOR);
+  var k = s.w > 2.2 ? ease((s.w - 2.2) / 0.8) : 0, pop = 4 * k * (1 - k);
+  return out(sc(mix(from, to, 0.5 + (k - 0.5) * c.d), 0.75 + 0.25 * pop * c.d), TREAT_FLOOR);
 }
 var YARD_ORDER = [0, 1, 2, 3, 4, 5, 6];
 
@@ -499,8 +506,8 @@ var MIST_SETS = [
 
 // 15. Turning of the Season: the month is the arc. Oct 1 harvest gold and
 // rust, Oct 31 pumpkin and violet; each evening that date's two colours roll
-// across the front of the house in a 5-7 minute wave (downwind when the
-// weather is on, a nightly dice roll otherwise).
+// across the front of the house in a 40 - 60 s wave (downwind when the
+// weather is on, a nightly dice roll otherwise) with a leaf-flutter shimmer.
 function seasonWave(A, period, dir, b) {
   var ph = fmodp(A / period + dir * across(b) * 0.6, 1);
   return 0.5 - 0.5 * Math.cos(ph * 6.2832);
@@ -512,37 +519,39 @@ function season(T, b, c) {
   var dice = sync_random(e.night, 80) < 0.5 ? 1 : -1, prev = wxPrev();
   var dir = WX.on ? (windTo(WX).x >= 0 ? 1 : -1) : dice;
   var dirBefore = prev.on ? (windTo(prev).x >= 0 ? 1 : -1) : dice;
-  var period = 300 + 120 * sync_random(e.night, 81);
+  var period = 40 + 20 * sync_random(e.night, 81);
   var w = seasonWave(c.A, period, dir, b);
   if (dirBefore !== dir) { var w0 = seasonWave(c.A, period, dirBefore, b); w = w0 + (w - w0) * ease(clamp01(wxSince(T) / WX_EASE)); }
   w = 0.5 + (w - 0.5) * c.d;
-  return out(sc(mix(c1, c2, ease(w)), 0.85), EMBER);
+  var flutter = 1 + 0.12 * c.d * (sync_noise(c.A + F(b.off * 7), F(0.35), b.i + 83) - 0.5) * 2;
+  return out(sc(mix(c1, c2, ease(w)), 0.85 * flutter), EMBER);
 }
 
 // 16. Witching Hour: the evening is the arc, from lights-on (an hour before
 // sunset) to 11 pm: amber through daylight and sunset, deep violet an hour
-// after, eerie teal in the middle of the dark, low red by 11. On each quarter
-// hour a 24 s swell crosses the house from west to east.
+// after, eerie teal in the middle of the dark, low red by 11. Every five
+// minutes a 12 s swell crosses the house from west to east; a restless
+// shimmer plays over every light.
 function witching(T, b, c) {
   c = ctlOf(T, c);
   var e = evening(T), sh = sunsetHour(T), mid = (sh + 1.25 + 23) / 2;
   var col = interp([[sh - 1, DUSK_AMBER], [sh + 0.25, DUSK_AMBER], [sh + 1.25, DEEP_VIOLET], [mid, EERIE_TEAL], [23, LATE_RED]], e.hour);
-  var shimmer = 0.94 + 0.12 * c.d * (sync_noise2(b.x / 30 + 500 + c.A * 0.01, b.y / 30 + 500, 33) - 0.5);
-  var qs = fmodp(e.hour * 4, 1) * 900 - across(b) * 12;
-  var chime = qs >= 0 && qs < 24 ? Math.sin(Math.PI * qs / 24) : 0;
-  return out(sc(col, shimmer * (0.75 + 0.25 * chime * c.d)), NIGHT_FLOOR);
+  var shimmer = 0.88 + 0.24 * c.d * (sync_noise2(b.x / 30 + 500 + c.A * 0.06, b.y / 30 + 500, 33) - 0.5);
+  var qs = fmodp(e.hour * 12, 1) * 300 - across(b) * 6;
+  var chime = qs >= 0 && qs < 12 ? Math.sin(Math.PI * qs / 12) : 0;
+  return out(sc(col, shimmer * (0.70 + 0.30 * chime * c.d)), NIGHT_FLOOR);
 }
 
-// 17. Graveyard Mist: one slow 2D mist field drifting across the yard. Each
+// 17. Graveyard Mist: one 2D mist field blowing across the yard in high contrast. Each
 // night picks its palette, direction and pace; with the weather on it drifts
 // with the real wind instead (the bulb latches the wind per 2-minute slot).
 function mistField(b, slot, w, W) {
-  var v = (0.5 + windAvg(W) * 0.08) / 22, wt = windTo(W);
-  return sync_noise2(b.x / 22 + 1e4 + sync_random(slot, 73) * 5000 - wt.x * v * w, b.y / 22 + 1e4 + sync_random(slot, 74) * 5000 - wt.y * v * w, 31);
+  var v = (2.0 + windAvg(W) * 0.15) / 16, wt = windTo(W);
+  return sync_noise2(b.x / 16 + 1e4 + sync_random(slot, 73) * 5000 - wt.x * v * w, b.y / 16 + 1e4 + sync_random(slot, 74) * 5000 - wt.y * v * w, 31);
 }
 function mistStill(A, b, night) {
-  var a = sync_random(night, 71) * 6.2832, sp = 0.012 + 0.012 * sync_random(night, 72);
-  return sync_noise2(b.x / 22 + 1e7 + (A * sp * Math.cos(a)) % 1e6, b.y / 22 + 1e7 + (A * sp * Math.sin(a)) % 1e6, 31);
+  var a = sync_random(night, 71) * 6.2832, sp = 0.06 + 0.04 * sync_random(night, 72);
+  return sync_noise2(b.x / 16 + 1e7 + (A * sp * Math.cos(a)) % 1e6, b.y / 16 + 1e7 + (A * sp * Math.sin(a)) % 1e6, 31);
 }
 function mist(T, b, c) {
   c = ctlOf(T, c);
@@ -553,24 +562,24 @@ function mist(T, b, c) {
     var d0 = prev.on ? mistField(b, (s.slot - 1) >>> 0, (w + WX_PERIOD) * c.s, prev) : mistStill(c.A, b, e.night);
     d = d0 + (d - d0) * ease(w / 15);
   }
-  d = 0.5 + (d - 0.5) * c.d;
+  d = clamp01(0.5 + (d - 0.5) * 1.6 * c.d);
   return out(sc(mix(set[0], set[1], ease(d)), 0.9), NIGHT_FLOOR);
 }
 
 // 22. Wind-Blown Candles: Jack-o'-Lantern Row's flame without its dice
 // gutters; instead gusts from the real wind roll through the yard from the
 // windward side and bend each flame in turn, at most one per 5 s slot. Calm
-// air (or no weather): steady flames. Runs through the weather layer.
+// air (or no weather): a draught in one slot in four. Runs through the weather layer.
 function gustBend(T, b, back) {
   var s0 = Math.floor(T / 5) - back, start = s0 * 5, slot = u32(s0), w = F(T - start);
   var W = start < Math.floor(T / WX_PERIOD) * WX_PERIOD ? wxPrev() : WX;   // the weather when the slot began
-  var wind = windAvg(W), gusty = clamp01((q(W.gustMph, 1) - q(W.lullMph, 1)) / 15 + wind / 30);
+  var wind = windAvg(W), gusty = clamp01(0.25 + (q(W.gustMph, 1) - q(W.lullMph, 1)) / 15 + wind / 30);
   if (!(sync_random(slot, 131) < gusty)) return 0;
   var t = windTo(W), at = 0.5 + sync_random(slot, 130) * 2;
-  var u = w - at - (b.gx * t.x + b.gy * t.y + 80) / 30;                // the front reaches a whole group at once
-  var bend = 0.28 * clamp01(wind / 15 + 0.3);
-  if (u >= 0 && u < 0.4) return bend * ease(u / 0.4);
-  if (u >= 0.4 && u < 1.3) return bend * (1 - ease((u - 0.4) / 0.9));
+  var u = w - at - (b.gx * t.x + b.gy * t.y + 80) / 45;                // the front reaches a whole group at once
+  var bend = 0.45 * clamp01(wind / 15 + 0.4);
+  if (u >= 0 && u < 0.25) return bend * ease(u / 0.25);
+  if (u >= 0.25 && u < 0.95) return bend * (1 - ease((u - 0.25) / 0.7));
   return 0;
 }
 function windcandles(T, b, c) {

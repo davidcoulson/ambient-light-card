@@ -29,15 +29,15 @@
 # .yaml or white_effects.yaml already bring in.
 #
 # Every effect keeps a visible floor (a light never goes dark) and, at normal
-# Speed or slower, stays at or under 1 flash per second per light and per
-# group; halloween_fx.h has the
+# Speed or slower, stays under the WCAG flash limit (3 per second per light
+# and per group); halloween_fx.h has the
 # rules and tests/halloween_test.cpp checks them. Three of them read the local
 # date and hour, so the time component's timezone must be right.
 #
 # The room Speed and Intensity helpers (accent_fx_controls.yaml, which
 # athom-light.yaml includes) apply as they do to the library's other effects:
 # Speed scales the animation clock like fx_seconds() (0.25x - ~4x), while the
-# calendar, sunset, quarter-hour swells and weather keep to real time;
+# calendar, sunset, five-minute swells and weather keep to real time;
 # Intensity scales each effect's movement, never its floor, up to 125 %. Each
 # lambda draws its frame through hw_render() with the unscaled shared clock.
 #
@@ -68,8 +68,8 @@ light:
     id: !extend accent_light
     effects:
       # ------------------------------------------------------------------
-      # Jack-o'-Lantern Row - carved pumpkins. A gentle flame per light
-      # (floor: a dim ember) and one slow gutter every 7 s, taking turns
+      # Jack-o'-Lantern Row - carved pumpkins. A lively flame per light
+      # (floor: a dim ember) and a gutter every 4 - 6 s, taking turns
       # within the group.
       # ------------------------------------------------------------------
       - lambda:
@@ -83,8 +83,8 @@ light:
 
       # ------------------------------------------------------------------
       # Pumpkin Patch - a heap of candle-lit pumpkins, lit like a bonfire:
-      # whiter at the core than the Row, a slow swell the whole patch
-      # breathes together, and every 4 - 5 s one candle licks up, taking turns
+      # whiter at the core than the Row, a swell the whole patch breathes
+      # together, and every 2 - 3 s one candle licks up, taking turns
       # within the group. Floor: a dim ember.
       # ------------------------------------------------------------------
       - lambda:
@@ -98,8 +98,9 @@ light:
 
       # ------------------------------------------------------------------
       # Lightning Over the House - violet night (the floor), one white
-      # strike per 11 s on every light at once; a third of them a soft
-      # distant glow. The street bed peaks at 40 %.
+      # strike per 7 s on every light at once, half with a re-strike and
+      # an afterglow; a third of them a soft distant glow. The street bed
+      # peaks at 60 %.
       # ------------------------------------------------------------------
       - lambda:
           name: "Halloween - Lightning Over the House"
@@ -111,8 +112,9 @@ light:
                              [&](const HwT &t) { return hw_lightning(t, me); }));
 
       # ------------------------------------------------------------------
-      # Witch's Cauldron - poison green <-> violet drift per light, a lime
-      # bubble every 4.2 s, taking turns within the group.
+      # Witch's Cauldron - poison green <-> violet churn per light with a
+      # rolling boil, a lime bubble every 2 - 3 s, taking turns within the
+      # group.
       # ------------------------------------------------------------------
       - lambda:
           name: "Halloween - Witch's Cauldron"
@@ -124,8 +126,9 @@ light:
                              [&](const HwT &t) { return hw_cauldron(t, me); }));
 
       # ------------------------------------------------------------------
-      # Blood Moon - moon white, then an eclipse sweeps west to east into
-      # copper red and clears again; four-minute cycle.
+      # Blood Moon - moon white under shimmering cloud, then an eclipse
+      # sweeps west to east into a throbbing copper red and clears again;
+      # 90 s cycle.
       # ------------------------------------------------------------------
       - lambda:
           name: "Halloween - Blood Moon"
@@ -137,8 +140,8 @@ light:
                              [&](const HwT &t) { return hw_moon(t, me); }));
 
       # ------------------------------------------------------------------
-      # Heartbeat of the House - a slow red pulse from the front door out
-      # to the street; 40 bpm, the second beat under the flash threshold.
+      # Heartbeat of the House - a red lub-dub from the front door out to
+      # the street; 60 bpm, both beats showing.
       # ------------------------------------------------------------------
       - lambda:
           name: "Halloween - Heartbeat of the House"
@@ -151,7 +154,7 @@ light:
 
       # ------------------------------------------------------------------
       # Trick-or-Treat Swap - neighbours alternate orange and purple and
-      # trade every 8 s; equal luminance, so no flash.
+      # trade every 3 s with a pop of brightness as they pass.
       # ------------------------------------------------------------------
       - lambda:
           name: "Halloween - Trick-or-Treat Swap"
@@ -164,8 +167,8 @@ light:
 
       # ------------------------------------------------------------------
       # Turning of the Season - harvest gold on Oct 1 to pumpkin and
-      # violet on the 31st, rolling across the house. Unscaled clock: it
-      # follows the calendar.
+      # violet on the 31st, rolling across the house every 40 - 60 s with
+      # a leaf-flutter shimmer. Unscaled clock: it follows the calendar.
       # ------------------------------------------------------------------
       - lambda:
           name: "Halloween - Turning of the Season"
@@ -178,7 +181,8 @@ light:
 
       # ------------------------------------------------------------------
       # Witching Hour - amber at lights-on, violet, teal, red by 11 pm,
-      # with a swell each quarter hour. Unscaled clock; needs the place.
+      # a restless shimmer and a swell every five minutes. Unscaled clock;
+      # needs the place.
       # ------------------------------------------------------------------
       - lambda:
           name: "Halloween - Witching Hour"
@@ -190,8 +194,9 @@ light:
                              [&](const HwT &t) { return hw_witching(t, me, ${sun_latitude}, ${sun_longitude}); }));
 
       # ------------------------------------------------------------------
-      # Graveyard Mist - one slow mist across the yard; palette, direction
-      # and pace change nightly, or it drifts with the real wind.
+      # Graveyard Mist - a mist blowing across the yard in high contrast;
+      # palette, direction and pace change nightly, or it drifts with the
+      # real wind.
       # ------------------------------------------------------------------
       - lambda:
           name: "Halloween - Graveyard Mist"
@@ -203,9 +208,9 @@ light:
                              [&](const HwT &t) { return hw_mist(t, me); }));
 
       # ------------------------------------------------------------------
-      # Wind-Blown Candles - pumpkin flames bent by real gusts rolling in
-      # from the windward side; steady without the weather package.
-      # Unscaled clock: it follows the real wind.
+      # Wind-Blown Candles - pumpkin flames bent hard by real gusts rolling
+      # in from the windward side; a draught now and then without the
+      # weather package. Unscaled clock: it follows the real wind.
       # ------------------------------------------------------------------
       - lambda:
           name: "Halloween - Wind-Blown Candles"
@@ -224,7 +229,7 @@ light:
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
             hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
                    hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
-                             [&](const HwT &t) { return hw_jack(hw_fast(t, 3), me); }));
+                             [&](const HwT &t) { return hw_jack(hw_fast(t, 2), me); }));
 
       # ------------------------------------------------------------------
       - lambda:
@@ -244,7 +249,7 @@ light:
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
             hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
                    hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
-                             [&](const HwT &t) { return hw_cauldron(hw_fast(t, 2.5), me); }));
+                             [&](const HwT &t) { return hw_cauldron(hw_fast(t, 2), me); }));
 
       # ------------------------------------------------------------------
       - lambda:
@@ -264,7 +269,7 @@ light:
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
             hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
                    hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
-                             [&](const HwT &t) { return hw_heart(hw_fast(t, 1.5), me); }));
+                             [&](const HwT &t) { return hw_heart(hw_fast(t, 1.25), me); }));
 
       # ------------------------------------------------------------------
       - lambda:
@@ -294,12 +299,12 @@ light:
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
             hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
                    hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
-                             [&](const HwT &t) { return hw_windcandles(hw_fast(t, 2.5), me); }));
+                             [&](const HwT &t) { return hw_windcandles(hw_fast(t, 2), me); }));
 
       # ------------------------------------------------------------------
       # Spooky Island - a cartoon haunted funfair: indigo night, a teal fog
-      # bank rolling through every 30 s, amber windows lighting in turn
-      # every 9 s, a red neon sign buzzing every 31 s. Floor: night indigo.
+      # bank rolling through every 15 s, amber windows flaring in turn
+      # every 5 - 8 s, a red neon sign buzzing every 12 s. Floor: night indigo.
       # ------------------------------------------------------------------
       - lambda:
           name: "Halloween - Spooky Island"

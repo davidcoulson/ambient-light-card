@@ -147,25 +147,25 @@ per light, not as the room flashing. Room Speed and Intensity apply as outdoors.
 `halloween_effects.yaml` adds twelve effects, all named *Halloween - …* so they group together in the effect list, for RGBCW bulbs placed along the route visitors walk
 from the street to the front door: *Jack-o'-Lantern Row*, *Lightning Over the House*,
 *Witch's Cauldron*, *Blood Moon*, *Heartbeat of the House*, *Trick-or-Treat Swap*,
-*Turning of the Season*, *Witching Hour*, *Graveyard Mist*, *Wind-Blown Candles* and *Spooky Island* (a cartoon haunted funfair: indigo night, rolling teal fog, amber windows lighting in turn, a buzzing red neon sign) and *Pumpkin Patch* (a heap of candle-lit pumpkins lit like a bonfire: whiter at the core, a shared slow swell, quick licks). Eight of them also come as *Halloween - Fast …* (the same scene on an animation clock 1.5 - 8x faster, for a 15 - 30 s look; Turning of the Season and Witching Hour follow the calendar and clock, so have none). They mix the colour and white channels in one frame (pumpkin
+*Turning of the Season*, *Witching Hour*, *Graveyard Mist*, *Wind-Blown Candles* and *Spooky Island* (a cartoon haunted funfair: indigo night, rolling teal fog, amber windows lighting in turn, a buzzing red neon sign) and *Pumpkin Patch* (a heap of candle-lit pumpkins lit like a bonfire: whiter at the core, a shared slow swell, quick licks). Eight of them also come as *Halloween - Fast …* (the same scene on an animation clock 1.25 - 8x faster, for a 15 - 30 s look; Turning of the Season and Witching Hour follow the calendar and clock, so have none). They mix the colour and white channels in one frame (pumpkin
 is warm white plus red), so they need an `rgbww` light with all five outputs.
 
 Two rules hold for all of them, and the host tests check both:
 
 - **A light never goes dark.** Every effect has a floor colour – a dim ember, a violet glow – and
   no channel drops under it, so a light is always at least ~3 % of full warm white.
-- **Minimal flashing.** At normal Speed or slower, at most 1 flash per second per light and per group of neighbouring lights,
-  counted the WCAG 2.3.1 way (the limit there is 3). Occasional events – a candle guttering, a
-  bubble – take turns within a group so neighbours never fire in the same second.
+- **Under the flash threshold.** At normal Speed or slower, and on the Fast variants, at most 3 flashes per second per light and per group of neighbouring lights,
+  counted the WCAG 2.3.1 way (its general flash limit). The effects are lively – quick flames,
+  re-strikes, a beating heart – but never a strobe; events like gutters and bubbles take turns within a group.
 - **Speed and Intensity.** The room helpers apply as they do to every other effect here, the
   moment a value arrives; neighbours disagree only while Home Assistant reaches each bulb, and a
   change jumps the effect to a new phase once.
   - **Speed** scales the animation clock as `fx_seconds()` does (0.25×–~4×). Calendar arcs, sunset,
-    the quarter-hour swells and the weather keep to real time. The flash rule holds at normal speed
+    the five-minute swells and the weather keep to real time. The flash limit holds at normal speed
     and below; above it the flash rate rises with speed.
   - **Intensity** scales each effect's movement – the flicker, strikes, bubbles, pulses, swells and
     gust bends – never its floor colour, so the floor holds at any setting. It is clamped at 125 %,
-    the most at which every effect keeps the flash rule at normal speed.
+    at which every effect keeps under the flash limit at normal speed.
   - An unavailable helper counts as normal (1× and 100 %).
 
 Three of them are made for running every evening of a month: *Turning of the Season* moves from
@@ -336,7 +336,7 @@ The simplest way to keep the rule is one substitution for the ref, used by both 
 
 `tests/run_halloween_tests.sh` builds `tests/halloween_test.cpp` against the real headers and
 checks, on every light of the example map: same time and light → same frame; the floor holds;
-flashes stay at or under 1 per second per light and per group – at 8 pm, at lights-on, and in a
+flashes stay at or under the WCAG limit of 3 per second per light and per group – at 8 pm, at lights-on, and in a
 simulated storm for the weather-driven effects – and at Speed 0.25 / 0.5 / 1× × Intensity 25 / 50 /
 100 % and the 125 % maximum (the floor at every speed; 2× and ~4× are measured and reported); an
 unmapped light still runs; every effect lambda draws through `hw_render()` on the shared clock, and
