@@ -255,6 +255,8 @@ inline void (*g_fx_whites_off)() = nullptr;
 // away: a flash of the base colour. The out_*() writers pass each frame here;
 // the first frame of a run (a gap over 500 ms since the last) is drawn again on
 // the next loop pass, after that write. One clock per call site.
+// Writers that pass their frames through fx_redraw_first() check for this.
+#define LIGHT_EFFECTS_HELPERS_REDRAW 1
 template<typename L, typename F>
 inline void fx_redraw_first(L *light, F &&draw) {
 #if defined(USE_ESP32) || defined(USE_ESP8266)

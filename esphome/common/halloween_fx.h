@@ -49,6 +49,9 @@
 #endif
 #endif
 #include "light_effects_helpers.h"
+#ifndef LIGHT_EFFECTS_HELPERS_REDRAW
+#error "halloween_fx.h needs light_effects_helpers.h from the same library ref (v1.4.10 or later): pin every package of a device to one ref"
+#endif
 #ifdef LIGHT_EFFECTS_HELPERS_API
 #define HW_HELPERS_API_FOUND LIGHT_EFFECTS_HELPERS_API
 #else
