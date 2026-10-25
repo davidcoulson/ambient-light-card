@@ -18,7 +18,7 @@ HALLOWEEN_EFFECTS = {
     f"Halloween - {n}" for n in (
         "Jack-o'-Lantern Row", "Lightning Over the House", "Witch's Cauldron", "Blood Moon",
         "Heartbeat of the House", "Trick-or-Treat Swap", "Turning of the Season", "Witching Hour",
-        "Graveyard Mist", "Wind-Blown Candles",
+        "Graveyard Mist", "Wind-Blown Candles", "Spooky Island",
     )
 } | {
     f"Halloween - Fast {n}" for n in (

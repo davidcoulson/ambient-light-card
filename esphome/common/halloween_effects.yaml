@@ -280,3 +280,17 @@ light:
             hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
                    hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
                              [&](const HwT &t) { return hw_windcandles(hw_fast(t, 2.5), me); }));
+
+      # ------------------------------------------------------------------
+      # Spooky Island - a cartoon haunted funfair: indigo night, a teal fog
+      # bank rolling through every 30 s, amber windows lighting in turn
+      # every 9 s, a red neon sign buzzing every 31 s. Floor: night indigo.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Halloween - Spooky Island"
+          update_interval: 50ms
+          lambda: |-
+            static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_spooky(t, me); }));

@@ -213,6 +213,23 @@ inline void hw_out(L *light, O *ro, O *go, O *bo, O *wo, O *co, const HwColor &c
   bo->set_level(c.b * scale);
   wo->set_level(c.ww * scale);
   co->set_level(c.cw * scale);
+#if defined(USE_ESP32) || defined(USE_ESP8266)
+  // Starting an effect makes the light write its base colour once, right after
+  // the first frame, and the next frame is a whole update_interval away: a
+  // flash of the base colour. Draw the first frame of a run again on the next
+  // loop pass, after that write. A gap over 500 ms means a new run.
+  static uint32_t last = 0;
+  uint32_t now = millis();
+  if (now - last > 500)
+    App.scheduler.set_timeout(light, "hw_first", 0, [=]() {
+      ro->set_level(c.r * scale);
+      go->set_level(c.g * scale);
+      bo->set_level(c.b * scale);
+      wo->set_level(c.ww * scale);
+      co->set_level(c.cw * scale);
+    });
+  last = now;
+#endif
 }
 
 // Turn-taking within a group. The group shares one slot of `period` seconds,
@@ -871,6 +888,35 @@ inline float hw_ambient_at(double T, double lat, double lon) {
 // when this bulb last ran some periodic task.
 inline void hw_frame(double T, double lat, double lon) { g_hw_amb = hw_ambient_at(T, lat, lon); }
 
+
+// ---------------------------------------------------------------------------
+// Spooky Island - a cartoon haunted funfair at night. Indigo sky breathing
+// slowly; a teal fog bank rolls west to east every 30 s; every 9 s one light
+// glows amber like a lit window (taking turns within the group); every 31 s
+// one light buzzes red like a neon sign. Intensity scales the fog, windows
+// and sign, never the night.
+// ---------------------------------------------------------------------------
+inline HwColor hw_spooky(const HwT &tt, const HwSelf &b) {
+  float t = sync_fold(tt.A + (double) (b.off * 20.0f));
+  HwColor col = hw_scale(HW_DEEP_VIOLET, 0.30f + 0.12f * (0.5f + 0.5f * sinf(t * 0.17f)));
+
+  double cd = fmod(tt.A - (double) (b.x_ft / 4.0f), 30.0);
+  if (cd < 0)
+    cd += 30.0;
+  float f = sinf((float) cd * (3.14159265f / 30.0f));
+  col = hw_add(col, hw_scale(HW_EERIE_TEAL, 0.30f * f * f * tt.d));
+
+  HwTurn wt = hw_group_turn(tt.A, b, 9.0f, 3.0f, 7);
+  float w = wt.w - wt.at;
+  float lit = w < 0.0f ? 0.0f : w < 0.6f ? hw_ease(w / 0.6f) : w < 2.4f ? 1.0f : w < 3.0f ? 1.0f - hw_ease((w - 2.4f) / 0.6f) : 0.0f;
+  col = hw_add(col, hw_scale(HW_DUSK_AMBER, lit * (0.9f + 0.1f * sinf(w * 23.0f)) * 0.45f * tt.d));
+
+  HwTurn nt = hw_group_turn(tt.A, b, 31.0f, 2.0f, 11);
+  float n = nt.w - nt.at;
+  float sign = n < 0.0f ? 0.0f : n < 0.3f ? hw_ease(n / 0.3f) : n < 1.2f ? 1.0f : n < 1.8f ? 1.0f - hw_ease((n - 1.2f) / 0.6f) : 0.0f;
+  return hw_finish(hw_add(col, hw_scale(HW_BLOOD, sign * 0.5f * tt.d)), HW_NIGHT_FLOOR);
+}
+inline HwColor hw_spooky(double T, const HwSelf &b) { return hw_spooky(hw_t(T), b); }
 
 // ---------------------------------------------------------------------------
 // Speed and Intensity - the room helpers (accent_fx_controls.yaml), taken the

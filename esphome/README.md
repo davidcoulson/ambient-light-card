@@ -144,10 +144,10 @@ per light, not as the room flashing. Room Speed and Intensity apply as outdoors.
 
 ## Halloween effects for outdoor bulbs
 
-`halloween_effects.yaml` adds ten effects, all named *Halloween - …* so they group together in the effect list, for RGBCW bulbs placed along the route visitors walk
+`halloween_effects.yaml` adds eleven effects, all named *Halloween - …* so they group together in the effect list, for RGBCW bulbs placed along the route visitors walk
 from the street to the front door: *Jack-o'-Lantern Row*, *Lightning Over the House*,
 *Witch's Cauldron*, *Blood Moon*, *Heartbeat of the House*, *Trick-or-Treat Swap*,
-*Turning of the Season*, *Witching Hour*, *Graveyard Mist* and *Wind-Blown Candles*. Eight of them also come as *Halloween - Fast …* (the same scene on an animation clock 1.5 - 8x faster, for a 15 - 30 s look; Turning of the Season and Witching Hour follow the calendar and clock, so have none). They mix the colour and white channels in one frame (pumpkin
+*Turning of the Season*, *Witching Hour*, *Graveyard Mist*, *Wind-Blown Candles* and *Spooky Island* (a cartoon haunted funfair: indigo night, rolling teal fog, amber windows lighting in turn, a buzzing red neon sign). Eight of them also come as *Halloween - Fast …* (the same scene on an animation clock 1.5 - 8x faster, for a 15 - 30 s look; Turning of the Season and Witching Hour follow the calendar and clock, so have none). They mix the colour and white channels in one frame (pumpkin
 is warm white plus red), so they need an `rgbww` light with all five outputs.
 
 Two rules hold for all of them, and the host tests check both:
