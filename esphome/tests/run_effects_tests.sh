@@ -25,6 +25,14 @@ ${CXX:-c++} -std=c++17 -O2 -Wall -Wextra -Wno-unused-function -Wno-unused-parame
   -Wno-unused-but-set-variable -I"$common" -I"$out" "$here/effects_test.cpp" -o "$out/effects_test"
 "$out/effects_test"
 
+# Every plain lambda effect: at most 3 flashes/s per light and per group, and the
+# brightness floors of effects_flash_floors.h. Forks one child per light, so it takes minutes.
+{ python3 "$here/extract_lambda.py" --all rgb "$common/accent_light_nonaddressable_effects.yaml"
+  python3 "$here/extract_lambda.py" --all w "$common/white_effects.yaml"
+  python3 "$here/extract_lambda.py" --all d "$common/accent_light_2d_effects.yaml"; } > "$out/effects_flash_extracted.h"
+${CXX:-c++} -std=c++17 -O2 -w -I"$common" -I"$out" -I"$here" "$here/effects_flash_test.cpp" -o "$out/effects_flash_test"
+"$out/effects_flash_test"
+
 # No unsigned draw may have a constant taken off it before it is made signed:
 # (hash % 200) - 100 on a uint32_t wraps to ~4.3e9 instead of going negative.
 if grep -nE '(rand|hash)[a-z0-9_]*\([^()]*\) *% *[0-9]+\) *- *[0-9]' "$common"/*.yaml "$common"/*.h | grep -v '(int) *(' ; then

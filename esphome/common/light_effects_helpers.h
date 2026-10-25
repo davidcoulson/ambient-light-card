@@ -188,6 +188,29 @@ inline void sync_slot(double t, float period_s, uint32_t &slot, float &within) {
   within = (float) f;
 }
 
+// Turn-taking for the occasional events (a spark, a stutter, a drop) that would
+// pile up if every light of a room drew its own: a room's lights share a slot of
+// `lanes` windows of `lane_s` seconds and each light owns the one its `lane`
+// number names (sync_offset * lanes, as an int), so the events of different
+// lanes start at least lane_s apart whatever the number of lights - which is
+// what holds a group to WCAG's 3 flashes a second (lane_s >= 0.34 for one flash
+// per event). Lights in one lane share the event and flash together.
+//
+// Returns the seconds since this light's window opened and sets `slot` to the
+// slot that window belongs to: an event may run on past its window, up to the
+// slot's length, and still be drawn from the same slot. Draw with
+// sync_random(slot, lane * 16 + n) so the lanes differ.
+inline float fx_lane_time(double t, int lane, int lanes, float lane_s, uint32_t &slot) {
+  float len = lanes * lane_s, within;
+  sync_slot(t, len, slot, within);
+  float u = within - lane * lane_s;
+  if (u < 0) {
+    u += len;
+    slot--;
+  }
+  return u;
+}
+
 // A fixed 0-1 offset unique to this light, hashed from its MAC suffix.
 //
 // Not every effect wants unison. A room of 30 lights all twinkling on the same

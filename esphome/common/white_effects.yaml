@@ -109,8 +109,6 @@ light:
           name: "Candle Flicker (Warm White)"
           update_interval: 50ms
           lambda: |-
-            static float gust = 0.0f;
-
             auto noise1d = [](float x) -> float {
               return sinf(x * 1.0f) * 0.500f
                    + sinf(x * 2.13f + 1.7f) * 0.250f
@@ -118,20 +116,18 @@ light:
                    + sinf(x * 8.53f + 0.6f) * 0.0625f;
             };
 
-            // A room of candles should NOT flicker as one, so this stays
-            // scattered: shared clock plus a fixed per-bulb offset. The gusts
-            // below keep their own dice for the same reason.
-            float t = fx_t() + sync_offset("${mac}") * 100.0f;
+            // One draught for the room, as the RGB Candle Flicker has it: the
+            // flame and its gusts follow the shared clock, so a group of candles
+            // flashes no more than one does (WCAG's 3 a second). Each bulb adds
+            // a small shimmer of its own on top, too small to count as a flash.
+            float t = fx_t();
 
-            float base  = noise1d(t * 3.0f) * 0.5f + 0.5f;
-            float micro = noise1d(t * 11.3f + 2.0f) * 0.5f + 0.5f;
-            float v = base * 0.70f + micro * 0.30f;
+            float base  = noise1d(t * 2.6f) * 0.5f + 0.5f;
+            float micro = noise1d(t * 7.0f + 2.0f) * 0.5f + 0.5f;
+            float shimmer = noise1d((t + sync_offset("${mac}") * 100.0f) * 9.0f) * 0.5f;
+            float v = base * 0.70f + micro * 0.30f + 0.04f * shimmer;
 
-            gust *= 0.90f;   // TUNE decay rate
-            if ((random_uint32() % 1000) < 5) {   // TUNE gust chance per tick
-              gust += 0.30f + (random_uint32() % 300) / 1000.0f;
-              if (gust > 0.65f) gust = 0.65f;
-            }
+            float gust = fx_gust(fx_seconds(), 0.05, 8, 0.30f, 0.30f, 0.90f, 0.65f, 41);
             // Intensity: flicker depth and gust dips.
             v = 0.62f + (v - 0.62f) * fx_swing();
             v -= gust * fx_accents();
@@ -198,16 +194,18 @@ light:
 
             double T = fx_seconds();
             uint32_t slot; float within;
-            sync_slot(T, 6.0f, slot, within);
+            sync_slot(T, 4.5f, slot, within);
 
-            int   flashes = 1 + (int) (sync_random(slot, 1) * 4.0f);   // 1-4
-            float strike_at = 0.3f + sync_random(slot, 2) * 3.5f;
+            // 1-3 flashes a strike, their starts at least 0.36 s apart: never
+            // more than WCAG's 3 flashes in a second.
+            int   flashes = 1 + (int) (sync_random(slot, 1) * 3.0f);   // 1-3
+            float strike_at = 0.3f + sync_random(slot, 2) * 2.4f;
 
             float flash = 0.0f;
             float cursor = strike_at;
             for (int i = 0; i < flashes; i++) {
-              float on_len  = 0.030f + sync_random(slot, 10 + i) * 0.070f;
-              float gap_len = 0.040f + sync_random(slot, 20 + i) * 0.180f;
+              float on_len  = 0.040f + sync_random(slot, 10 + i) * 0.080f;
+              float gap_len = 0.240f + sync_random(slot, 20 + i) * 0.200f;
               if (within >= cursor && within < cursor + on_len) {
                 flash = 0.45f + sync_random(slot, 30 + i) * 0.55f;
                 break;
@@ -223,6 +221,9 @@ light:
 
             // dim warm ambient with a very faint slow shimmer
             float amb = 0.02f + 0.03f * (noise1d(fx_t() * 0.5f) * 0.5f + 0.5f);   // TUNE ambient range
+            // The sky stays lit after a strike and fades over a couple of seconds.
+            if (within >= strike_at)
+              amb += 0.08f * expf(-(within - strike_at) / 0.8f);
 
             out_white(id(accent_light), id(red_output), id(green_output), id(blue_output),
                       id(warm_output), id(cold_output), amb, flash);

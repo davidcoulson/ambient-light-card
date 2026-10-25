@@ -378,12 +378,16 @@ light:
             // sea at the same moment. It used to integrate frame by frame from
             // each light's own boot. Phases stay double until folded by fx_wrap.
             const double T = fx_seconds();
+            // The swells roll at half the old rate and the layers are slower, so
+            // the sea stays under WCAG's 3 flashes a second; the foam, which
+            // breaks more often, carries the storm.
+            const double SEA = 0.5;
             // Intensity: swell height (fx_swing) and foam (fx_accents).
             const float FX_SWING = fx_swing();
-            const double t1 = fx_wobble(T, 10.0, 6.0, 0.16666666666666666, 0.0);
-            const double t2 = fx_wobble(T, 7.0, 5.0, 0.1111111111111111, 1.0);
-            const double t3 = fx_wobble(T, 5.0, 3.0, 0.08333333333333333, 2.0);
-            const double t4 = fx_wobble(T, 3.5, 2.5, 0.06666666666666667, 3.0);
+            const double t1 = fx_wobble(T * SEA, 10.0, 6.0, 0.16666666666666666, 0.0);
+            const double t2 = fx_wobble(T * SEA, 7.0, 5.0, 0.1111111111111111, 1.0);
+            const double t3 = fx_wobble(T * SEA, 5.0, 3.0, 0.08333333333333333, 2.0);
+            const double t4 = fx_wobble(T * SEA, 3.5, 2.5, 0.06666666666666667, 3.0);
 
             static const uint8_t pal_deep[16][3] = {
               {2,3,6},{3,4,8},{4,6,11},{5,8,14},
@@ -405,9 +409,9 @@ light:
             };
 
             float wave1 = sinf(fx_wrap(t1 * 0.6, 6.283185307179586)) * 0.5f + 0.5f;
-            float wave2 = sinf(-fx_wrap(t2 * 0.9, 6.283185307179586) + 1.7f) * 0.5f + 0.5f;
+            float wave2 = sinf(-fx_wrap(t2 * 0.55, 6.283185307179586) + 1.7f) * 0.5f + 0.5f;
             float wave3 = sinf(fx_wrap(t3 * 0.4, 6.283185307179586) + 3.1f) * 0.5f + 0.5f;
-            float wave4 = sinf(-fx_wrap(t4 * 1.2, 6.283185307179586) + 4.4f) * 0.5f + 0.5f;
+            float wave4 = sinf(-fx_wrap(t4 * 0.7, 6.283185307179586) + 4.4f) * 0.5f + 0.5f;
 
             float r = 0, g = 0, b = 0;
             float lr, lg, lb, pos;
@@ -437,7 +441,7 @@ light:
             b += pal_bright[15][2] * w4;
 
             // Foam: the same random swells, drawn from the shared dice.
-            const float foam = fx_gust(T, 0.1, 40, 80.0f, 140.0f, 0.80f, 220.0f, 71) * fx_accents();
+            const float foam = fx_gust(T, 0.1, 60, 80.0f, 140.0f, 0.80f, 220.0f, 71) * fx_accents();
             r += foam; g += foam; b += foam;
 
             if (r > 255) r = 255; if (g > 255) g = 255; if (b > 255) b = 255;
@@ -579,14 +583,16 @@ light:
           name: "TwinkleCat (Picker)"
           update_interval: 25ms
           lambda: |-
-            // Deliberately offset per light: this one wants to look scattered.
-            double T = fx_seconds()
-                       + sync_offset("${mac}") * 0.9f;
-            uint32_t slot; float within;
-            sync_slot(T, 0.9f, slot, within);
+            // Scattered, and taking turns: one twinkle per light per 2 s, each
+            // light in its own 0.34 s lane (fx_lane_time), so a room never
+            // twinkles more than 3 times a second whatever the number of lights.
+            const int LANES = 6;
+            int lane = (int) (sync_offset("${mac}") * LANES);
+            uint32_t slot;
+            float u = fx_lane_time(fx_seconds(), lane, LANES, 0.34f, slot);
 
-            float peak = 0.5f + sync_random(slot, 1) * 0.5f;
-            float level = peak * expf(-3.5f * (within / 0.9f)) + 0.06f;
+            float peak = 0.55f + sync_random(slot, lane * 16 + 1) * 0.45f;
+            float level = peak * expf(-4.0f * u) + 0.08f;
 
             auto cv = id(accent_light).current_values;
             float pr = cv.get_red(), pg = cv.get_green(), pb = cv.get_blue();
@@ -628,27 +634,22 @@ light:
           name: "Disco Sparkle"
           update_interval: 30ms
           lambda: |-
-            // Deliberately offset per light: this one wants to look scattered.
-            double T = fx_seconds()
-                       + sync_offset("${mac}") * 1.0f;
+            // Scattered, and taking turns: a room's lights spark in 0.34 s lanes
+            // (fx_lane_time), one spark per light per 2.7 s, so the room never
+            // sparks more than 3 times a second; the colour underneath turns
+            // through the hues twice as fast as it did, with a gentle pulse.
+            const int LANES = 8;
+            int lane = (int) (sync_offset("${mac}") * LANES);
+            double T = fx_seconds();
             float t = sync_fold(T);
-            float hue = fmodf(t * 0.05f, 1.0f);
+            float hue = fmodf(t * 0.10f, 1.0f);
 
             float br, bg, bb;
-            hsv_to_rgb(hue, 0.8f, 0.25f, br, bg, bb);
+            hsv_to_rgb(hue, 0.8f, 0.30f + 0.05f * sinf(t * 3.0f), br, bg, bb);
 
-            // Sparks fire on a 30 ms grid; look back a few buckets and keep the
-            // brightest still-decaying one instead of remembering the last.
-            const float STEP = 0.03f;
-            uint32_t b_now = sync_bucket(T, STEP);
-            float flash = 0.0f;
-            for (int k = 0; k < 10; k++) {
-              uint32_t b = b_now - k;
-              if (sync_random(b, 7) < 0.008f) {
-                float v = powf(0.75f, (float) k);
-                if (v > flash) flash = v;
-              }
-            }
+            uint32_t slot;
+            float u = fx_lane_time(T, lane, LANES, 0.34f, slot);
+            float flash = sync_random(slot, lane * 16 + 7) < 0.9f ? expf(-u / 0.11f) : 0.0f;
 
             out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
                     br * (1 - flash) + flash, bg * (1 - flash) + flash, bb * (1 - flash) + flash);
@@ -780,9 +781,11 @@ light:
             // so the wander now comes from value noise: interpolate the clock's
             // draws for adjacent 120 ms buckets. Same restless look, and every
             // light lands on the same value at the same moment.
-            // Deliberately offset per light: this one wants to look scattered.
-            double T = fx_seconds()
-                       + sync_offset("${mac}") * 7.0f;
+            // One draught for the room: the flame and its guttering follow the
+            // shared clock, so a group of candles gutters in step and flashes no
+            // more than one would (WCAG's 3 a second). Each light adds its own
+            // small, quick shimmer on top, too small to count as a flash.
+            double T = fx_seconds();
             const float STEP = 0.12f;
 
             uint32_t b0 = sync_bucket(T, STEP);
@@ -790,11 +793,12 @@ light:
             float    n0 = sync_random(b0, 1), n1 = sync_random(b0 + 1, 1);
             float    smooth = f * f * (3.0f - 2.0f * f);         // ease, no corners
             float    noise = n0 + (n1 - n0) * smooth;
+            float    shimmer = sync_noise(T + sync_offset("${mac}") * 7.0f, 0.07f, 9) - 0.5f;
 
             // Guttering: a slower slot occasionally knocks the flame down.
             uint32_t slot; float within;
-            sync_slot(T, 7.0f, slot, within);
-            float gutter_at = sync_random(slot, 2) * 6.0f;
+            sync_slot(T, 5.0f, slot, within);
+            float gutter_at = sync_random(slot, 2) * 4.0f;
             // Intensity: calmer = a steadier flame that barely gutters; beyond
             // normal = deeper flicker and longer, more frequent gutters.
             const float X = fx_extra();
@@ -802,7 +806,7 @@ light:
             float gutter_len = (0.18f + sync_random(slot, 3) * 0.40f) * (1.0f + 1.5f * X);
             bool guttering = (within >= gutter_at && within < gutter_at + gutter_len);
 
-            float flame = 0.62f + 0.30f * noise * fx_calm(0.25f) * (1.0f + 0.6f * X) - 0.10f * X;
+            float flame = 0.62f + 0.30f * noise * fx_calm(0.25f) * (1.0f + 0.6f * X) - 0.10f * X + 0.04f * shimmer;
             float level = guttering ? flame + ((0.18f + 0.10f * noise) - flame) * CALM
                                     : flame;
             level = clamp01(level);
@@ -859,17 +863,19 @@ light:
             // lights flashing as one instead of 30 private storms.
             double T = fx_seconds();
             uint32_t slot; float within;
-            sync_slot(T, 6.0f, slot, within);
+            sync_slot(T, 4.5f, slot, within);
 
-            int   flashes = 1 + (int) (sync_random(slot, 1) * 4.0f);   // 1-4
-            float strike_at = 0.3f + sync_random(slot, 2) * 3.5f;
+            // 1-3 flashes a strike, their starts at least 0.36 s apart, so a
+            // strike never makes more than WCAG's 3 flashes in a second.
+            int   flashes = 1 + (int) (sync_random(slot, 1) * 3.0f);   // 1-3
+            float strike_at = 0.3f + sync_random(slot, 2) * 2.4f;
 
             float level = 0.0f;
             bool  lit = false;
             float cursor = strike_at;
             for (int i = 0; i < flashes; i++) {
-              float on_len  = 0.030f + sync_random(slot, 10 + i) * 0.070f;
-              float gap_len = 0.040f + sync_random(slot, 20 + i) * 0.180f;
+              float on_len  = 0.040f + sync_random(slot, 10 + i) * 0.080f;
+              float gap_len = 0.240f + sync_random(slot, 20 + i) * 0.200f;
               if (within >= cursor && within < cursor + on_len) {
                 lit = true;
                 level = 0.45f + sync_random(slot, 30 + i) * 0.55f;
@@ -884,6 +890,9 @@ light:
             } else {
               float t = sync_fold(T);
               float base = 0.045f + 0.02f * sinf(t * 0.3f);
+              // The sky stays lit after a strike and fades over a couple of seconds.
+              if (within >= strike_at)
+                base += 0.10f * expf(-(within - strike_at) / 0.8f);
               out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
                       base * 0.3f, base * 0.5f, base);
             }
@@ -924,26 +933,24 @@ light:
           name: "Neon Sign Flicker"
           update_interval: 30ms
           lambda: |-
-            // Deliberately offset per light: this one wants to look scattered.
-            double T = fx_seconds()
-                       + sync_offset("${mac}") * 4.0f;
+            // Taking turns (fx_lane_time): five 0.8 s lanes, so a room of signs
+            // never makes more than 3 flashes in a second. Every light has an
+            // event each 4 s: a dropout (one flash) or a starter stutter (two).
+            const int LANES = 5;
+            int lane = (int) (sync_offset("${mac}") * LANES);
+            double T = fx_seconds();
             float t = sync_fold(T);
 
-            uint32_t slot; float within;
-            sync_slot(T, 4.0f, slot, within);
-
-            float ev_at  = sync_random(slot, 1) * 3.0f;
-            bool  dropout = sync_random(slot, 2) < 0.5f;
-            float ev_len = dropout ? (0.04f + sync_random(slot, 3) * 0.12f)
-                                   : (0.20f + sync_random(slot, 3) * 0.35f);
+            uint32_t slot;
+            float u = fx_lane_time(T, lane, LANES, 0.8f, slot);
 
             float level = 0.85f;
-            if (within >= ev_at && within < ev_at + ev_len) {
-              if (dropout) {
-                level = 0.04f;                                   // tube drops out
-              } else {
-                // Starter stutter, driven off the clock so it stutters in step.
-                level = (sync_bucket(T, 0.04) % 2) ? 0.85f : 0.20f;
+            if (sync_random(slot, lane * 16 + 1) < 0.9f) {
+              if (sync_random(slot, lane * 16 + 2) < 0.5f) {
+                if (u < 0.05f + sync_random(slot, lane * 16 + 3) * 0.12f)
+                  level = 0.04f;                                     // tube drops out
+              } else if (u < 0.08f || (u >= 0.20f && u < 0.28f)) {
+                level = 0.20f;                                       // starter stutter
               }
             }
 
@@ -1037,25 +1044,21 @@ light:
           name: "Disco Strobe"
           update_interval: 5ms
           lambda: |-
-            // Pure function of the clock: 45 ms on, 95 ms off, hue advancing
-            // every four flashes. Note this is the one effect sync cannot make
-            // look perfect - at a 25 ms update interval the lights sample the
-            // edge at slightly different moments no matter how good the clock.
+            // Pure function of the clock: 2.5 hits a second (under WCAG's 3), each
+            // a new hue that is hardest at the start and falls away over 120 ms.
+            // Note this is the one effect sync cannot make look perfect - at a
+            // 5 ms update interval the lights sample the edge at slightly
+            // different moments no matter how good the clock.
             double T = fx_seconds();
-            const float CYCLE = 0.140f;
+            const float CYCLE = 0.400f, ON = 0.120f;
 
             float within = (float) fmod(T, (double) CYCLE);
-            bool on = within < 0.045f;
-
-            if (!on) {
-              out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), 0.0f, 0.0f, 0.0f);
-            } else {
-              uint32_t hue_slot = sync_bucket(T, (CYCLE * 4.0));
-              float hue = sync_random(hue_slot, 1);
-              float r, g, b;
-              hsv_to_rgb(hue, 1.0f, 1.0f, r, g, b);
-              out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+            float r = 0, g = 0, b = 0;
+            if (within < ON) {
+              float hue = sync_random(sync_bucket(T, (double) CYCLE), 1);
+              hsv_to_rgb(hue, 1.0f, 1.0f - 0.5f * within / ON, r, g, b);
             }
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
 
       # ------------------------------------------------------------------
       # Gentle Tide - a long swell between deep blue and teal. The
@@ -1085,10 +1088,16 @@ light:
             // buckets and keeping the loudest decayed one is what makes this
             // stateless - no memory of which drops have already fallen.
             // Deliberately offset per light: this one wants to look scattered.
+            // These are a fine drizzle, too small to flash; the splashes that do
+            // take turns, one per light per 2.7 s in 0.45 s lanes (fx_lane_time).
             double T = fx_seconds()
                        + sync_offset("${mac}") * 2.0f;
             float t = sync_fold(T);
             const float STEP = 0.25f;
+            const int LANES = 6;
+            int lane = (int) (sync_offset("${mac}") * LANES);
+            uint32_t sslot;
+            float su = fx_lane_time(fx_seconds(), lane, LANES, 0.45f, sslot);
 
             uint32_t b_now = sync_bucket(T, STEP);
             float drop = 0.0f;
@@ -1096,11 +1105,13 @@ light:
               uint32_t b = b_now - k;
               if (sync_random(b, 1) < 0.45f) {                  // did one land?
                 float age = (float) (T - floor(T / STEP) * STEP) + k * STEP;   // b itself wraps, so age comes from k
-                float amp = 0.20f + sync_random(b, 2) * 0.30f;
+                float amp = 0.06f + sync_random(b, 2) * 0.10f;
                 float v = amp * expf(-3.2f * age);
                 if (v > drop) drop = v;
               }
             }
+            float splash = (0.30f + sync_random(sslot, lane * 16 + 4) * 0.20f) * expf(-3.2f * su);
+            if (splash > drop) drop = splash;
 
             float base = 0.10f + 0.03f * sinf(t * 0.27f);
             float level = clamp01(base + drop);
@@ -1287,18 +1298,13 @@ light:
           name: "Sparkle (Picker)"
           update_interval: 30ms
           lambda: |-
-            double T = fx_seconds()
-                       + sync_offset("${mac}") * 1.0f;
-            const float STEP = 0.03f;
-
-            uint32_t b_now = sync_bucket(T, STEP);
-            float flash = 0.0f;
-            for (int k = 0; k < 10; k++) {
-              if (sync_random(b_now - k, 5) < 0.010f) {
-                float v = powf(0.72f, (float) k);
-                if (v > flash) flash = v;
-              }
-            }
+            // Taking turns, as Disco Sparkle does: 0.34 s lanes, one spark per
+            // light per 2.7 s, a room never more than 3 sparks a second.
+            const int LANES = 8;
+            int lane = (int) (sync_offset("${mac}") * LANES);
+            uint32_t slot;
+            float u = fx_lane_time(fx_seconds(), lane, LANES, 0.34f, slot);
+            float flash = sync_random(slot, lane * 16 + 5) < 0.9f ? expf(-u / 0.10f) : 0.0f;
 
             auto cv = id(accent_light).current_values;
             float pr = cv.get_red(), pg = cv.get_green(), pb = cv.get_blue();

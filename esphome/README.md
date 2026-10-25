@@ -334,6 +334,10 @@ The simplest way to keep the rule is one substitution for the ref, used by both 
 
 ### Tests
 
+`tests/run_effects_tests.sh` also runs `tests/effects_flash_test.cpp` over every plain lambda effect in the
+non-Halloween files: at most 3 flashes per second per bulb and per group (the WCAG limit), and each effect's
+minimum brightness no lower than the floor recorded in `tests/effects_flash_floors.h`.
+
 `tests/run_halloween_tests.sh` builds `tests/halloween_test.cpp` against the real headers and
 checks, on every light of the example map: same time and light → same frame; the floor holds;
 flashes stay at or under the WCAG limit of 3 per second per light and per group – at 8 pm, at lights-on, and in a
