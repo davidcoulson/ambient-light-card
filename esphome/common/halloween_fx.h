@@ -985,8 +985,15 @@ inline HwT hw_t_now(double T) {
 }
 
 // The same frame on an animation clock k times faster (the Fast effects): only A and s
-// change, so the calendar, sunset and weather keep to real time.
-inline HwT hw_fast(HwT t, double k) { t.A *= k; t.s *= k; return t; }
+// change, so the calendar, sunset and weather keep to real time. Movement depth is
+// capped at 100 %: the faster clock already spends the flash budget, and Intensity
+// above that pushes jack, cauldron, moon and the candles over 3 flashes a second.
+inline HwT hw_fast(HwT t, double k) {
+  t.A *= k;
+  t.s *= k;
+  if (t.d > 1.0f) t.d = 1.0f;
+  return t;
+}
 
 // Every Halloween lambda draws its frame through this, with the UNSCALED
 // shared clock: the daylight lift's ambient, then the effect.

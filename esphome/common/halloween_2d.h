@@ -382,8 +382,9 @@ inline HwColor hz_vortex(const HwT &t, const HzSelf &s) {
 // ---------------------------------------------------------------------------
 inline HwColor hz_search(const HwT &t, const HzSelf &s) {
   float ang = atan2f(s.x - 0.5f, -(s.y - (s.h + 0.25f)));   // from straight north, as seen from the source
-  float a1 = 0.9f * sinf((float) fmod(t.A, 7.0 * 6.2831853) * (6.2831853f / 7.0f));
-  float a2 = 0.9f * sinf((float) fmod(t.A, 10.0 * 6.2831853) * (6.2831853f / 10.0f) + 2.0f);
+  // Fold at the swing period itself (7 s, 10 s), so the sine's argument wraps at 2 pi and the beam never jumps.
+  float a1 = 0.9f * sinf((float) fmod(t.A, 7.0) * (6.2831853f / 7.0f));
+  float a2 = 0.9f * sinf((float) fmod(t.A, 10.0) * (6.2831853f / 10.0f) + 2.0f);
   float d1 = ang - a1, d2 = ang - a2;
   float beam = fmaxf(expf(-d1 * d1 / 0.05f), 0.8f * expf(-d2 * d2 / 0.05f));
   HwColor base = hw_scale(HZ_BEAM_FLOOR, 1.5f);

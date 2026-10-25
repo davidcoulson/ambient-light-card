@@ -1037,27 +1037,28 @@ light:
             out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
 
       # ------------------------------------------------------------------
-      # Disco Strobe - hard strobe on a random saturated hue, with the
-      # hue changing every few flashes rather than every flash.
+      # Disco Strobe - hard strobe on a random saturated hue over a dim glow
+      # of the same hue, with the hue changing every few flashes rather than
+      # every flash.
       # ------------------------------------------------------------------
       - lambda:
           name: "Disco Strobe"
           update_interval: 5ms
           lambda: |-
             // Pure function of the clock: 2.5 hits a second (under WCAG's 3), each
-            // a new hue that is hardest at the start and falls away over 120 ms.
+            // a new hue that is hardest at the start and falls away over 120 ms,
+            // then holds a dim glow of the same hue until the next (the floor:
+            // the light never goes black).
             // Note this is the one effect sync cannot make look perfect - at a
             // 5 ms update interval the lights sample the edge at slightly
             // different moments no matter how good the clock.
             double T = fx_seconds();
-            const float CYCLE = 0.400f, ON = 0.120f;
+            const float CYCLE = 0.400f, ON = 0.120f, GLOW = 0.06f;
 
             float within = (float) fmod(T, (double) CYCLE);
-            float r = 0, g = 0, b = 0;
-            if (within < ON) {
-              float hue = sync_random(sync_bucket(T, (double) CYCLE), 1);
-              hsv_to_rgb(hue, 1.0f, 1.0f - 0.5f * within / ON, r, g, b);
-            }
+            float hue = sync_random(sync_bucket(T, (double) CYCLE), 1);
+            float r, g, b;
+            hsv_to_rgb(hue, 1.0f, within < ON ? 1.0f - 0.5f * within / ON : GLOW, r, g, b);
             out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
 
       # ------------------------------------------------------------------

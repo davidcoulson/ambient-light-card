@@ -508,26 +508,32 @@ static void test_controls_plumbing() {
 }
 
 // The Fast variants (halloween_effects.yaml): same scenes on a faster animation
-// clock. The floor and the flash limit must hold.
+// clock. The floor and the flash limit must hold, at Intensity 100 % and at
+// the maximum, on the yard and on an unmapped light of its own.
 static void test_fast_variants() {
   static const struct { const char *key; double k; } FAST[] = {{"jack", 2}, {"lightning", 3}, {"cauldron", 2}, {"moon", 8},
                                                                {"heart", 1.25}, {"swap", 3}, {"mist", 4}, {"windcandles", 2}};
   auto lights = yard();
-  room(128.0f, 128.0f);
+  lights.push_back(hw_me("", "a1b2c3"));
   hw_wx_set(HW_WX_CALM);
-  for (const auto &f : FAST)
-    for (const Effect &fx : EFFECTS) {
-      if (strcmp(fx.key, f.key)) continue;
-      double k = f.k;
-      EffectT tf = fx.tfn;
-      FlashResult r = flash_check([=](double t, const HwSelf &b) { return tf(hw_fast(hw_t_now(t), k), b); }, fx.floor, lights,
-                                  1800.0, 0.01, T0);
-      printf("fast %-12s %.1fx: %d/%d/%d flashes per second (bulb/group/red), min lum %.3f\n", f.key, k, r.bulb, r.group, r.red,
-             r.min_lum);
-      CHECK(r.floor_ok && r.min_lum >= 0.03, "fast %s: floor broken (min luminance %.3f)", f.key, r.min_lum);
-      CHECK(r.bulb <= 3 && r.group <= 3 && r.red <= 3, "fast %s: %d/%d/%d flashes per second (bulb/group/red), WCAG limit 3",
-            f.key, r.bulb, r.group, r.red);
-    }
+  for (float ir : {128.0f, 255.0f}) {
+    room(128.0f, ir);
+    float d = hw_t_now(T0).d;
+    for (const auto &f : FAST)
+      for (const Effect &fx : EFFECTS) {
+        if (strcmp(fx.key, f.key)) continue;
+        double k = f.k;
+        EffectT tf = fx.tfn;
+        FlashResult r = flash_check([=](double t, const HwSelf &b) { return tf(hw_fast(hw_t_now(t), k), b); }, fx.floor, lights,
+                                    1800.0, 0.01, T0);
+        printf("fast %-12s %.1fx depth %.2f: %d/%d/%d flashes per second (bulb/group/red), min lum %.3f\n", f.key, k, d, r.bulb,
+               r.group, r.red, r.min_lum);
+        CHECK(r.floor_ok && r.min_lum >= 0.03, "fast %s (depth %.2f): floor broken (min luminance %.3f)", f.key, d, r.min_lum);
+        CHECK(r.bulb <= 3 && r.group <= 3 && r.red <= 3,
+              "fast %s (depth %.2f): %d/%d/%d flashes per second (bulb/group/red), WCAG limit 3", f.key, d, r.bulb, r.group, r.red);
+      }
+  }
+  room(128.0f, 128.0f);
 }
 
 // Effects with no JS twin yet (so they stay out of the parity dump): floor and

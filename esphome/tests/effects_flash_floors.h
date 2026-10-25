@@ -25,7 +25,7 @@
     {"Moonrise", 0.0145},
     {"Water Caustics", 0.0830},
     {"Aurora Breathing", 0.1156},
-    {"Disco Strobe", 0.0000},
+    {"Disco Strobe", 0.0037},
     {"Gentle Tide", 0.0687},
     {"Rainfall Hush", 0.0266},
     {"Aquarium Glow", 0.1320},
