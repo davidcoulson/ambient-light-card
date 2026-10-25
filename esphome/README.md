@@ -137,8 +137,8 @@ packages:
 ```
 
 The outdoor rules hold here too and the host tests check them on the example basement map: a
-floor of at least ~3 % of full warm white, and at most 1 flash per second on any light and in the
-room's average light. A ghost or a bat brightens one light as it dims the next; that is counted
+floor of at least ~3 % of full warm white, and at most 3 flashes per second (the WCAG limit) on any
+light and in the room's average light. A ghost or a bat brightens one light as it dims the next; that is counted
 per light, not as the room flashing. Room Speed and Intensity apply as outdoors. Unlike
 `halloween_effects.yaml` these are RGB only, with no power cap and no daylight lift.
 

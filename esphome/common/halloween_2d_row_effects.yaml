@@ -26,7 +26,7 @@
 #         - path: esphome/common/halloween_2d_effects.yaml
 #           vars: {room_map: common/my_room_map.h}
 #
-# Every effect keeps a visible floor and stays at or under 1 flash per second
+# Every effect keeps a visible floor and stays at or under 3 flashes per second (the WCAG limit)
 # on any light and in the room's average light; halloween_2d.h has the rules
 # and tests/halloween_test.cpp checks them. Room Speed and Intensity apply as
 # they do to the outdoor Halloween effects. Graveyard Mist picks its colours
@@ -47,8 +47,8 @@ light:
   - platform: rgb
     id: !extend accent_light
     effects:
-      # Violet cloud drifting over the room; once per 11 s a strike lands
-      # somewhere and rolls out from there, then falls slowly.
+      # Violet cloud drifting over the room; once per 7 s a strike lands
+      # somewhere and rolls out from there, often twice, then falls fast.
       - lambda:
           name: "Halloween - 2D Lightning Storm"
           update_interval: 25ms
@@ -60,8 +60,8 @@ light:
             }();
             HwColor c = hz_render([](const HwT &t) { return hz_lightning(t, me); });
             out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);
-      # A flickering pumpkin at every light; every 12 s a draught crosses
-      # the room and each flame ducks as it passes.
+      # A flickering pumpkin at every light; every 6 s a draught crosses
+      # the room and each flame ducks as it passes; now and then one licks up.
       - lambda:
           name: "Halloween - 2D Pumpkin Patch"
           update_interval: 40ms
@@ -74,7 +74,7 @@ light:
             HwColor c = hz_render([](const HwT &t) { return hz_pumpkins(t, me); });
             out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);
       # Green and violet brew swirling about a pot at the room's centre;
-      # every 4.2 s a lime surge spreads out from it.
+      # every 2.2 s a lime surge spreads out from it.
       - lambda:
           name: "Halloween - 2D Witch's Cauldron"
           update_interval: 40ms
@@ -99,7 +99,7 @@ light:
             HwColor c = hz_render([](const HwT &t) { return hz_ghosts(t, me); });
             out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);
       # Moonlight; the eclipse shadow crosses from the west wall, turns the
-      # room copper red, holds and clears. A four-minute cycle.
+      # room copper red, holds throbbing and clears. A two-minute cycle.
       - lambda:
           name: "Halloween - 2D Blood Moon"
           update_interval: 100ms
@@ -111,7 +111,7 @@ light:
             }();
             HwColor c = hz_render([](const HwT &t) { return hz_moon(t, me); });
             out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);
-      # A lub-dub every 1.5 s, spreading out from the room's centre.
+      # A lub-dub every second, spreading out from the room's centre.
       - lambda:
           name: "Halloween - 2D Heartbeat"
           update_interval: 25ms
@@ -135,7 +135,7 @@ light:
             }();
             HwColor c = hz_render([](const HwT &t) { return hz_mist(t, me); });
             out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);
-      # All orange or all purple; every 8 s the other sweeps in from a new
+      # All orange or all purple; every 4 s the other sweeps in from a new
       # direction.
       - lambda:
           name: "Halloween - 2D Trick-or-Treat"
@@ -162,7 +162,7 @@ light:
             hz_candle_white(hz_render([](const HwT &t) { return HwColor{hz_candles_lvl(t, me), 0, 0, 0, 0}; }).r, ww, cw);
             out_white(id(accent_light), id(red_output), id(green_output), id(blue_output),
                       id(warm_output), id(cold_output), ww, cw);
-      # The candles, quieter, with a slow swell travelling the row and back.
+      # The candles, quieter, with a swell travelling the row and back.
       - lambda:
           name: "Halloween - 2D Candle Chase"
           update_interval: 40ms

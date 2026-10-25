@@ -922,30 +922,35 @@ inline void hw_frame(double T, double lat, double lon) { g_hw_amb = hw_ambient_a
 
 // ---------------------------------------------------------------------------
 // Spooky Island - a cartoon haunted funfair at night. Indigo sky breathing; a
-// teal fog bank rolls west to east every 15 s; every 5 - 8 s one light flares
-// amber like a window lit by a passing lantern (taking turns within the
-// group); every 12 s one light buzzes red like a neon sign. Intensity scales
-// the fog, windows and sign, never the night.
+// teal fog bank rolls west to east every 8 s; two lanterns wander the island,
+// each lighting a window amber for a second or so as it passes (taking turns
+// within the group, so about every 1.5 s somewhere a window lights); every
+// few seconds one light buzzes red like a neon sign. Intensity scales the
+// fog, windows and sign, never the night.
 // ---------------------------------------------------------------------------
 inline HwColor hw_spooky(const HwT &tt, const HwSelf &b) {
   float t = sync_fold(tt.A + (double) (b.off * 20.0f));
-  HwColor col = hw_scale(HW_DEEP_VIOLET, 0.30f + 0.15f * (0.5f + 0.5f * sinf(t * 0.5f)));
+  HwColor col = hw_scale(HW_DEEP_VIOLET, 0.30f + 0.15f * (0.5f + 0.5f * sinf(t * 0.8f)));
 
-  double cd = fmod(tt.A - (double) (b.x_ft / 6.0f), 15.0);
+  double cd = fmod(tt.A - (double) (b.x_ft / 4.0f), 8.0);
   if (cd < 0)
-    cd += 15.0;
-  float f = sinf((float) cd * (3.14159265f / 15.0f));
-  col = hw_add(col, hw_scale(HW_EERIE_TEAL, 0.45f * f * f * tt.d));
+    cd += 8.0;
+  float f = sinf((float) cd * (3.14159265f / 8.0f));
+  col = hw_add(col, hw_scale(HW_EERIE_TEAL, 0.55f * f * f * tt.d));
 
-  HwTurn wt = hw_group_turn(tt.A, b, 5.0f, 2.0f, 7);
-  float w = wt.w - wt.at;
-  float lit = w < 0.0f ? 0.0f : w < 0.3f ? hw_ease(w / 0.3f) : w < 1.5f ? 1.0f : w < 2.0f ? 1.0f - hw_ease((w - 1.5f) / 0.5f) : 0.0f;
-  col = hw_add(col, hw_scale(HW_DUSK_AMBER, lit * (0.9f + 0.1f * sinf(w * 23.0f)) * 0.55f * tt.d));
+  float lit = 0.0f, w = 0.0f;
+  for (uint32_t k = 0; k < 2; k++) {   // two lanterns, on their own rounds
+    HwTurn wt = hw_group_turn(tt.A + 0.7 * k, b, 5.0f, 1.2f, 7 + k);
+    float u = wt.w - wt.at;
+    float l = u < 0.0f ? 0.0f : u < 0.2f ? hw_ease(u / 0.2f) : u < 0.8f ? 1.0f : u < 1.2f ? 1.0f - hw_ease((u - 0.8f) / 0.4f) : 0.0f;
+    if (l > lit) { lit = l; w = u; }
+  }
+  col = hw_add(col, hw_scale(HW_DUSK_AMBER, lit * (0.9f + 0.1f * sinf(w * 23.0f)) * 0.6f * tt.d));
 
-  HwTurn nt = hw_group_turn(tt.A, b, 12.0f, 1.6f, 11);
+  HwTurn nt = hw_group_turn(tt.A, b, 8.0f, 1.0f, 11);
   float n = nt.w - nt.at;
-  float sign = n < 0.0f ? 0.0f : n < 0.15f ? hw_ease(n / 0.15f) : n < 1.0f ? 1.0f : n < 1.5f ? 1.0f - hw_ease((n - 1.0f) / 0.5f) : 0.0f;
-  return hw_finish(hw_add(col, hw_scale(HW_BLOOD, sign * (0.85f + 0.15f * sinf(n * 25.0f)) * 0.6f * tt.d)), HW_NIGHT_FLOOR);
+  float sign = n < 0.0f ? 0.0f : n < 0.1f ? hw_ease(n / 0.1f) : n < 0.6f ? 1.0f : n < 1.0f ? 1.0f - hw_ease((n - 0.6f) / 0.4f) : 0.0f;
+  return hw_finish(hw_add(col, hw_scale(HW_BLOOD, sign * (0.85f + 0.15f * sinf(n * 25.0f)) * 0.65f * tt.d)), HW_NIGHT_FLOOR);
 }
 inline HwColor hw_spooky(double T, const HwSelf &b) { return hw_spooky(hw_t(T), b); }
 

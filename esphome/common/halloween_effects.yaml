@@ -303,8 +303,9 @@ light:
 
       # ------------------------------------------------------------------
       # Spooky Island - a cartoon haunted funfair: indigo night, a teal fog
-      # bank rolling through every 15 s, amber windows flaring in turn
-      # every 5 - 8 s, a red neon sign buzzing every 12 s. Floor: night indigo.
+      # bank rolling through every 8 s, two lanterns lighting amber windows
+      # in turn (one about every 1.5 s), a red neon sign buzzing every few
+      # seconds. Floor: night indigo.
       # ------------------------------------------------------------------
       - lambda:
           name: "Halloween - Spooky Island"
