@@ -293,6 +293,35 @@ inline HwColor hw_jack(const HwT &t, const HwSelf &b, bool steady = false) { ret
 inline HwColor hw_jack(double T, const HwSelf &b, bool steady = false) { return hw_jack(hw_t(T), b, steady); }
 
 // ---------------------------------------------------------------------------
+// Pumpkin Patch - a heap of carved pumpkins with candles in them, lit like a
+// bonfire: brighter and whiter at the core than the Row, a slow swell every
+// few seconds that every pumpkin breathes together, quicker shimmer per light
+// on top, and every 4 - 5 s one candle licks up, taking turns within the group.
+// Intensity scales the swell, the shimmer and the licks.
+// ---------------------------------------------------------------------------
+constexpr HwColor HW_BONFIRE = {0.50f, 0.30f, 0.00f, 0.70f, 0.12f};
+inline HwColor hw_bonfire(float lvl) {
+  float warm = 0.5f + 0.5f * lvl;   // redder as it dims, like a real wick
+  return {HW_BONFIRE.r * lvl, HW_BONFIRE.g * lvl * warm, 0.0f, HW_BONFIRE.ww * lvl * warm, HW_BONFIRE.cw * lvl * warm * warm};
+}
+inline HwColor hw_patch(const HwT &t, const HwSelf &b) {
+  double tp = t.A + (double) (b.off * 11.0f);
+  float swell = sync_noise(t.A, 4.0f, 7);   // shared: the whole patch breathes as one fire
+  float mid = sync_noise(tp, 0.30f, b.i + 201);
+  float fast = sync_noise(tp, 0.08f, b.i + 221);
+  float lvl = 0.70f + t.d * (0.12f * (swell - 0.5f) + 0.04f * (mid - 0.5f) + 0.02f * (fast - 0.5f));
+
+  HwTurn gt = hw_group_turn(t.A, b, 4.0f, 1.2f, 190);
+  if (gt.w >= gt.at && gt.w < gt.at + 0.35f) {
+    float u = gt.w - gt.at;
+    float e = fminf(clamp01(u / 0.15f), clamp01((0.35f - u) / 0.3f));
+    lvl = lvl + (0.95f - lvl) * 0.6f * hw_ease(e) * t.d;
+  }
+  return hw_finish(hw_bonfire(clamp01(lvl)), HW_EMBER);
+}
+inline HwColor hw_patch(double T, const HwSelf &b) { return hw_patch(hw_t(T), b); }
+
+// ---------------------------------------------------------------------------
 // Lightning Over the House - a violet night, and once per 11 s slot the whole
 // house lights white at the same instant. One strike, never a flicker burst:
 // a fast rise, a short hold and a slow fall from the cold-white channel.

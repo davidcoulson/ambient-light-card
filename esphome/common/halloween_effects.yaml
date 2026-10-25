@@ -82,6 +82,21 @@ light:
                              [&](const HwT &t) { return hw_jack(t, me); }));
 
       # ------------------------------------------------------------------
+      # Pumpkin Patch - a heap of candle-lit pumpkins, lit like a bonfire:
+      # whiter at the core than the Row, a slow swell the whole patch
+      # breathes together, and every 4 - 5 s one candle licks up, taking turns
+      # within the group. Floor: a dim ember.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Halloween - Pumpkin Patch"
+          update_interval: 30ms
+          lambda: |-
+            static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_patch(t, me); }));
+
+      # ------------------------------------------------------------------
       # Lightning Over the House - violet night (the floor), one white
       # strike per 11 s on every light at once; a third of them a soft
       # distant glow. The street bed peaks at 40 %.

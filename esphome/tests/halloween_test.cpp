@@ -528,17 +528,22 @@ static void test_fast_variants() {
     }
 }
 
-// Spooky Island: floor and the flash rule at normal Speed, as the EFFECTS table
-// does for the others (it has no JS twin yet, so it stays out of the parity dump).
-static void test_spooky() {
+// Effects with no JS twin yet (so they stay out of the parity dump): floor and
+// the flash rule at normal Speed, as the EFFECTS table does for the others.
+static void test_untwinned() {
+  static const struct { const char *key; EffectT fn; HwColor floor; } FX[] = {
+      {"spooky", hw_spooky, HW_NIGHT_FLOOR}, {"patch", hw_patch, HW_EMBER}};
   auto lights = yard();
   room(128.0f, 128.0f);
   hw_wx_set(HW_WX_CALM);
-  FlashResult r = flash_check([](double t, const HwSelf &b) { return hw_spooky(hw_t_now(t), b); }, HW_NIGHT_FLOOR, lights, 1800.0,
-                              0.01, T0);
-  printf("spooky: %d/%d/%d flashes per second (bulb/group/red), min lum %.3f\n", r.bulb, r.group, r.red, r.min_lum);
-  CHECK(r.floor_ok && r.min_lum >= 0.03, "spooky: floor broken (min luminance %.3f)", r.min_lum);
-  CHECK(r.bulb <= 1 && r.group <= 1 && r.red <= 1, "spooky: %d/%d/%d flashes per second (bulb/group/red), target 1", r.bulb, r.group, r.red);
+  for (const auto &f : FX) {
+    EffectT fn = f.fn;
+    FlashResult r = flash_check([fn](double t, const HwSelf &b) { return fn(hw_t_now(t), b); }, f.floor, lights, 1800.0, 0.01, T0);
+    printf("%-8s %d/%d/%d flashes per second (bulb/group/red), min lum %.3f\n", f.key, r.bulb, r.group, r.red, r.min_lum);
+    CHECK(r.floor_ok && r.min_lum >= 0.03, "%s: floor broken (min luminance %.3f)", f.key, r.min_lum);
+    CHECK(r.bulb <= 1 && r.group <= 1 && r.red <= 1, "%s: %d/%d/%d flashes per second (bulb/group/red), target 1", f.key, r.bulb,
+          r.group, r.red);
+  }
 }
 
 // Flash and floor checks at steady settings: Speed 0.25 / 0.5 / 1 x Intensity
@@ -852,7 +857,7 @@ int main(int argc, char **argv) {
   test_big_group();
   test_controls_flashes();
   test_fast_variants();
-  test_spooky();
+  test_untwinned();
   test_room_2d();
   if (failures) {
     printf("%d check(s) failed\n", failures);
