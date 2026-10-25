@@ -17,6 +17,7 @@ esphome:
   # directory first, then next to this file - which is what makes the library
   # work both as a local copy and as a remote (git) package.
     - light_effects_helpers.h
+    - addressable_fx.h
 
 light:
   - platform: esp32_rmt_led_strip   # swap for your actual platform (neopixelbus, etc.)
@@ -64,10 +65,10 @@ light:
             for (int i = 0; i < n; i++) {
               float theta = (i / (float) n) * 6.2831853f;
 
-              float wave1 = sinf(3.0f * theta + fx_wrap(t1 * 0.6, 6.283185307179586)) * 0.5f + 0.5f;
-              float wave2 = sinf(5.0f * theta - fx_wrap(t2 * 0.9, 6.283185307179586) + 1.7f) * 0.5f + 0.5f;
+              float wave1 = sinf(3.0f * theta + fx_wrap(t1 * 0.54, 6.283185307179586)) * 0.5f + 0.5f;
+              float wave2 = sinf(5.0f * theta - fx_wrap(t2 * 0.47, 6.283185307179586) + 1.7f) * 0.5f + 0.5f;
               float wave3 = sinf(2.0f * theta + fx_wrap(t3 * 0.4, 6.283185307179586) + 3.1f) * 0.5f + 0.5f;
-              float wave4 = sinf(7.0f * theta - fx_wrap(t4 * 1.2, 6.283185307179586) + 4.4f) * 0.5f + 0.5f;
+              float wave4 = sinf(7.0f * theta - fx_wrap(t4 * 0.67, 6.283185307179586) + 4.4f) * 0.5f + 0.5f;
 
               float r = 0, g = 0, b = 0;
               int idx0, idx1; float frac, pos;
@@ -117,11 +118,15 @@ light:
             // Added on every frame of the window, not just the first: the frame
             // above is redrawn from scratch each time, so foam added once showed
             // for one frame only, and for how long depended on the light's timing.
-            const uint32_t wc_b = sync_bucket(T, 0.06);
+            // Turn-taking: one arc of the ring foams in each window (addressable_fx.h).
+            const int wc_arcs = afx_arcs(n);
+            const double wc_win = afx_window(0.06, wc_arcs, 0.6);
+            const uint32_t wc_b = sync_bucket(T, wc_win);
+            const int wc_arc = afx_turn(wc_b, wc_arcs);
             uint32_t wc_k = 0;
-            int num_caps = n / 40 + 1;
+            int num_caps = (int) lroundf((n / 40 + 1) * (float) (wc_win / 0.06) * 0.5f);
             for (int c = 0; c < num_caps; c++) {
-              int idx = sync_hash(wc_b, wc_k++) % n;
+              int idx = afx_pick(wc_arc, n, wc_arcs, sync_hash(wc_b, wc_k++));
               Color existing = it[idx].get();
               uint16_t brightness = existing.r + existing.g + existing.b;
               if (brightness > 90) {
@@ -698,8 +703,8 @@ light:
                 }
               };
 
-              const float DECAY = 0.94f;
-              const int SPARKS_PER_FRAME = (int) lroundf(2.0f * fx_swing());   // intensity: sparkle density
+              const float DECAY = 0.985f;
+              const int SPARKS_PER_FRAME = (int) lroundf(3.0f * fx_swing());   // intensity: sparkle density
 
               float t = sync_fold(ls_seconds(ls, LS_TICK_MS, 60000 / LS_TICK_MS));
               int n = it.size();
@@ -709,12 +714,20 @@ light:
                 it[i] = Color((uint8_t)(c.r * DECAY), (uint8_t)(c.g * DECAY), (uint8_t)(c.b * DECAY));
               }
 
+              // Turn-taking (addressable_fx.h): one arc of the ring takes each window, so
+              // sparks arrive in quick showers that move round the ring, and an arc
+              // sparkles at most about twice a second.
+              const int arcs = afx_arcs(n);
+              const int arc = afx_turn(ls.tick / afx_window_ticks(LS_TICK_MS, arcs, 0.8), arcs);
               for (int s = 0; s < SPARKS_PER_FRAME; s++) {
-                int idx = (int)(ls_rand(ls) % n);
+                int idx = afx_pick(arc, n, arcs, ls_rand(ls));
                 float hue = fmodf(t * 0.05f + (ls_rand(ls) % 1000) / 3000.0f, 1.0f);
                 float r, g, b;
                 hsv_to_rgb(hue, 0.85f, 1.0f, r, g, b);
-                it[idx] = Color((uint8_t)(r * 255), (uint8_t)(g * 255), (uint8_t)(b * 255));
+                // The brighter of the old and new colour per channel: a shower only ever
+                // adds light, so an arc rises once and falls once.
+                Color old = it[idx].get();
+                it[idx] = Color(std::max(old.r, (uint8_t)(r * 255)), std::max(old.g, (uint8_t)(g * 255)), std::max(old.b, (uint8_t)(b * 255)));
               }
             }
 
@@ -898,7 +911,7 @@ light:
                 flying = true;
                 pos = (float)(ls_rand(ls) % n);
                 bool cw = (ls_rand(ls) % 2) == 0;
-                vel = (cw ? 1.0f : -1.0f) * (50.0f + (ls_rand(ls) % 60));
+                vel = (cw ? 1.0f : -1.0f) * n * (1.0f + (ls_rand(ls) % 60) / 60.0f * 1.4f);   // laps/s (1 - 2.4), not LEDs/s: the same flight on any ring, under 3 passes a second
                 hue = (ls_rand(ls) % 1000) / 1000.0f;
                 flight_elapsed = 0.0f;
                 flight_duration = 0.5f + (ls_rand(ls) % 1500) / 1000.0f;
@@ -952,9 +965,11 @@ light:
               static float    rocket_vel = 0.0f;
               static float    rocket_hue = 0.0f;
               static uint32_t last_ms = 0;
+              static uint32_t next_launch_ms = 0;   // after a burst the ring rests a moment: no arc flares twice in a second
 
               if (ls_reset) {
                 rocket_active = false;
+                next_launch_ms = 0;
                 last_ms = 0;
                 for (int i = 0; i < MAX_PARTICLES; i++) p_active[i] = false;
                 for (int i = 0; i < it.size(); i++) it[i] = Color(0, 0, 0);
@@ -982,6 +997,7 @@ light:
               const float DECEL = 90.0f;
               const int NUM_BURST = (int) std::min(24L, lroundf(14.0f * fx_swing()));   // intensity: burst size
               const float PARTICLE_LIFE = 1.0f;
+              const float SPREAD = 0.12f;   // sparks drift apart slowly, so a burst blooms in place
 
               int n = it.size();
               float nf = (float) n;
@@ -991,7 +1007,7 @@ light:
                 it[i] = Color((uint8_t)(c.r * 0.85f), (uint8_t)(c.g * 0.85f), (uint8_t)(c.b * 0.85f));
               }
 
-              if (!rocket_active && ((ls_rand(ls) % 1000) < 6)) {
+              if (!rocket_active && now_ms >= next_launch_ms && ((ls_rand(ls) % 1000) < 15)) {
                 rocket_active = true;
                 rocket_pos = (float)(ls_rand(ls) % n);
                 rocket_vel = 55.0f + (ls_rand(ls) % 40);
@@ -1004,10 +1020,11 @@ light:
                 rocket_pos = fmodf(rocket_pos, nf); if (rocket_pos < 0) rocket_pos += nf;
 
                 int idx = (int) rocket_pos;
-                it[idx] = Color(255, 255, 255);
+                it[idx] = Color(150, 150, 150);
 
                 if (rocket_vel <= 0.0f) {
                   rocket_active = false;
+                  next_launch_ms = now_ms + 1600;
                   int spawned = 0;
                   for (int i = 0; i < MAX_PARTICLES && spawned < NUM_BURST; i++) {
                     if (!p_active[i]) {
@@ -1025,7 +1042,7 @@ light:
               for (int i = 0; i < MAX_PARTICLES; i++) {
                 if (!p_active[i]) continue;
                 p_vel[i] -= DECEL * 0.5f * dt;
-                p_pos[i] += p_vel[i] * dt;
+                p_pos[i] += p_vel[i] * SPREAD * dt;
                 p_pos[i] = fmodf(p_pos[i], nf); if (p_pos[i] < 0) p_pos[i] += nf;
                 p_life[i] -= dt / PARTICLE_LIFE;
 
@@ -1111,7 +1128,7 @@ light:
               const uint32_t ls_now = ls.tick * LS_TICK_MS;
               ls.calls = 0;
               const float dt = LS_TICK_MS / 1000.0f;
-              const int NUM_COMETS = 4;
+              const int NUM_COMETS = 3;   // three, each lapping slower than once a second: at most three pass a point in any second
 
               static float    pos[NUM_COMETS];
               static float    speed[NUM_COMETS];
@@ -1123,7 +1140,7 @@ light:
                 for (int c = 0; c < NUM_COMETS; c++) {
                   pos[c] = (float)(ls_rand(ls) % it.size());
                   bool cw = (ls_rand(ls) % 2) == 0;
-                  speed[c] = (cw ? 1.0f : -1.0f) * (15.0f + (ls_rand(ls) % 40));
+                  speed[c] = (cw ? 1.0f : -1.0f) * it.size() * (0.35f + (ls_rand(ls) % 40) / 40.0f * 0.5f);   // laps/s, not LEDs/s: same on any ring
                   hue[c] = (float) c / NUM_COMETS;
                 }
                 for (int i = 0; i < it.size(); i++) it[i] = Color(0, 0, 0);
@@ -1161,15 +1178,21 @@ light:
                 pos[c] += speed[c] * dt;
                 pos[c] = fmodf(pos[c], nf); if (pos[c] < 0) pos[c] += nf;
 
-                int idx = (int) pos[c];
+                // The head is shared between the two LEDs it sits across, so it glides
+                // instead of stepping and a short ring does not flicker as it moves.
                 float r, g, b;
                 hsv_to_rgb(hue[c], 1.0f, 1.0f, r, g, b);
-
-                Color existing = it[idx].get();
-                float nr = existing.r + r * 255.0f; if (nr > 255) nr = 255;
-                float ng = existing.g + g * 255.0f; if (ng > 255) ng = 255;
-                float nb = existing.b + b * 255.0f; if (nb > 255) nb = 255;
-                it[idx] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
+                const int i0 = (int) pos[c];
+                const float frac = pos[c] - i0;
+                for (int k = 0; k < 2; k++) {
+                  const int idx = (i0 + k) % n;
+                  const float w = powf(k ? frac : 1.0f - frac, 1.0f / id(accent_light).get_gamma_correct());   // a crossfade in light, not in value
+                  Color existing = it[idx].get();
+                  float nr = existing.r + r * 255.0f * w; if (nr > 255) nr = 255;
+                  float ng = existing.g + g * 255.0f * w; if (ng > 255) ng = 255;
+                  float nb = existing.b + b * 255.0f * w; if (nb > 255) nb = 255;
+                  it[idx] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
+                }
               }
             }
 
@@ -1180,13 +1203,8 @@ light:
           name: "Theater Chase"
           update_interval: 20ms
           lambda: |-
-            const int GROUP_SIZE = 3;   // divides 36- and 48-LED rings evenly, so the pattern wraps without a seam (a 13-LED ring shows one)
-            const uint32_t STEP_MS = 100;
-
-            static int      offset = 0;
-            static uint32_t last_step_ms = 0;
-
-            if (initial_run) { offset = 0; last_step_ms = 0; }
+            const float GROUP_SIZE = 3.0f;   // a lit LED every third; the ring need not divide by it
+            const float STEP_MS = 100.0f;    // one LED of travel
 
             auto hsv_to_rgb = [](float h, float s, float v, float &r, float &g, float &b) {
               h = fmodf(h, 1.0f); if (h < 0) h += 1.0f;
@@ -1205,20 +1223,27 @@ light:
               }
             };
 
-            // Step index from the shared clock: every ring is on the same step.
-            offset = (int) ((fx_ms() / STEP_MS) % GROUP_SIZE);
+            // The chase glides: a lit LED is a ramp that travels, not a LED that switches,
+            // and the ramp is shared between neighbours in LIGHT (inverse gamma), so any
+            // stretch of ring holds the same light whichever way the steps fall and no
+            // LED strobes. One LED of travel per STEP_MS, on the shared clock, so every
+            // ring is on the same step.
+            const float inv_gamma = 1.0f / id(accent_light).get_gamma_correct();
+            const float pos = fmodf((float) (fx_ms64() % (uint64_t) (GROUP_SIZE * STEP_MS)) / STEP_MS, GROUP_SIZE);
 
             float t = fx_t();
             float hue = fmodf(t * 0.10f, 1.0f);
 
             float r, g, b;
             hsv_to_rgb(hue, 1.0f, 1.0f, r, g, b);
-            uint8_t lit_r = (uint8_t)(r * 255), lit_g = (uint8_t)(g * 255), lit_b = (uint8_t)(b * 255);
 
             int n = it.size();
             for (int i = 0; i < n; i++) {
-              bool lit = ((i + offset) % GROUP_SIZE) == 0;
-              it[i] = lit ? Color(lit_r, lit_g, lit_b) : Color(0, 0, 0);
+              float d = fmodf(i + pos, GROUP_SIZE);
+              if (d > GROUP_SIZE * 0.5f) d = GROUP_SIZE - d;
+              float w = 1.0f - d;
+              w = w > 0.0f ? powf(w, inv_gamma) : 0.0f;
+              it[i] = Color((uint8_t)(r * 255 * w), (uint8_t)(g * 255 * w), (uint8_t)(b * 255 * w));
             }
 
       # ------------------------------------------------------------------
@@ -1820,7 +1845,7 @@ light:
               const float PACMAN_SPEED = 8.0f;          // TUNE pixels/sec
               const float GHOST_SPEED = PACMAN_SPEED * 0.85f;   // TUNE - slower so the ghost never quite catches up
               const uint32_t CELEBRATE_MS = 1500;       // TUNE celebration flash duration
-              const uint32_t FLASH_PERIOD_MS = 150;     // TUNE celebration flash rate
+              const uint32_t FLASH_PERIOD_MS = 200;     // TUNE celebration flash rate: 2.5 flashes a second, under WCAG's 3
 
               uint32_t now_ms = ls_now;
 
@@ -1908,7 +1933,7 @@ light:
                 }
               };
 
-              const float DECAY = 0.75f;          // TUNE fast decay - keeps sparkles crisp, not smeared
+              const float DECAY = 0.78f;          // TUNE fast decay - keeps sparkles crisp, not smeared
               const int SPARKS_PER_FRAME = (int) lroundf(3.0f * fx_swing());     // TUNE sparkle density
               const float ROT_SPEED = 0.08f;      // TUNE slow rotation speed of the colored sweep
               const float SWEEP_INTENSITY = 0.25f;// TUNE how strong the dim colored underlay is
@@ -1944,9 +1969,18 @@ light:
                 it[i] = Color((uint8_t) nr, (uint8_t) ng, (uint8_t) nb);
               }
 
-              for (int s = 0; s < SPARKS_PER_FRAME; s++) {
-                int idx = (int)(ls_rand(ls) % n);
-                it[idx] = Color(255, 255, 255);   // crisp white facet-glint flash
+              // Turn-taking (addressable_fx.h): the glints of one window all fall in one
+              // arc, which then rests while the others glitter, so no arc flashes more
+              // than about 2.5 times a second.
+              // A window's glints fire together as a cluster on its first tick.
+              const int arcs = afx_arcs(n);
+              const uint32_t win = afx_window_ticks(LS_TICK_MS, arcs, 0.5);
+              if (ls.tick % win == 0) {
+                const int arc = afx_turn(ls.tick / win, arcs);
+                for (int s = 0; s < SPARKS_PER_FRAME; s++) {
+                  int idx = afx_pick(arc, n, arcs, ls_rand(ls));
+                  it[idx] = Color(150, 150, 150);   // crisp white facet-glint flash
+                }
               }
             }
 
@@ -2229,7 +2263,7 @@ light:
               float theta = (i / (float) n) * 6.2831853f;
 
               float wave1 = sinf(3.0f * theta + fx_wrap(t1 * 0.6, 6.283185307179586)) * 0.5f + 0.5f;
-              float wave2 = sinf(5.0f * theta - fx_wrap(t2 * 0.9, 6.283185307179586) + 1.7f) * 0.5f + 0.5f;
+              float wave2 = sinf(5.0f * theta - fx_wrap(t2 * 0.7, 6.283185307179586) + 1.7f) * 0.5f + 0.5f;
               float wave3 = sinf(2.0f * theta + fx_wrap(t3 * 0.4, 6.283185307179586) + 3.1f) * 0.5f + 0.5f;
               float wave4 = sinf(7.0f * theta - fx_wrap(t4 * 1.2, 6.283185307179586) + 4.4f) * 0.5f + 0.5f;
 
@@ -2283,11 +2317,15 @@ light:
             // Added on every frame of the window, not just the first: the frame
             // above is redrawn from scratch each time, so foam added once showed
             // for one frame only, and for how long depended on the light's timing.
-            const uint32_t wc_b = sync_bucket(T, 0.12);
+            // Turn-taking: one arc of the ring foams in each window (addressable_fx.h).
+            const int wc_arcs = afx_arcs(n);
+            const double wc_win = afx_window(0.12, wc_arcs);
+            const uint32_t wc_b = sync_bucket(T, wc_win);
+            const int wc_arc = afx_turn(wc_b, wc_arcs);
             uint32_t wc_k = 0;
-            int num_caps = n / 60 + 1;
+            int num_caps = (int) lroundf((n / 60 + 1) * (float) (wc_win / 0.12));
             for (int c = 0; c < num_caps; c++) {
-              int idx = sync_hash(wc_b, wc_k++) % n;
+              int idx = afx_pick(wc_arc, n, wc_arcs, sync_hash(wc_b, wc_k++));
               Color existing = it[idx].get();
               uint16_t brightness = existing.r + existing.g + existing.b;
               if (brightness > 160) {
@@ -2311,7 +2349,7 @@ light:
             // of its wobbling speed (fx_wobble), so every light computes the same
             // sea at the same moment. It used to integrate frame by frame from
             // each light's own boot. Phases stay double until folded by fx_wrap.
-            const double T = fx_seconds();
+            const double T = fx_seconds() * 0.42;   // chop at a rate that stays under 3 flashes/s
             // Intensity: swell height (fx_swing) and whitecaps (fx_accents).
             const float FX_SWING = fx_swing();
             const double t1 = fx_wobble(T, 10.0, 6.0, 0.16666666666666666, 0.0);
@@ -2344,10 +2382,10 @@ light:
             for (int i = 0; i < n; i++) {
               float theta = (i / (float) n) * 6.2831853f;
 
-              float wave1 = sinf(3.0f * theta + fx_wrap(t1 * 0.6, 6.283185307179586)) * 0.5f + 0.5f;
-              float wave2 = sinf(5.0f * theta - fx_wrap(t2 * 0.9, 6.283185307179586) + 1.7f) * 0.5f + 0.5f;
+              float wave1 = sinf(3.0f * theta + fx_wrap(t1 * 0.51, 6.283185307179586)) * 0.5f + 0.5f;
+              float wave2 = sinf(5.0f * theta - fx_wrap(t2 * 0.5, 6.283185307179586) + 1.7f) * 0.5f + 0.5f;
               float wave3 = sinf(2.0f * theta + fx_wrap(t3 * 0.4, 6.283185307179586) + 3.1f) * 0.5f + 0.5f;
-              float wave4 = sinf(7.0f * theta - fx_wrap(t4 * 1.2, 6.283185307179586) + 4.4f) * 0.5f + 0.5f;
+              float wave4 = sinf(7.0f * theta - fx_wrap(t4 * 0.7, 6.283185307179586) + 4.4f) * 0.5f + 0.5f;
 
               float r = 0, g = 0, b = 0;
               int idx0, idx1; float frac, pos;
@@ -2401,11 +2439,15 @@ light:
             // Added on every frame of the window, not just the first: the frame
             // above is redrawn from scratch each time, so foam added once showed
             // for one frame only, and for how long depended on the light's timing.
-            const uint32_t wc_b = sync_bucket(T, 0.025);
+            // Turn-taking: one arc of the ring foams in each window (addressable_fx.h).
+            const int wc_arcs = afx_arcs(n);
+            const double wc_win = afx_window(0.025, wc_arcs, 0.6);
+            const uint32_t wc_b = sync_bucket(T, wc_win);
+            const int wc_arc = afx_turn(wc_b, wc_arcs);
             uint32_t wc_k = 0;
-            int num_caps = n / 15 + 1;
+            int num_caps = (int) lroundf((n / 15 + 1) * 1.5f);
             for (int c = 0; c < num_caps; c++) {
-              int idx = sync_hash(wc_b, wc_k++) % n;
+              int idx = afx_pick(wc_arc, n, wc_arcs, sync_hash(wc_b, wc_k++));
               Color existing = it[idx].get();
               uint16_t brightness = existing.r + existing.g + existing.b;
               if (brightness > 50) {
@@ -2518,11 +2560,15 @@ light:
             // Added on every frame of the window, not just the first: the frame
             // above is redrawn from scratch each time, so foam added once showed
             // for one frame only, and for how long depended on the light's timing.
-            const uint32_t wc_b = sync_bucket(T, 0.2);
+            // Turn-taking: one arc of the ring foams in each window (addressable_fx.h).
+            const int wc_arcs = afx_arcs(n);
+            const double wc_win = afx_window(0.2, wc_arcs);
+            const uint32_t wc_b = sync_bucket(T, wc_win);
+            const int wc_arc = afx_turn(wc_b, wc_arcs);
             uint32_t wc_k = 0;
-            int num_caps = 1;
+            int num_caps = (int) lroundf((1) * (float) (wc_win / 0.2));
             for (int c = 0; c < num_caps; c++) {
-              int idx = sync_hash(wc_b, wc_k++) % n;
+              int idx = afx_pick(wc_arc, n, wc_arcs, sync_hash(wc_b, wc_k++));
               Color existing = it[idx].get();
               uint16_t brightness = existing.r + existing.g + existing.b;
               if (brightness > 140) {

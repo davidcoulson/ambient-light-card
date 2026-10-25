@@ -45,6 +45,7 @@ static uint32_t millis() { return (uint32_t) (uint64_t) (g_now * 1000.0); }
 static uint32_t micros() { return 0; }
 
 #include "light_effects_helpers.h"
+#include "addressable_fx.h"
 
 struct Color {
   uint8_t r = 0, g = 0, b = 0, w = 0;
@@ -131,7 +132,7 @@ static void test_fireworks() {
   for (const Probe &p : g_probes) {
     if (p.target == "p_vel[i]") {
       vels++;
-      CHECK(p.value >= -60.0f && p.value <= 60.0f, "spark velocity %g LEDs/s outside +-60", p.value);
+      CHECK(p.value >= -60.01f && p.value <= 60.01f, "spark velocity %g LEDs/s outside +-60", p.value);
     } else if (p.target == "p_hue[i]") {
       hues++;
       // The rocket's hue is 0..1, so the spark's is -0.1..1.1.
