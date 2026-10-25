@@ -15,9 +15,16 @@ import re
 import sys
 
 HALLOWEEN_EFFECTS = {
-    "Jack-o'-Lantern Row", "Lightning Over the House", "Witch's Cauldron", "Blood Moon",
-    "Heartbeat of the House", "Trick-or-Treat Swap", "Turning of the Season", "Witching Hour",
-    "Graveyard Mist", "Wind-Blown Candles",
+    f"Halloween - {n}" for n in (
+        "Jack-o'-Lantern Row", "Lightning Over the House", "Witch's Cauldron", "Blood Moon",
+        "Heartbeat of the House", "Trick-or-Treat Swap", "Turning of the Season", "Witching Hour",
+        "Graveyard Mist", "Wind-Blown Candles",
+    )
+} | {
+    f"Halloween - Fast {n}" for n in (
+        "Jack-o'-Lantern Row", "Lightning Over the House", "Witch's Cauldron", "Blood Moon",
+        "Heartbeat of the House", "Trick-or-Treat Swap", "Graveyard Mist", "Wind-Blown Candles",
+    )
 }
 HALLOWEEN_MARKERS = re.compile(r"halloween_fx\.h|front_yard_map\.h|\bhw_wx_[a-z0-9_]+|hw_frame\(")
 

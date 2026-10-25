@@ -112,7 +112,7 @@ and *Calibrate: north + east* – help you find and check a ring's rotation.
 
 ## Halloween effects for a mapped room
 
-`halloween_2d_effects.yaml` adds nineteen Halloween effects for the lights of a mapped room (the
+`halloween_2d_effects.yaml` adds nineteen Halloween effects (named *Halloween - 2D …*; the names below drop the prefix) for the lights of a mapped room (the
 same `accent_light`, `platform: rgb`, and room map as the 2D effects): *2D Lightning Storm*,
 *2D Pumpkin Patch*, *2D Witch's Cauldron*, *2D Ghosts*, *2D Blood Moon*, *2D Heartbeat*,
 *2D Graveyard Mist*, *2D Trick-or-Treat*, *2D Bats at Dusk*, *2D Witching Vortex*,
@@ -144,10 +144,10 @@ per light, not as the room flashing. Room Speed and Intensity apply as outdoors.
 
 ## Halloween effects for outdoor bulbs
 
-`halloween_effects.yaml` adds ten effects for RGBCW bulbs placed along the route visitors walk
+`halloween_effects.yaml` adds ten effects, all named *Halloween - …* so they group together in the effect list, for RGBCW bulbs placed along the route visitors walk
 from the street to the front door: *Jack-o'-Lantern Row*, *Lightning Over the House*,
 *Witch's Cauldron*, *Blood Moon*, *Heartbeat of the House*, *Trick-or-Treat Swap*,
-*Turning of the Season*, *Witching Hour*, *Graveyard Mist* and *Wind-Blown Candles*. They mix the colour and white channels in one frame (pumpkin
+*Turning of the Season*, *Witching Hour*, *Graveyard Mist* and *Wind-Blown Candles*. Eight of them also come as *Halloween - Fast …* (the same scene on an animation clock 1.5 - 8x faster, for a 15 - 30 s look; Turning of the Season and Witching Hour follow the calendar and clock, so have none). They mix the colour and white channels in one frame (pumpkin
 is warm white plus red), so they need an `rgbww` light with all five outputs.
 
 Two rules hold for all of them, and the host tests check both:

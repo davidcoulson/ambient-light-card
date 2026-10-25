@@ -507,6 +507,27 @@ static void test_controls_plumbing() {
     }
 }
 
+// The Fast variants (halloween_effects.yaml): same scenes on a faster animation
+// clock. The floor must hold; the flash rate is reported, not enforced.
+static void test_fast_variants() {
+  static const struct { const char *key; double k; } FAST[] = {{"jack", 3}, {"lightning", 3}, {"cauldron", 2.5}, {"moon", 8},
+                                                               {"heart", 1.5}, {"swap", 3}, {"mist", 4}, {"windcandles", 2.5}};
+  auto lights = yard();
+  room(128.0f, 128.0f);
+  hw_wx_set(HW_WX_CALM);
+  for (const auto &f : FAST)
+    for (const Effect &fx : EFFECTS) {
+      if (strcmp(fx.key, f.key)) continue;
+      double k = f.k;
+      EffectT tf = fx.tfn;
+      FlashResult r = flash_check([=](double t, const HwSelf &b) { return tf(hw_fast(hw_t_now(t), k), b); }, fx.floor, lights,
+                                  1800.0, 0.01, T0);
+      printf("fast %-12s %.1fx: %d/%d/%d flashes per second (bulb/group/red), min lum %.3f\n", f.key, k, r.bulb, r.group, r.red,
+             r.min_lum);
+      CHECK(r.floor_ok && r.min_lum >= 0.03, "fast %s: floor broken (min luminance %.3f)", f.key, r.min_lum);
+    }
+}
+
 // Flash and floor checks at steady settings: Speed 0.25 / 0.5 / 1 x Intensity
 // 25 / 50 / 100 % and at the maximum (clamped at 125 %) must keep the flash
 // rule; the floor must hold at every setting. Above normal Speed
@@ -817,6 +838,7 @@ int main(int argc, char **argv) {
   test_floor_and_flashes();
   test_big_group();
   test_controls_flashes();
+  test_fast_variants();
   test_room_2d();
   if (failures) {
     printf("%d check(s) failed\n", failures);

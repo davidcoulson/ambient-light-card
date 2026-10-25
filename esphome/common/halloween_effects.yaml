@@ -73,7 +73,7 @@ light:
       # within the group.
       # ------------------------------------------------------------------
       - lambda:
-          name: "Jack-o'-Lantern Row"
+          name: "Halloween - Jack-o'-Lantern Row"
           update_interval: 40ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
@@ -87,7 +87,7 @@ light:
       # distant glow. The street bed peaks at 40 %.
       # ------------------------------------------------------------------
       - lambda:
-          name: "Lightning Over the House"
+          name: "Halloween - Lightning Over the House"
           update_interval: 20ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
@@ -100,7 +100,7 @@ light:
       # bubble every 4.2 s, taking turns within the group.
       # ------------------------------------------------------------------
       - lambda:
-          name: "Witch's Cauldron"
+          name: "Halloween - Witch's Cauldron"
           update_interval: 50ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
@@ -113,7 +113,7 @@ light:
       # copper red and clears again; four-minute cycle.
       # ------------------------------------------------------------------
       - lambda:
-          name: "Blood Moon"
+          name: "Halloween - Blood Moon"
           update_interval: 100ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
@@ -126,7 +126,7 @@ light:
       # to the street; 40 bpm, the second beat under the flash threshold.
       # ------------------------------------------------------------------
       - lambda:
-          name: "Heartbeat of the House"
+          name: "Halloween - Heartbeat of the House"
           update_interval: 20ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
@@ -139,7 +139,7 @@ light:
       # trade every 8 s; equal luminance, so no flash.
       # ------------------------------------------------------------------
       - lambda:
-          name: "Trick-or-Treat Swap"
+          name: "Halloween - Trick-or-Treat Swap"
           update_interval: 50ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
@@ -153,7 +153,7 @@ light:
       # follows the calendar.
       # ------------------------------------------------------------------
       - lambda:
-          name: "Turning of the Season"
+          name: "Halloween - Turning of the Season"
           update_interval: 100ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
@@ -166,7 +166,7 @@ light:
       # with a swell each quarter hour. Unscaled clock; needs the place.
       # ------------------------------------------------------------------
       - lambda:
-          name: "Witching Hour"
+          name: "Halloween - Witching Hour"
           update_interval: 100ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
@@ -179,7 +179,7 @@ light:
       # and pace change nightly, or it drifts with the real wind.
       # ------------------------------------------------------------------
       - lambda:
-          name: "Graveyard Mist"
+          name: "Halloween - Graveyard Mist"
           update_interval: 100ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
@@ -193,10 +193,90 @@ light:
       # Unscaled clock: it follows the real wind.
       # ------------------------------------------------------------------
       - lambda:
-          name: "Wind-Blown Candles"
+          name: "Halloween - Wind-Blown Candles"
           update_interval: 40ms
           lambda: |-
             static const HwSelf me = hw_me("${yard_light}", "${mac}");
             hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
                    hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
                              [&](const HwT &t) { return hw_windcandles(t, me); }));
+
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Halloween - Fast Jack-o'-Lantern Row"
+          update_interval: 40ms
+          lambda: |-
+            static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_jack(hw_fast(t, 3), me); }));
+
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Halloween - Fast Lightning Over the House"
+          update_interval: 20ms
+          lambda: |-
+            static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_lightning(hw_fast(t, 3), me); }));
+
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Halloween - Fast Witch's Cauldron"
+          update_interval: 50ms
+          lambda: |-
+            static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_cauldron(hw_fast(t, 2.5), me); }));
+
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Halloween - Fast Blood Moon"
+          update_interval: 100ms
+          lambda: |-
+            static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_moon(hw_fast(t, 8), me); }));
+
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Halloween - Fast Heartbeat of the House"
+          update_interval: 20ms
+          lambda: |-
+            static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_heart(hw_fast(t, 1.5), me); }));
+
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Halloween - Fast Trick-or-Treat Swap"
+          update_interval: 50ms
+          lambda: |-
+            static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_swap(hw_fast(t, 3), me); }));
+
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Halloween - Fast Graveyard Mist"
+          update_interval: 100ms
+          lambda: |-
+            static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_mist(hw_fast(t, 4), me); }));
+
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Halloween - Fast Wind-Blown Candles"
+          update_interval: 40ms
+          lambda: |-
+            static const HwSelf me = hw_me("${yard_light}", "${mac}");
+            hw_out(id(accent_light), id(red_output), id(green_output), id(blue_output), id(warm_output), id(cold_output),
+                   hw_render(sync_seconds(), ${sun_latitude}, ${sun_longitude},
+                             [&](const HwT &t) { return hw_windcandles(hw_fast(t, 2.5), me); }));

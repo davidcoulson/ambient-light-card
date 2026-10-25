@@ -902,6 +902,10 @@ inline HwT hw_t_now(double T) {
   return {T, s == 1.0f ? T : T * (double) s, (double) s, fminf(fmaxf(fx_intensity(), 0.0f), HW_DEPTH_MAX)};
 }
 
+// The same frame on an animation clock k times faster (the Fast effects): only A and s
+// change, so the calendar, sunset and weather keep to real time.
+inline HwT hw_fast(HwT t, double k) { t.A *= k; t.s *= k; return t; }
+
 // Every Halloween lambda draws its frame through this, with the UNSCALED
 // shared clock: the daylight lift's ambient, then the effect.
 template<typename F> inline HwColor hw_render(double T, double lat, double lon, F fx) {

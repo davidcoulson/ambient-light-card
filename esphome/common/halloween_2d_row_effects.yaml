@@ -50,7 +50,7 @@ light:
       # Violet cloud drifting over the room; once per 11 s a strike lands
       # somewhere and rolls out from there, then falls slowly.
       - lambda:
-          name: "2D Lightning Storm"
+          name: "Halloween - 2D Lightning Storm"
           update_interval: 25ms
           lambda: |-
             static const HzSelf me = [] {
@@ -63,7 +63,7 @@ light:
       # A flickering pumpkin at every light; every 12 s a draught crosses
       # the room and each flame ducks as it passes.
       - lambda:
-          name: "2D Pumpkin Patch"
+          name: "Halloween - 2D Pumpkin Patch"
           update_interval: 40ms
           lambda: |-
             static const HzSelf me = [] {
@@ -76,7 +76,7 @@ light:
       # Green and violet brew swirling about a pot at the room's centre;
       # every 4.2 s a lime surge spreads out from it.
       - lambda:
-          name: "2D Witch's Cauldron"
+          name: "Halloween - 2D Witch's Cauldron"
           update_interval: 40ms
           lambda: |-
             static const HzSelf me = [] {
@@ -88,7 +88,7 @@ light:
             out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);
       # Three pale ghosts drifting about a dim violet room.
       - lambda:
-          name: "2D Ghosts"
+          name: "Halloween - 2D Ghosts"
           update_interval: 40ms
           lambda: |-
             static const HzSelf me = [] {
@@ -101,7 +101,7 @@ light:
       # Moonlight; the eclipse shadow crosses from the west wall, turns the
       # room copper red, holds and clears. A four-minute cycle.
       - lambda:
-          name: "2D Blood Moon"
+          name: "Halloween - 2D Blood Moon"
           update_interval: 100ms
           lambda: |-
             static const HzSelf me = [] {
@@ -113,7 +113,7 @@ light:
             out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);
       # A lub-dub every 1.5 s, spreading out from the room's centre.
       - lambda:
-          name: "2D Heartbeat"
+          name: "Halloween - 2D Heartbeat"
           update_interval: 25ms
           lambda: |-
             static const HzSelf me = [] {
@@ -125,7 +125,7 @@ light:
             out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);
       # Two banks of fog drifting across the room, in the night's colours.
       - lambda:
-          name: "2D Graveyard Mist"
+          name: "Halloween - 2D Graveyard Mist"
           update_interval: 100ms
           lambda: |-
             static const HzSelf me = [] {
@@ -138,7 +138,7 @@ light:
       # All orange or all purple; every 8 s the other sweeps in from a new
       # direction.
       - lambda:
-          name: "2D Trick-or-Treat"
+          name: "Halloween - 2D Trick-or-Treat"
           update_interval: 50ms
           lambda: |-
             static const HzSelf me = [] {
@@ -150,7 +150,7 @@ light:
             out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);
       # Every light its own candle, each on its own flicker.
       - lambda:
-          name: "2D Candlelight"
+          name: "Halloween - 2D Candlelight"
           update_interval: 40ms
           lambda: |-
             static const HzSelf me = [] {
@@ -164,7 +164,7 @@ light:
                       id(warm_output), id(cold_output), ww, cw);
       # The candles, quieter, with a slow swell travelling the row and back.
       - lambda:
-          name: "2D Candle Chase"
+          name: "Halloween - 2D Candle Chase"
           update_interval: 40ms
           lambda: |-
             static const HzSelf me = [] {
