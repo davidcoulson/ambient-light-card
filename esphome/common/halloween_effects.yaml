@@ -29,7 +29,7 @@
 # .yaml or white_effects.yaml already bring in.
 #
 # Every effect keeps a visible floor (a light never goes dark) and, at normal
-# Speed or slower, stays under the WCAG flash limit (3 per second per light
+# Speed or slower, stays under the WCAG flash limit (we hold 2 per second per light
 # and per group); halloween_fx.h has the
 # rules and tests/halloween_test.cpp checks them. Three of them read the local
 # date and hour, so the time component's timezone must be right.

@@ -14,7 +14,7 @@
 //
 //   1. A light never goes dark: each effect has a floor colour, and no frame
 //      is under 3 % of full warm white's luminance.
-//   2. Under the flash threshold: at most 3 flashes per second (WCAG 2.3.1)
+//   2. Under the flash threshold: at most 2 flashes per second (WCAG 2.3.1 allows 3)
 //      on any light and in the room's average light, so a strike or a
 //      heartbeat never flashes the whole room faster than that. Things that
 //      MOVE (a ghost, a bat, a gust) brighten one patch while another dims;
