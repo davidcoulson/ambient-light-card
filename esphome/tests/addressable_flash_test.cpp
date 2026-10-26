@@ -12,7 +12,7 @@
 // strip is counted the WCAG 2.3.1 way, as halloween_test.cpp counts a bulb: a
 // transition is a swing of >= 10 % of full white against the running extreme,
 // a flash is a pair of opposing transitions, and a run of same-direction
-// changes inside a second counts once. At most 3 flashes in any second, at
+// changes inside a second counts once. At most 2 flashes in any second, at
 // each of the segment and strip scales. A single pixel is counted too (px/s*)
 // but only reported: one LED sweeping past a travelling wave is not a flash of
 // the light. Luminance is value^2.8 (ESPHome's gamma), so the
