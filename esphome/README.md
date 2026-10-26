@@ -23,7 +23,9 @@ Tested on ESP32-C3 PWM RGB+CW/WW bulbs and addressable rings (Lumary RGBAI, 36 o
 | `halloween_effects.yaml` | Ten Halloween effects for a row of outdoor RGBCW bulbs along a front walk (`platform: rgbww`). |
 | `halloween_weather.yaml` | Optional: live weather from Home Assistant for the Halloween effects. |
 | `halloween_fx.h`, `front_yard_map.h` | Their maths, and an **example** yard map – replace with your own. |
-| `halloween_2d_effects.yaml`, `halloween_2d.h` | Nineteen Halloween effects across a mapped room of RGB lights, alongside the 2D effects. |
+| `halloween_plain_effects.yaml`, `halloween_plain.h` | Eight Halloween candles (purple, green and orange takes on Candle Flicker, plus brew, embers, drift and black light) for any PWM RGB light, opt-in. |
+| `halloween_ring_effects.yaml` | Two Halloween effects for an addressable ring or strip (*Will-o'-the-Wisp*, *Coven Circle*), opt-in. |
+| `halloween_2d_effects.yaml`, `halloween_2d.h` | Twenty Halloween effects across a mapped room of RGB lights, alongside the 2D effects. |
 | `halloween_2d_row_effects.yaml` | The same, minus Bats at Dusk and Witching Vortex, for a few lights in one row (wall sconces). Use it instead of the full file. |
 | `ntp.yaml` | SNTP setup plus two health sensors: *NTP Sync* and *Last NTP Sync*. |
 
@@ -112,12 +114,12 @@ and *Calibrate: north + east* – help you find and check a ring's rotation.
 
 ## Halloween effects for a mapped room
 
-`halloween_2d_effects.yaml` adds nineteen Halloween effects (named *Halloween - 2D …*; the names below drop the prefix) for the lights of a mapped room (the
+`halloween_2d_effects.yaml` adds twenty Halloween effects (named *Halloween - 2D …*; the names below drop the prefix) for the lights of a mapped room (the
 same `accent_light`, `platform: rgb`, and room map as the 2D effects): *2D Lightning Storm*,
 *2D Pumpkin Patch*, *2D Witch's Cauldron*, *2D Ghosts*, *2D Blood Moon*, *2D Heartbeat*,
 *2D Graveyard Mist*, *2D Trick-or-Treat*, *2D Bats at Dusk*, *2D Witching Vortex*,
 *2D Candlelight*, *2D Candle Chase*, *2D Searchlight*, *2D Haunting*, *2D Rolling Fog*,
-*2D Travelling Bolt*, *2D Possessed Room*, *2D Creeping Vines* and *2D Will-o'-the-Wisps*. Seven
+*2D Travelling Bolt*, *2D Possessed Room*, *2D Creeping Vines*, *2D Will-o'-the-Wisps* and *2D Bonfire* (orange and yellow fire on every light, with a flight of sparks running across the room map from the west wall every 6 s). Seven
 take their themes from the outdoor set; strikes, surges, draughts and shadows land somewhere in the
 room and move across it. The rest are for a large room: beams sweep it, fog and bolts cross it,
 rings spread and vines grow through it, and the whole room changes colour.
@@ -141,6 +143,39 @@ floor of at least ~3 % of full warm white, and at most 3 flashes per second (the
 light and in the room's average light. A ghost or a bat brightens one light as it dims the next; that is counted
 per light, not as the room flashing. Room Speed and Intensity apply as outdoors. Unlike
 `halloween_effects.yaml` these are RGB only, with no power cap and no daylight lift.
+
+## Halloween candles for any RGB light
+
+`halloween_plain_effects.yaml` adds eight effects named *Halloween - …* to a plain PWM RGB light
+(`platform: rgb`: a Lumary, a single bulb, each bulb of a chandelier). They are opt-in, like the
+other Halloween files, so an indoor light that does not include it never sees them. Most are
+Candle Flicker's flame in other colours; every colour is held to one luminance, so a hue change is
+never a brightness change and only the flame can flash:
+
+- *Witch Candle*: the flame drifts slowly between purple and green (a 2 minute cycle), each bulb at its own point in it.
+- *Jack-o'-Lantern*: an orange candle that now and then sinks into a deep red ember for a few seconds, then flares back.
+- *Possessed Candle*: a warm-white candle that every 1 - 2 minutes turns ghostly green for 5 - 10 s, then fades back; bulbs take turns, so of a group only one or two turn at a time.
+- *Tricolour Candles*: each bulb holds purple, green or orange; every 30 s the colours move on to the next bulb, crossing over in 6 s.
+- *Cauldron Brew*: deep green, slow lime swells like bubbles, an occasional purple wisp.
+- *Ember Bed*: dark orange and red coals breathing slowly under a faint purple smoke.
+- *Haunted Drift*: orange, purple and green crossfading over 30 s, each bulb offset so the colour seems to turn about the chandelier.
+- *Black Light*: deep violet with a gentle shimmer, dim, for a background.
+
+`halloween_ring_effects.yaml` adds two for an addressable ring or strip: *Halloween - Will-o'-the-Wisp*
+(a dim purple field with one soft green orb that hovers, then glides to somewhere else) and *Halloween - Coven Circle* (purple, green
+and orange arcs turning once in 90 s, a candle flickering in each). Include either like this:
+
+```yaml
+packages:
+  halloween_candles:
+    url: https://github.com/davidcoulson/ambient-light-card
+    ref: <release tag>
+    files:
+      - esphome/common/halloween_plain_effects.yaml   # or halloween_ring_effects.yaml on a ring
+```
+
+The host tests hold all of them to at most 3 flashes per second (the plain ones per bulb and per
+group, the ring ones per segment and over the strip), with a floor on the plain ones.
 
 ## Halloween effects for outdoor bulbs
 
@@ -335,7 +370,7 @@ The simplest way to keep the rule is one substitution for the ref, used by both 
 ### Tests
 
 `tests/run_effects_tests.sh` also runs `tests/effects_flash_test.cpp` over every plain lambda effect in the
-non-Halloween files: at most 3 flashes per second per bulb and per group (the WCAG limit), and each effect's
+non-outdoor files (the Halloween candles of `halloween_plain_effects.yaml` included): at most 3 flashes per second per bulb and per group (the WCAG limit), and each effect's
 minimum brightness no lower than the floor recorded in `tests/effects_flash_floors.h`.
 
 `tests/run_halloween_tests.sh` builds `tests/halloween_test.cpp` against the real headers and
