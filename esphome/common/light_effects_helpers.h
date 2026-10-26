@@ -193,7 +193,7 @@ inline void sync_slot(double t, float period_s, uint32_t &slot, float &within) {
 // `lanes` windows of `lane_s` seconds and each light owns the one its `lane`
 // number names (sync_offset * lanes, as an int), so the events of different
 // lanes start at least lane_s apart whatever the number of lights - which is
-// what holds a group to WCAG's 3 flashes a second (lane_s >= 0.34 for one flash
+// what holds a group to WCAG's 2 flashes a second (lane_s >= 0.5 for one flash
 // per event). Lights in one lane share the event and flash together.
 //
 // Returns the seconds since this light's window opened and sets `slot` to the

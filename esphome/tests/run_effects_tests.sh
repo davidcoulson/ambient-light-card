@@ -25,7 +25,7 @@ ${CXX:-c++} -std=c++17 -O2 -Wall -Wextra -Wno-unused-function -Wno-unused-parame
   -Wno-unused-but-set-variable -I"$common" -I"$out" "$here/effects_test.cpp" -o "$out/effects_test"
 "$out/effects_test"
 
-# Every plain lambda effect: at most 3 flashes/s per light and per group, and the
+# Every plain lambda effect: at most 2 flashes/s per light and per group, and the
 # brightness floors of effects_flash_floors.h. Forks one child per light, so it takes minutes.
 { python3 "$here/extract_lambda.py" --all rgb "$common/accent_light_nonaddressable_effects.yaml"
   python3 "$here/extract_lambda.py" --all w "$common/white_effects.yaml"

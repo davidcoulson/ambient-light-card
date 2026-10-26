@@ -175,8 +175,8 @@ static void check_pacifica(const char *name, RingFx a, RingFx b) {
 
 // ---- Polyrhythm -----------------------------------------------------------------
 
-// Threes and fours over a 2.4 s bar: both voices strike at the top of every bar
-// (and the threes every 0.8 s, the fours every 0.6 s). At epoch scale a float
+// Threes and fours over a 4.8 s bar: both voices strike at the top of every bar
+// (and the threes every 1.6 s, the fours every 1.2 s). At epoch scale a float
 // beat put each voice tens of seconds off, so they never met.
 static float poly_level(float offset, double t) {
   FX_TEST_OFFSET = offset;
@@ -189,11 +189,11 @@ static float poly_level(float offset, double t) {
 static void test_polyrhythm() {
   int bad = 0;
   for (int k = 0; k < 200; k++) {
-    // Bar starts at epoch scale: n * 2.4 s with n a multiple of 5 is a whole second.
-    const double bar = (750000000.0 + 5.0 * k * 7919.0) * 2.4;
+    // Bar starts at epoch scale: n * 4.8 s with n a multiple of 5 is a whole second.
+    const double bar = (750000000.0 + 5.0 * k * 7919.0) * 4.8;
     for (int voice = 0; voice < 2; voice++) {
       const float off = voice == 0 ? 0.25f : 0.75f;
-      const double beat = voice == 0 ? 0.8 : 0.6;
+      const double beat = voice == 0 ? 1.6 : 1.2;
       const int beats = voice == 0 ? 3 : 4;
       for (int j = 0; j < beats; j++) {
         // Just after the strike: near full. Just before the next: down near the floor.

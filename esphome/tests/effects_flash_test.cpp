@@ -17,8 +17,8 @@
 //          another are merged too and printed, but a crest sweeping past
 //          them is not a flash, so that figure is not held to the limit)
 //   red    the same, for saturated red
-// All must be <= 3. The floor is each effect's lowest luminance, which may not
-// fall under the value in FLOORS (what it was when the limit moved to 3/s).
+// All must be <= 2 (WCAG allows 3; the extra headroom is deliberate). The floor is each effect's lowest luminance, which may not
+// fall under the value in FLOORS (what it was when the limit moved to 2/s).
 // ---------------------------------------------------------------------------
 
 #include <cmath>
@@ -234,7 +234,7 @@ static int run_set(const Set &s) {
     printf("%-34s %5d %5d %5d %8.4f", s.cases[i].name, nb, grp, red, min_lum);
     if (s.room) printf("   (neighbours %d, room %d)", nbhd, room_f);
     printf("\n");
-    CHECK(nb <= 3 && grp <= 3 && red <= 3, "%s: %d/%d/%d flashes per second (bulb/group/red), WCAG limit 3", s.cases[i].name, nb, grp, red);
+    CHECK(nb <= 2 && grp <= 2 && red <= 2, "%s: %d/%d/%d flashes per second (bulb/group/red), limit 2", s.cases[i].name, nb, grp, red);
     const Floor *fl = nullptr;
     for (const Floor &f : FLOORS) if (!strcmp(f.name, s.cases[i].name)) fl = &f;
     CHECK(fl, "%s: no floor listed in effects_flash_floors.h", s.cases[i].name);

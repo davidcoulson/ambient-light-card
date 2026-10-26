@@ -43,7 +43,7 @@
     {"Police", 0.0000},
     {"Metronome", 0.0248},
     {"Unison Random", 0.0235},
-    {"Polyrhythm", 0.0109},
+    {"Polyrhythm", 0.0105},
     {"Downbeat", 0.0115},
     {"Clock", 0.1468},
     {"Hourly Chime", 0.0216},
