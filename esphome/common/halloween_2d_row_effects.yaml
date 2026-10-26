@@ -176,3 +176,16 @@ light:
             hz_candle_white(hz_render([](const HwT &t) { return HwColor{hz_chase_lvl(t, me), 0, 0, 0, 0}; }).r, ww, cw);
             out_white(id(accent_light), id(red_output), id(green_output), id(blue_output),
                       id(warm_output), id(cold_output), ww, cw);
+      # Orange and yellow fire on every light; every 6 s a flight of sparks
+      # sets out from the west wall and runs across the room.
+      - lambda:
+          name: "Halloween - 2D Bonfire"
+          update_interval: 40ms
+          lambda: |-
+            static const HzSelf me = [] {
+              float x, y;
+              light_xy("${mac}", x, y);
+              return hz_at(x, y, ROOM_ASPECT, room_self("${mac}"), "${mac}");
+            }();
+            HwColor c = hz_render([](const HwT &t) { return hz_bonfire(t, me); });
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), c.r, c.g, c.b);

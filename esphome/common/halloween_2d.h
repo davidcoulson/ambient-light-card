@@ -105,6 +105,10 @@ constexpr HwColor HZ_VINE_TIP     = {0.60f, 1.00f, 0.30f, 0, 0};
 constexpr HwColor HZ_MOSS_FLOOR   = {0.04f, 0.10f, 0.05f, 0, 0};   // floor: Creeping Vines
 constexpr HwColor HZ_WISP         = {0.30f, 0.90f, 0.80f, 0, 0};
 constexpr HwColor HZ_BOG_FLOOR    = {0.04f, 0.05f, 0.16f, 0, 0};   // floor: Will-o'-the-Wisps
+constexpr HwColor HZ_FIRE_RED     = {1.00f, 0.16f, 0.00f, 0, 0};
+constexpr HwColor HZ_FIRE_GOLD    = {1.00f, 0.55f, 0.05f, 0, 0};
+constexpr HwColor HZ_SPARK        = {1.00f, 0.80f, 0.35f, 0, 0};
+constexpr HwColor HZ_FIRE_FLOOR   = {0.20f, 0.04f, 0.00f, 0, 0};   // floor: Bonfire
 constexpr HwColor HZ_MIST_SETS[3][2] = {
     {{0.00f, 0.35f, 0.45f, 0, 0}, {0.45f, 0.42f, 0.35f, 0, 0}},   // teal and bone
     {{0.05f, 0.45f, 0.10f, 0, 0}, {0.35f, 0.35f, 0.10f, 0, 0}},   // moss and lichen
@@ -517,4 +521,27 @@ inline HwColor hz_wisps(const HwT &t, const HzSelf &s) {
     g = fmaxf(g, pulse * expf(-dd * dd / 0.02f));
   }
   return hz_finish(hw_add(hw_scale(HZ_BOG_FLOOR, 1.3f), hw_scale(HZ_WISP, 0.9f * g * t.d)), HZ_BOG_FLOOR);
+}
+
+// ---------------------------------------------------------------------------
+// Bonfire - orange and yellow fire on every light, each its own candle-flicker
+// (hz_candle_lvl(): redder as it sinks, golder as it leaps). Every 6 s a flight
+// of sparks sets out from the west wall and runs across the room map to the
+// east in 5 s: as the front reaches a light, if that light has a spark this
+// time round (two in three do), it rises over a half second and burns down
+// over a second and a half. A light further to the north catches its spark a
+// moment later, as a spark rising from the fire would. Intensity scales the
+// flames and the sparks.
+// ---------------------------------------------------------------------------
+inline HwColor hz_bonfire(const HwT &t, const HzSelf &s) {
+  float lvl = clamp01(hz_candle_lvl(t, s, 1.0f));
+  HwColor c = hw_scale(hw_mix(HZ_FIRE_RED, HZ_FIRE_GOLD, lvl), 0.35f + 0.65f * lvl);
+
+  uint32_t slot;
+  float w;
+  sync_slot(t.A, 6.0f, slot, w);
+  float u = w - (s.x * 4.4f + 0.5f * s.y / s.h) - 0.5f * sync_random(slot, 190 + s.i);
+  if (u > 0.0f && sync_random(slot, 600 + s.i) < 0.67f)
+    c = hw_add(c, hw_scale(HZ_SPARK, 0.55f * t.d * hw_ease(u / 0.5f) * expf(-fmaxf(0.0f, u - 0.5f) / 0.75f)));
+  return hz_finish(c, HZ_FIRE_FLOOR);
 }

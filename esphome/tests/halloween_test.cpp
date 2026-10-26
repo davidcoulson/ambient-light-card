@@ -755,6 +755,7 @@ static const Effect2D EFFECTS_2D[] = {
     {"possessed2d", "2D Possessed Room", hz_possessed, HZ_POSSESS_FLOOR},
     {"vines2d", "2D Creeping Vines", hz_vines, HZ_MOSS_FLOOR},
     {"wisps2d", "2D Will-o'-the-Wisps", hz_wisps, HZ_BOG_FLOOR},
+    {"bonfire2d", "2D Bonfire", hz_bonfire, HZ_FIRE_FLOOR},
 };
 
 static std::vector<HzSelf> basement() {
