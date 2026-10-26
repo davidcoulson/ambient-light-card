@@ -17,7 +17,7 @@
 #         - path: esphome/common/halloween_2d_effects.yaml
 #           vars: {room_map: common/my_room_map.h}
 #
-# Every effect keeps a visible floor and stays at or under 2 flashes per second (inside the WCAG limit of 3)
+# Every effect keeps a visible floor and stays at or under 3 flashes per second (the WCAG limit)
 # on any light and in the room's average light; halloween_2d.h has the rules
 # and tests/halloween_test.cpp checks them. Room Speed and Intensity apply as
 # they do to the outdoor Halloween effects. Graveyard Mist picks its colours

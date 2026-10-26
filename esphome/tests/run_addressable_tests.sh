@@ -1,5 +1,5 @@
 #!/bin/sh
-# Flash-rate test for the addressable and ht2d ring effects: at most 2 flashes per
+# Flash-rate test for the addressable and ht2d ring effects: at most 3 flashes per
 # second in any strip segment and over the whole strip (WCAG 2.3.1), on 13, 36 and
 # 48 LED strips and on the home-theater ring for each light's MAC. Needs python3 and
 # a C++17 compiler. Each run simulates 30 minutes.

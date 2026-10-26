@@ -15,10 +15,10 @@
 //   1. A light never goes dark. Each effect has a floor colour (HW_EMBER and
 //      friends below) and no channel ever drops under it, so a light is always
 //      at least ~3 % of full warm white. People walk past these at night.
-//   2. Under the flash threshold. At most 2 flashes per second per bulb and
+//   2. Under the flash threshold. At most 3 flashes per second per bulb and
 //      per group of neighbouring bulbs, counted the WCAG 2.3.1 way (a flash is
-//      a pair of opposing changes of >= 10 % luminance), a stricter limit than 2.3.1's
-//      general 3 per second. The effects are lively - quick flames, re-strikes,
+//      a pair of opposing changes of >= 10 % luminance), the 2.3.1 limit
+//      of 3 per second. The effects are lively - quick flames, re-strikes,
 //      a beating heart - but never a strobe.
 //
 // The room Speed and Intensity helpers apply, as they do to the library's
@@ -965,7 +965,7 @@ inline HwColor hw_spooky(double T, const HwSelf &b) { return hw_spooky(hw_t(T), 
 // Speed scales the animation clock exactly as fx_seconds() does: 0.25x - ~4x.
 // Neighbours disagree only for the moment it takes Home Assistant to reach
 // each bulb, and a change makes the effect jump to a new phase once, as indoor
-// effects do. The flash limit (2 per second) is checked at 1x and below and on
+// effects do. The flash limit (3 per second) is checked at 1x and below and on
 // the Fast variants; above 1x an effect's flash rate rises with its speed, by
 // the owner's choice.
 //
