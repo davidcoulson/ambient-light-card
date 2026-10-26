@@ -13,6 +13,8 @@
 //     instant whatever frames the light drew before it;
 //   - Polyrhythm's threes and fours land together on every downbeat, at
 //     epoch-scale time;
+//   - Halloween - Possessed Candle turns at most two bulbs of eight ghostly
+//     green at once, each for 5 - 14 s, about every 1 - 2 minutes;
 //   - out_rgb() holds an RGBWW light's white channels off once
 //     g_fx_whites_off is set, and leaves outputs alone when it is not.
 // ---------------------------------------------------------------------------
@@ -46,6 +48,7 @@ static uint32_t micros() { return 0; }
 
 #include "light_effects_helpers.h"
 #include "addressable_fx.h"
+#include "halloween_plain.h"
 
 struct Color {
   uint8_t r = 0, g = 0, b = 0, w = 0;
@@ -212,6 +215,54 @@ static void test_polyrhythm() {
     printf("polyrhythm: threes and fours strike on the bar grid at epoch scale\n");
 }
 
+// ---- Possessed Candle -------------------------------------------------------------
+
+// Eight lights spread round the offset circle for an hour: the candle turns green
+// (its green channel past its red one, which a warm candle never has) for
+// 5 - 14 s counting the fades, no more than two lights at once.
+static void test_possessed() {
+  const int before = failures;
+  const int N = 8;
+  const double DT = 0.1, SPAN = 3600.0;
+  const long steps = (long) (SPAN / DT);
+  std::vector<std::vector<char>> on(N, std::vector<char>(steps));
+  for (int l = 0; l < N; l++) {
+    FX_TEST_OFFSET = (l + 0.5f) / N;
+    for (long k = 0; k < steps; k++) {
+      g_now = 1.8e9 + k * DT;
+      possessed::run(false);
+      on[l][k] = green_output.level > red_output.level;
+    }
+  }
+  int most = 0, shortest = 1 << 30, longest = 0, runs_min = 1 << 30;
+  for (long k = 0; k < steps; k++) {
+    int n = 0;
+    for (int l = 0; l < N; l++) n += on[l][k];
+    most = std::max(most, n);
+  }
+  for (int l = 0; l < N; l++) {
+    int runs = 0;
+    for (long k = 0; k < steps;) {
+      if (!on[l][k]) { k++; continue; }
+      long j = k;
+      while (j < steps && on[l][j]) j++;
+      if (k > 0 && j < steps) {
+        runs++;
+        shortest = std::min(shortest, (int) (j - k));
+        longest = std::max(longest, (int) (j - k));
+      }
+      k = j;
+    }
+    runs_min = std::min(runs_min, runs);
+  }
+  CHECK(most <= 2, "possessed: %d of %d bulbs green at once", most, N);
+  CHECK(shortest >= 40 && longest <= 140, "possessed: a possession lasted %.1f - %.1f s, not 4 - 14", shortest * DT, longest * DT);
+  CHECK(runs_min >= 30 && runs_min <= 60, "possessed: %d possessions in an hour on the quietest bulb, not one per 1 - 2 minutes", runs_min);
+  if (failures == before)
+    printf("possessed candle: at most %d of %d bulbs green at once, each for %.1f - %.1f s, >= %d times an hour\n",
+           most, N, shortest * DT, longest * DT, runs_min);
+}
+
 // ---- out_rgb and the white channels ------------------------------------------------
 
 static void test_out_rgb_whites() {
@@ -247,6 +298,7 @@ int main() {
   check_pacifica("Pacifica (Storm)", storm_a::run, storm_b::run);
   check_pacifica("Pacifica (Deep Current)", deep_a::run, deep_b::run);
   test_polyrhythm();
+  test_possessed();
   test_out_rgb_whites();
   if (failures) {
     printf("%d check(s) failed\n", failures);

@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // Flash and floor check for the accent and white lambda effects
 // (accent_light_nonaddressable_effects.yaml, white_effects.yaml,
-// accent_light_2d_effects.yaml). Built and run by run_effects_tests.sh, which
+// accent_light_2d_effects.yaml, halloween_plain_effects.yaml). Built and run by run_effects_tests.sh, which
 // extracts every plain lambda effect as it stands in the YAML (extract_lambda.py
 // --all).
 //
@@ -47,6 +47,7 @@ static uint32_t random_uint32() { static uint32_t s = 12345; return s = s * 1664
 
 #include "basement_map.h"
 #include "fx2d_render.h"
+#include "halloween_plain.h"
 
 struct FakeOutput {
   float level = 0;
@@ -249,6 +250,7 @@ int main(int argc, char **argv) {
       {"RGB effects (30 min)", rgb_cases, sizeof rgb_cases / sizeof *rgb_cases, false},
       {"White effects (30 min)", w_cases, sizeof w_cases / sizeof *w_cases, false},
       {"2D effects (30 min)", d_cases, sizeof d_cases / sizeof *d_cases, true},
+      {"Halloween candles (30 min)", hp_cases, sizeof hp_cases / sizeof *hp_cases, false},
   };
   for (const Set &s : sets) if (run_set(s)) return 1;
   if (failures) { printf("%d check(s) failed\n", failures); return 1; }

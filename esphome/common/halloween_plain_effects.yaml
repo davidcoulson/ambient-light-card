@@ -1,0 +1,247 @@
+# ---------------------------------------------------------------------------
+# Halloween candles for any PWM RGB light - a Lumary, a single bulb, a
+# chandelier of them. Eight effects, all named "Halloween - ..." so they group
+# together in the effect list: purple, green and orange takes on Candle
+# Flicker's flame (accent_light_nonaddressable_effects.yaml).
+#
+# Opt in per device, next to the plain family package; a light that does not
+# include this file never sees them:
+#
+#   packages:
+#     light: !include common/athom-light.yaml      # or any rgb accent_light
+#     halloween_candles:
+#       url: https://github.com/davidcoulson/ambient-light-card
+#       ref: <release tag>
+#       files:
+#         - esphome/common/halloween_plain_effects.yaml
+#
+# Needs a light with `id: accent_light` (platform: rgb) and red_output,
+# green_output and blue_output, and the library's light_effects_helpers.h,
+# which accent_light_nonaddressable_effects.yaml already brings in.
+#
+# Effects included, in the order Home Assistant lists them:
+#
+#   Witch Candle        Cauldron Brew     Haunted Drift
+#   Jack-o'-Lantern     Ember Bed         Black Light
+#   Possessed Candle
+#   Tricolour Candles
+#
+# Every one is a pure function of the shared clock (fx_seconds()) and this
+# light's offset, so a group never needs to talk. Colours are held to one
+# luminance (halloween_plain.h), so only the flame itself can flash: the host
+# tests (tests/run_effects_tests.sh) hold every effect to at most 3 flashes a
+# second per bulb and per group, and the candles sit well under that. Speed and
+# Intensity apply as to the other plain effects.
+# ---------------------------------------------------------------------------
+
+esphome:
+  includes:
+    - halloween_plain.h
+
+light:
+  - platform: rgb
+    id: !extend accent_light
+    effects:
+      # ------------------------------------------------------------------
+      # Witch Candle - Candle Flicker's flame, its colour drifting slowly
+      # between purple and green (a 2 minute cycle); every light at its own
+      # point in it, so a group never matches.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Halloween - Witch Candle"
+          update_interval: 50ms
+          lambda: |-
+            double T = fx_seconds();
+            const float off = sync_offset("${mac}");
+            float level = hl_flame(T, off);
+            float u = 0.5f + 0.5f * sinf(6.2831853f * (float) fmod(T / 120.0 + off, 1.0));
+            float r, g, b;
+            hsv_to_rgb(0.30f + 0.48f * hl_ease(u), 1.0f, 1.0f, r, g, b);   // green .. purple
+            hl_tint(HL_Y * level, r, g, b, r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Jack-o'-Lantern - an orange candle that now and then sinks into a
+      # deep red ember for a few seconds, then flares back. Each light on
+      # its own clock, so a group does not sink at once.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Halloween - Jack-o'-Lantern"
+          update_interval: 50ms
+          lambda: |-
+            double T = fx_seconds();
+            const float off = sync_offset("${mac}");
+            float level = hl_flame(T, off);
+
+            // A 45 s slot, an ember in four of five: down in 1.2 s, held for
+            // 3 - 7 s, back up in 0.9 s with a soft flare that settles.
+            uint32_t slot; float w;
+            sync_slot(T + off * 61.0f, 45.0f, slot, w);
+            float e = 0.0f, flare = 0.0f;
+            if (sync_random(slot, 11) < 0.8f) {
+              float at = 4.0f + sync_random(slot, 12) * 25.0f, len = 3.0f + sync_random(slot, 13) * 4.0f;
+              float u = w - at, ur = u - 1.2f - len;
+              float up = hl_ease(ur / 0.9f);
+              e = hl_ease(u / 1.2f) * (1.0f - up);
+              flare = 0.22f * up * expf(-fmaxf(0.0f, ur - 0.9f) / 0.8f);
+              // Intensity: no ember at 0, a deeper one beyond normal.
+              e = clamp01(e * fx_accents());
+            }
+            level = clamp01(level * (1.0f - 0.55f * e) + flare);
+            float r, g, b;
+            hl_tint2(HL_Y * level, HL_ORANGE, HL_EMBER, e, r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Possessed Candle - a warm-white candle that every 1 - 2 minutes
+      # turns ghostly green for 5 - 10 s, then fades back. Lights take turns
+      # in four lanes of 20 s, so of a group only one or two turn at a time.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Halloween - Possessed Candle"
+          update_interval: 50ms
+          lambda: |-
+            double T = fx_seconds();
+            const float off = sync_offset("${mac}");
+            float level = hl_flame(T, off);
+
+            // Three in four of the 80 s slots; the possession (1.5 s in, 5 - 10 s
+            // held, 2.5 s out) starts 1 - 4 s into the light's own lane, so it
+            // is over before the next lane begins.
+            const int LANES = 4;
+            int lane = (int) (off * LANES);
+            if (lane >= LANES) lane = LANES - 1;
+            uint32_t slot;
+            float u = fx_lane_time(T, lane, LANES, 20.0f, slot);
+            float k = 0.0f;
+            if (sync_random(slot, lane * 16 + 1) < 0.75f) {
+              float x = u - (1.0f + sync_random(slot, lane * 16 + 2) * 3.0f);
+              k = hl_ease(x / 1.5f) * (1.0f - hl_ease((x - 1.5f - (5.0f + sync_random(slot, lane * 16 + 3) * 5.0f)) / 2.5f));
+              k = clamp01(k * fx_accents());   // Intensity: none at 0
+            }
+            // Candle Flicker's own colours, then the ghost at the same luminance.
+            float warmth = 0.55f + 0.45f * level;
+            float r = level, g = level * 0.42f * warmth, b = level * 0.07f * warmth;
+            float gr, gg, gb;
+            hl_tint(hl_lum(r, g, b), HL_GHOST[0], HL_GHOST[1], HL_GHOST[2], gr, gg, gb);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    r + (gr - r) * k, g + (gg - g) * k, b + (gb - b) * k);
+
+      # ------------------------------------------------------------------
+      # Tricolour Candles - every light holds purple, green or orange and
+      # flickers like a candle; every 30 s the colours move on to the next
+      # light, crossing over in 6 s.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Halloween - Tricolour Candles"
+          update_interval: 50ms
+          lambda: |-
+            double T = fx_seconds();
+            const float off = sync_offset("${mac}");
+            float level = hl_flame(T, off);
+
+            static const float *const COL[3] = {HL_PURPLE, HL_GREEN, HL_ORANGE};
+            const int seat = (int) (off * 997.0f) % 3;
+            uint32_t slot; float w;
+            sync_slot(T, 30.0f, slot, w);
+            const float *from = COL[(seat + slot + 2) % 3], *to = COL[(seat + slot) % 3];
+            float r, g, b;
+            hl_tint2(HL_Y * level, from, to, hl_ease(w / 6.0f), r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Cauldron Brew - a deep green base, a slow lime swell like a bubble
+      # every few seconds, and now and then a purple wisp rising through it.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Halloween - Cauldron Brew"
+          update_interval: 50ms
+          lambda: |-
+            double T = fx_seconds() + sync_offset("${mac}") * 17.0f;   // scattered: each light its own pot
+            float t = sync_fold(T);
+            float level = 0.38f + 0.05f * sinf(t * 0.7f) * fx_swing();
+
+            // A swell in three of four 5 s slots: 2.4 s, up to 0.6 + 0.4 lime.
+            uint32_t slot; float w;
+            sync_slot(T, 5.0f, slot, w);
+            float bub = 0.0f;
+            if (sync_random(slot, 31) > 0.25f) {
+              float x = (w - (0.3f + sync_random(slot, 32) * 1.5f)) / 2.4f;
+              if (x > 0.0f && x < 1.0f) bub = sinf(3.14159265f * x) * sinf(3.14159265f * x) * (0.6f + 0.4f * sync_random(slot, 33));
+            }
+            bub *= fx_accents();
+            // A wisp in one of two 17 s slots, 4 s long.
+            uint32_t ws; float ww;
+            sync_slot(T, 17.0f, ws, ww);
+            float wisp = 0.0f;
+            if (sync_random(ws, 34) < 0.5f) {
+              float x = (ww - (2.0f + sync_random(ws, 35) * 8.0f)) / 4.0f;
+              if (x > 0.0f && x < 1.0f) wisp = sinf(3.14159265f * x) * sinf(3.14159265f * x);
+            }
+            wisp *= fx_accents();
+
+            static const float BREW[3] = {0.02f, 1.00f, 0.12f}, LIME[3] = {0.50f, 1.00f, 0.00f};
+            float r, g, b;
+            hl_tint2(HL_Y * clamp01(level + 0.28f * bub), BREW, LIME, clamp01(bub), r, g, b);
+            float pr, pg, pb;
+            hl_tint(HL_Y * clamp01(level + 0.28f * bub), HL_PURPLE[0], HL_PURPLE[1], HL_PURPLE[2], pr, pg, pb);
+            float m = clamp01(0.8f * wisp);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output),
+                    r + (pr - r) * m, g + (pg - g) * m, b + (pb - b) * m);
+
+      # ------------------------------------------------------------------
+      # Ember Bed - dark orange and red coals breathing slowly, a faint
+      # purple smoke drifting over them. Floor: a dim coal.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Halloween - Ember Bed"
+          update_interval: 60ms
+          lambda: |-
+            // Scattered, as Fireplace Embers is: each light its own bed.
+            double T = fx_seconds() + sync_offset("${mac}") * 23.0f;
+            float t = sync_fold(T);
+            float level = 0.34f + (0.10f * sinf(t * 0.35f) + 0.05f * sinf(t * 0.81f)) * fx_swing();
+            // Smoke: a slow noise, only its upper part shows, never more than a third purple.
+            float smoke = clamp01((sync_noise(T, 7.0f, 41) - 0.45f) / 0.4f) * 0.33f;
+            static const float COAL[3] = {1.00f, 0.14f, 0.00f}, SMOKE[3] = {0.45f, 0.00f, 0.80f};
+            float r, g, b;
+            hl_tint2(HL_Y * (level - 0.05f * smoke), COAL, SMOKE, smoke, r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Haunted Drift - a slow crossfade orange, purple, green and round
+      # again every 30 s, each light a different distance round the wheel so
+      # the colour seems to turn about a chandelier.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Halloween - Haunted Drift"
+          update_interval: 60ms
+          lambda: |-
+            double T = fx_seconds();
+            const float off = sync_offset("${mac}");
+            float p = 3.0f * (float) fmod(T / 30.0 + off, 1.0);
+            int leg = p < 2.0f ? (int) p : 2;   // p reaches 3.0 only by rounding
+            // Hue only falls round the wheel: orange (.07), purple (-.22), green (-.67), orange again.
+            static const float H[4] = {0.07f, -0.22f, -0.67f, -0.93f};
+            float h = H[leg] + (H[leg + 1] - H[leg]) * hl_ease(p - (float) leg);
+            float r, g, b;
+            hsv_to_rgb(h - floorf(h), 1.0f, 1.0f, r, g, b);
+            float level = 0.70f + 0.06f * (sync_noise(T + off * 5.0f, 4.0f, 51) - 0.5f) * 2.0f * fx_swing();
+            hl_tint(HL_Y * level, r, g, b, r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
+
+      # ------------------------------------------------------------------
+      # Black Light - deep violet with a gentle shimmer, the look of a UV
+      # tube. Dim, for a background. Floor: a dim violet.
+      # ------------------------------------------------------------------
+      - lambda:
+          name: "Halloween - Black Light"
+          update_interval: 60ms
+          lambda: |-
+            double T = fx_seconds() + sync_offset("${mac}") * 13.0f;
+            float level = 0.42f + 0.10f * (sync_noise(T, 2.5f, 52) - 0.5f) * 2.0f * fx_swing()
+                                + 0.04f * (sync_noise(T, 0.9f, 53) - 0.5f) * 2.0f * fx_swing();
+            // The tube leans a little blue, a little red, as it shimmers.
+            float r, g, b;
+            hl_tint(HL_Y * level, 0.40f + 0.15f * (sync_noise(T, 5.0f, 54) - 0.5f), 0.0f, 1.0f, r, g, b);
+            out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);

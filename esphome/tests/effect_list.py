@@ -26,7 +26,13 @@ HALLOWEEN_EFFECTS = {
         "Heartbeat of the House", "Trick-or-Treat Swap", "Graveyard Mist", "Wind-Blown Candles",
     )
 }
-HALLOWEEN_MARKERS = re.compile(r"halloween_fx\.h|front_yard_map\.h|\bhw_wx_[a-z0-9_]+|hw_frame\(")
+HALLOWEEN_EFFECTS |= {
+    f"Halloween - {n}" for n in (
+        "Witch Candle", "Jack-o'-Lantern", "Possessed Candle", "Tricolour Candles", "Cauldron Brew", "Ember Bed",
+        "Haunted Drift", "Black Light", "Will-o'-the-Wisp", "Coven Circle",
+    )
+}
+HALLOWEEN_MARKERS = re.compile(r"halloween_fx\.h|halloween_plain\.h|front_yard_map\.h|\bhw_wx_[a-z0-9_]+|hw_frame\(")
 
 
 def effect_names(text):

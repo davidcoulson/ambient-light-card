@@ -19,7 +19,9 @@ python3 "$here/extract_lambda.py" "$common/accent_light_addressable_effects.yaml
   "deep_a=Pacifica (Deep Current)" "deep_b=Pacifica (Deep Current)" > "$out/addressable.h"
 python3 "$here/extract_lambda.py" "$common/accent_light_nonaddressable_effects.yaml" \
   "polyrhythm=Polyrhythm" > "$out/pwm.h"
-cat "$out/addressable.h" "$out/pwm.h" > "$out/effects_extracted.h"
+python3 "$here/extract_lambda.py" "$common/halloween_plain_effects.yaml" \
+  "possessed=Halloween - Possessed Candle" > "$out/halloween_plain.h"
+cat "$out/addressable.h" "$out/pwm.h" "$out/halloween_plain.h" > "$out/effects_extracted.h"
 
 ${CXX:-c++} -std=c++17 -O2 -Wall -Wextra -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable \
   -Wno-unused-but-set-variable -I"$common" -I"$out" "$here/effects_test.cpp" -o "$out/effects_test"
@@ -29,7 +31,8 @@ ${CXX:-c++} -std=c++17 -O2 -Wall -Wextra -Wno-unused-function -Wno-unused-parame
 # brightness floors of effects_flash_floors.h. Forks one child per light, so it takes minutes.
 { python3 "$here/extract_lambda.py" --all rgb "$common/accent_light_nonaddressable_effects.yaml"
   python3 "$here/extract_lambda.py" --all w "$common/white_effects.yaml"
-  python3 "$here/extract_lambda.py" --all d "$common/accent_light_2d_effects.yaml"; } > "$out/effects_flash_extracted.h"
+  python3 "$here/extract_lambda.py" --all d "$common/accent_light_2d_effects.yaml"
+  python3 "$here/extract_lambda.py" --all hp "$common/halloween_plain_effects.yaml"; } > "$out/effects_flash_extracted.h"
 ${CXX:-c++} -std=c++17 -O2 -w -I"$common" -I"$out" -I"$here" "$here/effects_flash_test.cpp" -o "$out/effects_flash_test"
 "$out/effects_flash_test"
 
