@@ -137,7 +137,7 @@ packages:
 ```
 
 The outdoor rules hold here too and the host tests check them on the example basement map: a
-floor of at least ~3 % of full warm white, and at most 3 flashes per second (the WCAG limit) on any
+floor of at least ~3 % of full warm white, and at most 2 flashes per second (inside the WCAG limit of 3) on any
 light and in the room's average light. A ghost or a bat brightens one light as it dims the next; that is counted
 per light, not as the room flashing. Room Speed and Intensity apply as outdoors. Unlike
 `halloween_effects.yaml` these are RGB only, with no power cap and no daylight lift.
@@ -154,7 +154,7 @@ Two rules hold for all of them, and the host tests check both:
 
 - **A light never goes dark.** Every effect has a floor colour – a dim ember, a violet glow – and
   no channel drops under it, so a light is always at least ~3 % of full warm white.
-- **Under the flash threshold.** At normal Speed or slower, and on the Fast variants, at most 3 flashes per second per light and per group of neighbouring lights,
+- **Under the flash threshold.** At normal Speed or slower, and on the Fast variants, at most 2 flashes per second per light and per group of neighbouring lights,
   counted the WCAG 2.3.1 way (its general flash limit). The effects are lively – quick flames,
   re-strikes, a beating heart – but never a strobe; events like gutters and bubbles take turns within a group.
 - **Speed and Intensity.** The room helpers apply as they do to every other effect here, the
@@ -335,12 +335,12 @@ The simplest way to keep the rule is one substitution for the ref, used by both 
 ### Tests
 
 `tests/run_effects_tests.sh` also runs `tests/effects_flash_test.cpp` over every plain lambda effect in the
-non-Halloween files: at most 3 flashes per second per bulb and per group (the WCAG limit), and each effect's
+non-Halloween files: at most 2 flashes per second per bulb and per group (inside the WCAG limit of 3), and each effect's
 minimum brightness no lower than the floor recorded in `tests/effects_flash_floors.h`.
 
 `tests/run_halloween_tests.sh` builds `tests/halloween_test.cpp` against the real headers and
 checks, on every light of the example map: same time and light → same frame; the floor holds;
-flashes stay at or under the WCAG limit of 3 per second per light and per group – at 8 pm, at lights-on, and in a
+flashes stay at or under 2 per second (the WCAG limit is 3) per light and per group – at 8 pm, at lights-on, and in a
 simulated storm for the weather-driven effects – and at Speed 0.25 / 0.5 / 1× × Intensity 25 / 50 /
 100 % and the 125 % maximum (the floor at every speed; 2× and ~4× are measured and reported); an
 unmapped light still runs; every effect lambda draws through `hw_render()` on the shared clock, and
