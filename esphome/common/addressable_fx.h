@@ -1,6 +1,6 @@
 #pragma once
 // Turn-taking for the addressable effects, so that no stretch of a strip flares
-// more than 3 times in a second (WCAG 2.3.1) however busy the effect is.
+// more than 2 times in a second (WCAG 2.3.1) however busy the effect is.
 //
 // The strip is cut into arcs of about six LEDs (two to eight of them). An effect
 // that scatters sparks, foam or flashes lets ONE arc take each window, in
@@ -9,7 +9,7 @@
 // of the shared clock and the LED's place, like the effects that use it.
 #include "light_effects_helpers.h"
 
-constexpr double AFX_GAP_S = 0.4;   // an arc takes a turn at most once in this long
+constexpr double AFX_GAP_S = 0.5;   // an arc takes a turn at most once in this long
 
 // Number of arcs: about six LEDs each, between two and eight.
 inline int afx_arcs(int n) { return n < 12 ? 2 : (n >= 48 ? 8 : n / 6); }

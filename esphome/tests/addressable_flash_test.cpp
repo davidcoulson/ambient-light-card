@@ -186,9 +186,9 @@ int main(int argc, char **argv) {
       printf("  busiest second of segment %zu:\n", best);
       seg[best].print_worst();
     }
-    if (ws > 3 || wa > 3) {
+    if (ws > 2 || wa > 2) {
       failures++;
-      printf("FAIL %s: %d flashes per second in a segment, %d in the strip; WCAG limit 3\n", fx.name, ws, wa);
+      printf("FAIL %s: %d flashes per second in a segment, %d in the strip; limit 2\n", fx.name, ws, wa);
     }
   }
   if (failures) {
