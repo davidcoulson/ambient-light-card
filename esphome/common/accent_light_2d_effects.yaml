@@ -905,7 +905,7 @@ light:
 
       # ------------------------------------------------------------------
       # 2D Pacifica (Storm) - Grey-blue heavy sea, fast chop and the most whitecaps.
-      # Intensity shapes it (fx_intensity). energy 1.00, speed 1.0 (fixed per variant).
+      # Intensity shapes it (fx_intensity). energy 1.00, speed 1.4 (fixed per variant).
       # ------------------------------------------------------------------
       - lambda:
           name: "2D Pacifica (Storm)"
@@ -933,7 +933,7 @@ light:
             light_xy("${mac}", px, py);
             float r, g, b;
             pacifica2d(px, py, fx_seconds(), fx_intensity(),
-                       1.00f, 1.0f, PD, PM, PB, r, g, b, false);
+                       1.00f, 1.4f, PD, PM, PB, r, g, b, false);
             out_rgb(id(accent_light), id(red_output), id(green_output), id(blue_output), r, g, b);
 
       # ------------------------------------------------------------------

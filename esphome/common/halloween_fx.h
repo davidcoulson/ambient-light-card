@@ -17,8 +17,8 @@
 //      at least ~3 % of full warm white. People walk past these at night.
 //   2. Under the flash threshold. At most 3 flashes per second per bulb and
 //      per group of neighbouring bulbs, counted the WCAG 2.3.1 way (a flash is
-//      a pair of opposing changes of >= 10 % luminance), the 2.3.1 limit
-//      of 3 per second. The effects are lively - quick flames, re-strikes,
+//      a pair of opposing changes of >= 10 % luminance), which is 2.3.1's
+//      general flash limit. The effects are lively - quick flames, re-strikes,
 //      a beating heart - but never a strobe.
 //
 // The room Speed and Intensity helpers apply, as they do to the library's
@@ -101,7 +101,6 @@ struct HwT {
   double A;   // the animation clock: T at the room's Speed
   double s;   // that Speed
   float d;    // movement depth from the room's Intensity, 0 - HW_DEPTH_MAX
-  float f = 1.0f;   // flash stretch: the Fast effects slow their flashing parts by this, 1 otherwise
 };
 // Speed 1, Intensity 100 %: each effect exactly as designed.
 inline HwT hw_t(double T) { return {T, T, 1.0, 1.0f}; }
@@ -272,22 +271,21 @@ inline HwColor hw_pumpkin(float lvl) {
 // ---------------------------------------------------------------------------
 // Jack-o'-Lantern Row - a row of carved pumpkins. A lively two-layer flame,
 // scattered per light; every 4 - 6 s each light gutters low, taking turns
-// within its group (flame noise and gutter spacing are slowed to hold 2 flashes
-// a second, 8-light groups included). The door pair burns a little brighter. `steady`
+// within its group. The door pair burns a little brighter. `steady`
 // suppresses the gutters (for a scene that wants a clean start from it).
 // Intensity scales the flame's swing and the gutters' depth.
 // ---------------------------------------------------------------------------
 inline HwColor hw_jack_base(const HwT &t, const HwSelf &b, bool steady) {
-  double tj = t.A / t.f + (double) (b.off * 7.0f);
-  float slow = sync_noise(tj, 0.70f, b.i + 1);
-  float fast = sync_noise(tj, 0.10f, b.i + 21);
+  double tj = t.A + (double) (b.off * 7.0f);
+  float slow = sync_noise(tj, 0.30f, b.i + 1);
+  float fast = sync_noise(tj, 0.07f, b.i + 21);
   float lvl = 0.66f + t.d * (0.14f * (slow - 0.5f) + 0.05f * (fast - 0.5f));
 
-  HwTurn gt = hw_group_turn(t.A, b, 4.0f * t.f, 1.6f * t.f, 50);
+  HwTurn gt = hw_group_turn(t.A, b, 4.0f, 1.2f, 50);
   float len = 0.40f + sync_random(gt.slot, b.i + 60) * 0.30f;
-  if (!steady && gt.w >= gt.at && gt.w < gt.at + len * t.f) {
+  if (!steady && gt.w >= gt.at && gt.w < gt.at + len) {
     float u = gt.w - gt.at;
-    float e = fminf(clamp01(u / (0.12f * t.f)), clamp01((len * t.f - u) / (0.25f * t.f)));
+    float e = fminf(clamp01(u / 0.12f), clamp01((len - u) / 0.25f));
     lvl = lvl + (0.26f - lvl) * hw_ease(e) * t.d;
   }
   if (b.group == YARD_D)
@@ -312,11 +310,11 @@ inline HwColor hw_bonfire(float lvl) {
 inline HwColor hw_patch(const HwT &t, const HwSelf &b) {
   double tp = t.A + (double) (b.off * 11.0f);
   float swell = sync_noise(t.A, 2.5f, 7);   // shared: the whole patch breathes as one fire
-  float mid = sync_noise(tp, 0.40f, b.i + 201);
+  float mid = sync_noise(tp, 0.22f, b.i + 201);
   float fast = sync_noise(tp, 0.06f, b.i + 221);
   float lvl = 0.68f + t.d * (0.18f * (swell - 0.5f) + 0.09f * (mid - 0.5f) + 0.04f * (fast - 0.5f));
 
-  HwTurn gt = hw_group_turn(t.A, b, 2.5f, 1.1f, 190);
+  HwTurn gt = hw_group_turn(t.A, b, 2.5f, 0.8f, 190);
   if (gt.w >= gt.at && gt.w < gt.at + 0.35f) {
     float u = gt.w - gt.at;
     float e = fminf(clamp01(u / 0.12f), clamp01((0.35f - u) / 0.23f));
@@ -338,7 +336,7 @@ inline HwColor hw_lightning(const HwT &tt, const HwSelf &b) {
   float t = sync_fold(tt.A);
   uint32_t slot;
   float w;
-  sync_slot(tt.A, 7.0f * tt.f, slot, w);
+  sync_slot(tt.A, 7.0f, slot, w);
 
   HwColor base = hw_scale(HW_VIOLET, 0.14f * (0.85f + 0.15f * sinf(t * 0.3f)));
   float at = 0.6f + sync_random(slot, 1) * 4.5f;
@@ -370,14 +368,14 @@ inline HwColor hw_lightning(double T, const HwSelf &b) { return hw_lightning(hw_
 // scales the boil and the bubbles.
 // ---------------------------------------------------------------------------
 inline HwColor hw_cauldron(const HwT &tt, const HwSelf &b) {
-  double tc = tt.A / tt.f + (double) (b.off * 20.0f);
+  double tc = tt.A + (double) (b.off * 20.0f);
   float t = sync_fold(tc);
   float m = 0.5f + 0.5f * sinf(t * 0.6f + sinf(t * 0.35f) * 2.0f);
   float boil = 1.0f + 0.25f * tt.d * (sync_noise(tc, 0.25f, b.i + 41) - 0.5f) * 2.0f;
   HwColor col = hw_scale(hw_mix(HW_POISON, HW_BREW_VIOLET, m), 0.55f * boil);
 
-  HwTurn gt = hw_group_turn(tt.A, b, 2.0f * tt.f, 0.8f * tt.f, 3);
-  float w = (gt.w - gt.at) / tt.f;
+  HwTurn gt = hw_group_turn(tt.A, b, 2.0f, 0.8f, 3);
+  float w = gt.w - gt.at;
   float env = w < 0.0f ? 0.0f : w < 0.2f ? hw_ease(w / 0.2f) : expf(-(w - 0.2f) * 5.0f);
   return hw_finish(hw_add(col, hw_scale(HW_LIME, env * 0.45f * tt.d)), HW_BREW_FLOOR);
 }
@@ -402,8 +400,8 @@ inline HwColor hw_moon(const HwT &t, const HwSelf &b) {
   else k = 0.0f;
 
   HwColor col = hw_mix(hw_scale(HW_MOON_WHITE, 0.75f), hw_scale(HW_COPPER, 0.55f), k);
-  float throb = 1.0f + 0.25f * t.d * k * sinf(c * 2.0f / (t.f * t.f));
-  float cloud = 1.0f - 0.20f * t.d * (1.0f - k) * sync_noise(t.A / (t.f * t.f) + (double) (b.off * 9.0f), 0.8f, b.i + 91);
+  float throb = 1.0f + 0.25f * t.d * k * sinf(c * 2.0f);
+  float cloud = 1.0f - 0.20f * t.d * (1.0f - k) * sync_noise(t.A + (double) (b.off * 9.0f), 0.8f, b.i + 91);
   return hw_finish(hw_scale(col, throb * cloud), HW_MOON_FLOOR);
 }
 inline HwColor hw_moon(double T, const HwSelf &b) { return hw_moon(hw_t(T), b); }
@@ -989,12 +987,10 @@ inline HwT hw_t_now(double T) {
 // The same frame on an animation clock k times faster (the Fast effects): only A and s
 // change, so the calendar, sunset and weather keep to real time. Movement depth is
 // capped at 100 %: the faster clock already spends the flash budget, and Intensity
-// above that pushes jack, cauldron, moon and the candles over 2 flashes a second.
-constexpr float HW_FAST_STRETCH = 1.5f;   // flash parts (gutters, strikes, bubbles, throb) run at k/1.5, not k
+// above that pushes jack, cauldron, moon and the candles over 3 flashes a second.
 inline HwT hw_fast(HwT t, double k) {
   t.A *= k;
   t.s *= k;
-  t.f = HW_FAST_STRETCH;
   if (t.d > 1.0f) t.d = 1.0f;
   return t;
 }

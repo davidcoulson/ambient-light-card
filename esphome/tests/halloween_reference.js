@@ -157,9 +157,9 @@ function ctlOf(T, c) { return c || { A: T, s: 1, d: 1 }; }
 function jackBase(T, b, steady, c) {
   c = ctlOf(T, c);
   var Tj = c.A + F(b.off * 7);
-  var slow = sync_noise(Tj, F(0.70), b.i + 1), fast = sync_noise(Tj, F(0.10), b.i + 21);
+  var slow = sync_noise(Tj, F(0.30), b.i + 1), fast = sync_noise(Tj, F(0.07), b.i + 21);
   var lvl = 0.66 + c.d * (0.14 * (slow - 0.5) + 0.05 * (fast - 0.5));
-  var gt = groupTurn(c.A, b, 4.0, 1.6, 50);
+  var gt = groupTurn(c.A, b, 4.0, 1.2, 50);
   var len = 0.40 + sync_random(gt.slot, b.i + 60) * 0.30;
   if (!steady && gt.w >= gt.at && gt.w < gt.at + len) {
     var u = gt.w - gt.at, e = Math.min(clamp01(u / 0.12), clamp01((len - u) / 0.25));

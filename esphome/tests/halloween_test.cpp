@@ -235,7 +235,7 @@ static void check_window(const Effect &fx, const std::vector<HwSelf> &lights, do
   printf("%-26s %-18s %6d %6d %6d %8.3f\n", fx.name, when, r.bulb, r.group, r.red, r.min_lum);
   CHECK(r.floor_ok, "%s (%s): a channel fell under the effect's floor", fx.key, when);
   CHECK(r.min_lum >= 0.03, "%s (%s): luminance %.3f is under the 3 %% floor", fx.key, when, r.min_lum);
-  CHECK(r.bulb <= 3 && r.group <= 3 && r.red <= 3, "%s (%s): %d/%d/%d flashes per second (bulb/group/red), limit 3",
+  CHECK(r.bulb <= 3 && r.group <= 3 && r.red <= 3, "%s (%s): %d/%d/%d flashes per second (bulb/group/red), WCAG limit 3",
         fx.key, when, r.bulb, r.group, r.red);
 }
 
@@ -530,7 +530,7 @@ static void test_fast_variants() {
                r.group, r.red, r.min_lum);
         CHECK(r.floor_ok && r.min_lum >= 0.03, "fast %s (depth %.2f): floor broken (min luminance %.3f)", f.key, d, r.min_lum);
         CHECK(r.bulb <= 3 && r.group <= 3 && r.red <= 3,
-              "fast %s (depth %.2f): %d/%d/%d flashes per second (bulb/group/red), limit 3", f.key, d, r.bulb, r.group, r.red);
+              "fast %s (depth %.2f): %d/%d/%d flashes per second (bulb/group/red), WCAG limit 3", f.key, d, r.bulb, r.group, r.red);
       }
   }
   room(128.0f, 128.0f);
@@ -549,7 +549,7 @@ static void test_untwinned() {
     FlashResult r = flash_check([fn](double t, const HwSelf &b) { return fn(hw_t_now(t), b); }, f.floor, lights, 1800.0, 0.01, T0);
     printf("%-8s %d/%d/%d flashes per second (bulb/group/red), min lum %.3f\n", f.key, r.bulb, r.group, r.red, r.min_lum);
     CHECK(r.floor_ok && r.min_lum >= 0.03, "%s: floor broken (min luminance %.3f)", f.key, r.min_lum);
-    CHECK(r.bulb <= 3 && r.group <= 3 && r.red <= 3, "%s: %d/%d/%d flashes per second (bulb/group/red), limit 3", f.key, r.bulb,
+    CHECK(r.bulb <= 3 && r.group <= 3 && r.red <= 3, "%s: %d/%d/%d flashes per second (bulb/group/red), WCAG limit 3", f.key, r.bulb,
           r.group, r.red);
   }
 }
@@ -579,7 +579,7 @@ static void test_controls_flashes() {
             fx.key, sr, ir, r.min_lum);
       if (enforce)
         CHECK(r.bulb <= 3 && r.group <= 3 && r.red <= 3,
-              "%s (speed raw %.0f, intensity raw %.0f): %d/%d/%d flashes per second (bulb/group/red), limit 3", fx.key, sr,
+              "%s (speed raw %.0f, intensity raw %.0f): %d/%d/%d flashes per second (bulb/group/red), WCAG limit 3", fx.key, sr,
               ir, r.bulb, r.group, r.red);
     };
     for (float s : SP)
@@ -838,7 +838,7 @@ static void test_room_2d() {
       CHECK(floor_ok, "%s (depth %.2f): a channel fell under the floor, or a white channel lit", fx.key, depth);
       CHECK(min_lum >= 0.03, "%s (depth %.2f): luminance %.3f is under the 3 %% floor", fx.key, depth, min_lum);
       CHECK(worst_bulb <= 3 && room_f <= 3,
-            "%s (depth %.2f): %d/%d flashes per second (bulb/room), limit 3", fx.key,
+            "%s (depth %.2f): %d/%d flashes per second (bulb/room), WCAG limit 3", fx.key,
             depth, worst_bulb, room_f);
     }
   }

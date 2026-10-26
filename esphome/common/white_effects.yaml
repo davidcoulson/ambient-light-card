@@ -118,16 +118,16 @@ light:
 
             // One draught for the room, as the RGB Candle Flicker has it: the
             // flame and its gusts follow the shared clock, so a group of candles
-            // flashes no more than one does (WCAG's 2 a second). Each bulb adds
+            // flashes no more than one does (WCAG's 3 a second). Each bulb adds
             // a small shimmer of its own on top, too small to count as a flash.
             float t = fx_t();
 
-            float base  = noise1d(t * 1.2f) * 0.5f + 0.5f;
-            float micro = noise1d(t * 3.0f + 2.0f) * 0.5f + 0.5f;
+            float base  = noise1d(t * 2.6f) * 0.5f + 0.5f;
+            float micro = noise1d(t * 7.0f + 2.0f) * 0.5f + 0.5f;
             float shimmer = noise1d((t + sync_offset("${mac}") * 100.0f) * 9.0f) * 0.5f;
             float v = base * 0.70f + micro * 0.30f + 0.04f * shimmer;
 
-            float gust = fx_gust(fx_seconds(), 0.05, 4, 0.30f, 0.30f, 0.94f, 0.65f, 41);
+            float gust = fx_gust(fx_seconds(), 0.05, 8, 0.30f, 0.30f, 0.90f, 0.65f, 41);
             // Intensity: flicker depth and gust dips.
             v = 0.62f + (v - 0.62f) * fx_swing();
             v -= gust * fx_accents();
@@ -196,8 +196,8 @@ light:
             uint32_t slot; float within;
             sync_slot(T, 4.5f, slot, within);
 
-            // 1-3 flashes a strike, their starts at least 0.5 s apart: never
-            // more than 2 flashes in a second.
+            // 1-3 flashes a strike, their starts at least 0.36 s apart: never
+            // more than WCAG's 3 flashes in a second.
             int   flashes = 1 + (int) (sync_random(slot, 1) * 3.0f);   // 1-3
             float strike_at = 0.3f + sync_random(slot, 2) * 2.4f;
 
@@ -205,7 +205,7 @@ light:
             float cursor = strike_at;
             for (int i = 0; i < flashes; i++) {
               float on_len  = 0.040f + sync_random(slot, 10 + i) * 0.080f;
-              float gap_len = 0.500f + sync_random(slot, 20 + i) * 0.200f;
+              float gap_len = 0.240f + sync_random(slot, 20 + i) * 0.200f;
               if (within >= cursor && within < cursor + on_len) {
                 flash = 0.45f + sync_random(slot, 30 + i) * 0.55f;
                 break;

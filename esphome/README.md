@@ -340,7 +340,7 @@ minimum brightness no lower than the floor recorded in `tests/effects_flash_floo
 
 `tests/run_halloween_tests.sh` builds `tests/halloween_test.cpp` against the real headers and
 checks, on every light of the example map: same time and light → same frame; the floor holds;
-flashes stay at or under 3 per second (the WCAG limit) per light and per group – at 8 pm, at lights-on, and in a
+flashes stay at or under the WCAG limit of 3 per second per light and per group – at 8 pm, at lights-on, and in a
 simulated storm for the weather-driven effects – and at Speed 0.25 / 0.5 / 1× × Intensity 25 / 50 /
 100 % and the 125 % maximum (the floor at every speed; 2× and ~4× are measured and reported); an
 unmapped light still runs; every effect lambda draws through `hw_render()` on the shared clock, and

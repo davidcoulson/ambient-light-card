@@ -222,8 +222,8 @@ inline void hearth2d(float px, float py, double T, double fire_x, double fire_y,
 
   double Td = T - dist * 0.10;          // light reaches near points first
 
-  float body = 0.55f * sync_noise(Td, 0.9f, 1)
-             + 0.30f * sync_noise(Td, 0.3f, 2)
+  float body = 0.55f * sync_noise(Td, 0.55f, 1)
+             + 0.30f * sync_noise(Td, 0.19f, 2)
              + 0.15f * sync_noise(Td, 0.07f, 3);
 
   uint32_t slot; float within;
@@ -235,7 +235,7 @@ inline void hearth2d(float px, float py, double T, double fire_x, double fire_y,
 
   const float R = 0.30f;
   float fall = 1.0f / (1.0f + (dist / R) * (dist / R));
-  float shim = 0.90f + 0.20f * sync_noise(T, 0.2f, salt);
+  float shim = 0.90f + 0.20f * sync_noise(T, 0.13f, salt);
 
   // Intensity: flicker depth (fx_swing) and flares (fx_accents).
   float level = clamp01(fall * (0.42f + 0.55f * (0.5f + (body - 0.5f) * fx_swing()) + flare) * shim);

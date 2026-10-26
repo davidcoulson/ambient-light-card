@@ -188,7 +188,7 @@ int main(int argc, char **argv) {
     }
     if (ws > 3 || wa > 3) {
       failures++;
-      printf("FAIL %s: %d flashes per second in a segment, %d in the strip; limit 3\n", fx.name, ws, wa);
+      printf("FAIL %s: %d flashes per second in a segment, %d in the strip; WCAG limit 3\n", fx.name, ws, wa);
     }
   }
   if (failures) {
