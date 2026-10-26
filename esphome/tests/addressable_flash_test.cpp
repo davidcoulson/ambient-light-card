@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // Flash and floor test for the addressable effects (accent_light_addressable_
-// effects.yaml and accent_light_ht2d_effects.yaml).
+// effects.yaml, accent_light_ht2d_effects.yaml and halloween_ring_effects.yaml).
 //
 //   addressable_flash_test [--ring] [--mac MAC] [--leds N] [--seconds S] [--only SUBSTR]
 //
@@ -83,6 +83,7 @@ struct FxCase {
 
 #include "addressable_fx.h"
 #include "fx2d_render.h"
+#include "halloween_plain.h"
 #include "home_theater_map.h"
 #include "addressable_extracted.h"
 

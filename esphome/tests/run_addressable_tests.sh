@@ -11,7 +11,8 @@ out=$(mktemp -d)
 trap 'rm -rf "$out"' EXIT
 
 python3 "$here/addressable_cases.py" "$here/../common/accent_light_addressable_effects.yaml" \
-  "$here/../common/accent_light_ht2d_effects.yaml" > "$out/addressable_extracted.h"
+  "$here/../common/accent_light_ht2d_effects.yaml" \
+  "$here/../common/halloween_ring_effects.yaml" > "$out/addressable_extracted.h"
 ${CXX:-c++} -std=c++17 -O2 -w -I"$here/../common" -I"$out" \
   "$here/addressable_flash_test.cpp" -o "$out/addressable_flash_test"
 
